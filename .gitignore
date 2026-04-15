@@ -1,0 +1,28 @@
+# GENERAL
+.env
+.env.*
+*.log
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# NODE / EXPO
+node_modules/
+.expo/
+dist/
+build/
+
+# LARAVEL
+vendor/
+storage/
+bootstrap/cache/
+
+# DATABASE
+*.sql
+backup/
+
+# DOCKER
+docker-compose.override.yml
