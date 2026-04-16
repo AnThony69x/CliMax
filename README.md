@@ -144,6 +144,11 @@ npx expo start
 docker-compose up -d
 ```
 
+Puertos configurados en raiz:
+
+- Backend: http://localhost:8000
+- Mobile (Expo): http://localhost:9000
+
 ---
 
 ## Supabase

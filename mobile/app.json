@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "CliMax",
+    "slug": "climax-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "climax",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {

@@ -15,8 +15,11 @@ services:
     build: ./mobile
     container_name: climax_mobile
     ports:
-      - "19000:19000"
+      - "9000:9000"
     volumes:
       - ./mobile:/app
+      - /app/node_modules
     working_dir: /app
     command: npm start
+    stdin_open: true
+    tty: true

@@ -1,13 +1,13 @@
 {
-  "name": "mobile",
+  "name": "climax-mobile",
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --port 9000",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "android": "expo start --android --port 9000",
+    "ios": "expo start --ios --port 9000",
+    "web": "expo start --web --port 9000",
     "lint": "expo lint"
   },
   "dependencies": {

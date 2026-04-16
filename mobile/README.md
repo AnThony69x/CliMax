@@ -1,50 +1,111 @@
-# Welcome to your Expo app 👋
+# CliMax Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Aplicacion movil de alertas climaticas en tiempo real.
 
-## Get started
+## Stack
 
-1. Install dependencies
+- React Native con Expo
+- Expo Router
+- TypeScript
+- Supabase (autenticacion y datos)
+- API backend Laravel
 
-   ```bash
-   npm install
-   ```
+## Requisitos
 
-2. Start the app
+- Node.js 18 o superior
+- npm 9 o superior
+- Expo Go en dispositivo o emulador
 
-   ```bash
-   npx expo start
-   ```
+## Instalacion
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+1. Instalar dependencias:
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. Configurar variables de entorno:
 
-## Learn more
+```bash
+cp .env.example .env
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+3. Editar .env con credenciales reales.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Ejecucion
 
-## Join the community
+```bash
+npm run start
+```
 
-Join our community of developers creating universal apps.
+Para forzar el puerto 9000:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm run start -- --port 9000
+```
+
+Comandos utiles:
+
+```bash
+npm run android
+npm run ios
+npm run web
+npm run lint
+```
+
+## Estructura
+
+src/
+- core/
+   - api/
+   - config/
+   - utils/
+- features/
+   - auth/
+   - weather/
+   - alerts/
+   - profile/
+   - settings/
+- navigation/
+- store/
+- components/
+- theme/
+
+assets/
+- iconos/
+- imagenes/
+- fuentes/
+
+## Backend
+
+La app consume el backend Laravel en la URL definida por EXPO_PUBLIC_API_URL.
+
+Para pruebas en celular fisico, usa la IP local de tu equipo en .env.
+
+## Docker
+
+Este proyecto ya incluye Docker para mobile.
+
+Levantar solo mobile desde la raiz del repo:
+
+```bash
+docker compose up --build mobile
+```
+
+Levantar todo (backend + mobile):
+
+```bash
+docker compose up --build
+```
+
+Mobile queda publicado en http://localhost:9000
+
+## Estado
+
+- Base de Expo Router limpia
+- Arquitectura por features creada
+- Archivos externos de entorno y control listos
+
+## Licencia
+
+MIT
