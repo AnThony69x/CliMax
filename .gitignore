@@ -1,6 +1,7 @@
 # GENERAL
 .env
 .env.*
+!**/.env.example
 *.log
 *.swp
 *.swo
@@ -26,6 +27,3 @@ backup/
 
 # DOCKER
 docker-compose.override.yml
-
-# Allow sharing example env for mobile app
-!mobile/.env.example
