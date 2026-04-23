@@ -1,18 +1,19 @@
-version: '3.8'
-
 services:
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: climax_backend
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      -  /app/vendor/
     working_dir: /app
     command: php artisan serve --host=0.0.0.0 --port=8000
 
   mobile:
-    build: ./mobile
+    build:
+      context: ./mobile
     container_name: climax_mobile
     ports:
       - "9000:9000"

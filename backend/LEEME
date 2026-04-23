@@ -1,0 +1,77 @@
+Voy a aterrizarlo sobre tu backend actual: qué piezas tocaría, en qué orden, y qué dejaría fuera para no duplicar auth.Así la implementaría en el backend, sin tocar todavía nada.
+
+**Idea central**
+- Laravel no haría login ni registro de usuarios finales.
+- Supabase Auth seguiría siendo el dueño de la identidad.
+- El backend solo recibiría un token de Supabase, lo validaría y trabajaría con el id único del usuario.
+- A partir de ese id, Laravel leería o actualizaría el perfil y el resto de datos de negocio.
+
+**Qué haría en backend**
+- Validar el token de Supabase en cada request protegida.
+- Extraer el sub del JWT, que es el identificador estable del usuario.
+- Usar ese sub como llave principal para buscar el profile.
+- Crear el profile si no existe todavía, o devolverlo si ya existe.
+- Proteger todos los endpoints de negocio con ese mismo mecanismo.
+
+**Cómo quedaría el flujo**
+- El cliente inicia sesión con Supabase.
+- El cliente manda al backend el access token de Supabase.
+- Laravel verifica firma, expiración y claims del token.
+- Si el token es válido, Laravel obtiene el id del usuario.
+- Laravel consulta la tabla profiles con ese id.
+- Laravel responde con datos de perfil o ejecuta la acción pedida.
+
+**Qué piezas tocaría en tu repo**
+- api.php: quitaría la idea de login y register propios para usuario final y los reemplazaría por rutas protegidas como perfil, me o sync.
+- AuthController.php: dejaría de ser el centro de auth pública. Si acaso, lo transformaría en un controlador auxiliar, pero no en el dueño del login.
+- auth.php: lo dejaría para auth interna si la necesitas, pero no sería el mecanismo principal para usuarios móviles.
+- services.php: ahí mantendría la configuración de Supabase si el backend necesita leer URLs o claves de servidor.
+- README.md: documentaría el flujo real para que no quede la idea de que Laravel hace login tradicional.
+
+**Modelo de datos que usaría**
+- Tabla profiles.
+- id o supabase_user_id como UUID estable del usuario.
+- name.
+- avatar_url si luego lo quieres.
+- timezone o locale si te sirve para clima y alertas.
+- created_at y updated_at.
+
+Si quieres máxima coherencia con Supabase, yo usaría el mismo UUID de auth.users como clave del profile. Eso hace el enlace simple y evita tablas puente innecesarias.
+
+**Validación de seguridad**
+- No confiaría en email ni en user_metadata para decidir permisos.
+- No usaría el token del cliente “porque sí”; validaría firma y expiración.
+- Si el backend va a aceptar requests desde el cliente, cada endpoint sensible debe exigir token válido.
+- Si más adelante hay roles, los pondría en app metadata o en tablas controladas por backend, no en datos editables por el usuario.
+
+**Estrategia de profile**
+- Yo haría creación perezosa.
+- La primera vez que el usuario llama a backend con token válido, Laravel crea su profile si no existe.
+- Ventaja: no dependes de un flujo extra de onboarding.
+- Alternativa: crear el profile justo después del registro desde el cliente, pero eso mete más coordinación y más puntos de falla.
+
+**Rutas que tendría el backend**
+- GET /api/me para devolver perfil y claims útiles.
+- PATCH /api/me para editar nombre y campos de perfil.
+- POST /api/me/sync para crear o sincronizar el profile si hace falta.
+- Cualquier ruta de negocio como clima, alertas o notificaciones quedaría detrás del mismo middleware.
+
+**Qué no haría**
+- No construiría login y register en Laravel para el usuario final.
+- No guardaría password en tu base local para este flujo.
+- No haría que Laravel sea el dueño de refresh tokens de usuario final.
+- No expondría service role key al cliente.
+
+**Orden práctico de implementación**
+1. Definir el contrato de autenticación: Laravel espera Bearer token de Supabase.
+2. Crear middleware para validar JWT de Supabase.
+3. Crear tabla profiles y su modelo.
+4. Agregar endpoint me o profile.
+5. Hacer creación automática del profile al primer acceso.
+6. Proteger el resto de endpoints con el mismo middleware.
+7. Documentar el flujo en README.md.
+
+**Mi criterio**
+- Para tu caso, backend solo con Supabase Auth en el cliente es la arquitectura más limpia.
+- Laravel queda enfocado en negocio, no en credenciales.
+- Si luego quieres, el siguiente paso puede ser que te detalle exactamente qué archivos tocaría y cómo quedaría la estructura backend sin escribir código todavía.

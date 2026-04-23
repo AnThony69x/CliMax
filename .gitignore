@@ -19,7 +19,7 @@ build/
 # LARAVEL
 vendor/
 storage/
-bootstrap/cache/
+**/bootstrap/cache/
 
 # DATABASE
 *.sql
