@@ -4,6 +4,7 @@ use App\Interfaces\Controllers\AuthController;
 use App\Interfaces\Controllers\ClimaController;
 use App\Interfaces\Controllers\MeController;
 use App\Interfaces\Controllers\ProfileController;
+use App\Interfaces\Controllers\WeatherLogController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -18,3 +19,5 @@ Route::middleware('supabase.auth')->group(function () {
 });
 
 Route::get('/clima', [ClimaController::class, 'getClima']);
+Route::get('/geocode', [ClimaController::class, 'getAddress']);
+Route::post('/location', [WeatherLogController::class, 'store']);

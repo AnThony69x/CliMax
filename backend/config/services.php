@@ -10,7 +10,11 @@ return [
 
     'weather' => [
         'api_key' => env('WEATHER_API_KEY'),
-        'base_url' => env('WEATHER_API_URL'),
+        'base_url' => env('WEATHER_API_URL', 'https://api.open-meteo.com/v1/forecast'),
+    ],
+
+    'geocoding' => [
+        'base_url' => env('GEOCODING_API_URL', 'https://nominatim.openstreetmap.org/reverse'),
     ],
 
     /*
