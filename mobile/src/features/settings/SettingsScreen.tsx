@@ -40,7 +40,7 @@ export default function SettingsScreen() {
           onPress: async () => {
             try { await signOut(); } catch { /* ignorar errores de red */ }
             await clearToken();
-            router.replace('/welcome');
+            router.replace('/login');
           },
         },
       ]
