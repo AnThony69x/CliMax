@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -156,7 +157,7 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     try { await signOut(); } catch { /* ignorar errores de red */ }
     await clearToken();
-    router.replace('/welcome');
+    router.replace('/login');
   };
 
   const memberSince = profile?.created_at
@@ -170,6 +171,71 @@ export default function ProfileScreen() {
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
         <ActivityIndicator size="large" color="#90cdfd" />
+      </View>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <View style={styles.guestGlow1} />
+        <View style={styles.guestGlow2} />
+
+        <ScrollView
+          contentContainerStyle={styles.guestScroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Icono */}
+          <View style={styles.guestIconWrap}>
+            <Ionicons name="person-circle-outline" size={80} color="rgba(148,163,184,0.6)" />
+          </View>
+
+          {/* Textos */}
+          <View style={styles.guestTextWrap}>
+            <Text style={styles.guestTitle}>Tu perfil te espera</Text>
+            <Text style={styles.guestSubtitle}>
+              Inicia sesión para ver y gestionar tu cuenta, o crea una nueva si eres usuario nuevo.
+            </Text>
+          </View>
+
+          {/* Card de opciones */}
+          <View style={styles.guestCard}>
+            {/* Opción login */}
+            <View style={styles.guestOption}>
+              <Text style={styles.guestOptionTitle}>¿Ya tienes cuenta?</Text>
+              <Text style={styles.guestOptionDesc}>
+                Inicia sesión con tu correo y contraseña para acceder a tu perfil.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.guestBtnPrimary, pressed && styles.guestBtnPrimaryPressed]}
+                onPress={() => router.push('/login')}
+              >
+                <Text style={styles.guestBtnPrimaryText}>Iniciar sesión</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.guestDivider}>
+              <View style={styles.guestDividerLine} />
+              <Text style={styles.guestDividerText}>o</Text>
+              <View style={styles.guestDividerLine} />
+            </View>
+
+            {/* Opción registro */}
+            <View style={styles.guestOption}>
+              <Text style={styles.guestOptionTitle}>¿Eres nuevo?</Text>
+              <Text style={styles.guestOptionDesc}>
+                Crea una cuenta gratis para guardar tus ciudades favoritas y personalizar la app.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.guestBtnOutline, pressed && styles.guestBtnOutlinePressed]}
+                onPress={() => router.push('/register')}
+              >
+                <Text style={styles.guestBtnOutlineText}>Crear cuenta</Text>
+              </Pressable>
+            </View>
+          </View>
+        </ScrollView>
       </View>
     );
   }
@@ -199,7 +265,7 @@ export default function ProfileScreen() {
             >
               {uploadingAvatar
                 ? <ActivityIndicator size={14} color="#ffffff" />
-                : <Text style={styles.editAvatarIcon}>✏️</Text>
+                : <Ionicons name="create-outline" size={14} color="#ffffff" />
               }
             </Pressable>
           </View>
@@ -288,9 +354,9 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
             onPress={() => setEditing(true)}
           >
-            <Text style={styles.menuIcon}>👤</Text>
+            <Ionicons name="person-outline" size={20} color="rgba(255,255,255,0.7)" />
             <Text style={styles.menuLabel}>Información personal</Text>
-            <Text style={styles.menuChevron}>›</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -298,9 +364,9 @@ export default function ProfileScreen() {
           <Pressable
             style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
           >
-            <Text style={styles.menuIcon}>🔒</Text>
+            <Ionicons name="lock-closed-outline" size={20} color="rgba(255,255,255,0.7)" />
             <Text style={styles.menuLabel}>Seguridad y privacidad</Text>
-            <Text style={styles.menuChevron}>›</Text>
+            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -309,7 +375,7 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
             onPress={handleLogout}
           >
-            <Text style={styles.menuIcon}>🚪</Text>
+            <Ionicons name="log-out-outline" size={20} color="#ffb4ab" />
             <Text style={styles.menuLabelDanger}>Cerrar sesión</Text>
           </Pressable>
         </View>
@@ -381,9 +447,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GLASS_BORDER,
     padding: 6,
-  },
-  editAvatarIcon: {
-    fontSize: 14,
   },
   heroInfo: {
     flex: 1,
@@ -495,11 +558,6 @@ const styles = StyleSheet.create({
   menuRowPressed: {
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
-  menuIcon: {
-    fontSize: 20,
-    width: 28,
-    textAlign: 'center',
-  },
   menuLabel: {
     flex: 1,
     fontSize: 15,
@@ -511,13 +569,123 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#ffb4ab',
   },
-  menuChevron: {
-    fontSize: 22,
-    color: 'rgba(255,255,255,0.3)',
-  },
   menuDivider: {
     height: 1,
     backgroundColor: GLASS_BORDER,
     marginHorizontal: 4,
+  },
+
+  /* ── Vista de invitado ── */
+  guestGlow1: {
+    position: 'absolute',
+    top: -80,
+    left: -80,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.22)',
+  },
+  guestGlow2: {
+    position: 'absolute',
+    bottom: -40,
+    right: -60,
+    width: 240,
+    height: 240,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+  },
+  guestScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 60,
+    gap: 28,
+  },
+  guestIconWrap: {
+    alignItems: 'center',
+  },
+  guestTextWrap: {
+    alignItems: 'center',
+    gap: 10,
+  },
+  guestTitle: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#f1f5f9',
+    letterSpacing: -0.4,
+    textAlign: 'center',
+  },
+  guestSubtitle: {
+    fontSize: 14,
+    color: 'rgba(148,163,184,0.8)',
+    textAlign: 'center',
+    lineHeight: 21,
+  },
+  guestCard: {
+    backgroundColor: 'rgba(8,16,42,0.82)',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+    padding: 24,
+    gap: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  guestOption: {
+    gap: 8,
+  },
+  guestOptionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f1f5f9',
+  },
+  guestOptionDesc: {
+    fontSize: 13,
+    color: 'rgba(148,163,184,0.75)',
+    lineHeight: 19,
+  },
+  guestBtnPrimary: {
+    marginTop: 4,
+    backgroundColor: '#38bdf8',
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  guestBtnPrimaryPressed: { backgroundColor: '#0284c7' },
+  guestBtnPrimaryText: {
+    color: '#082f49',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  guestBtnOutline: {
+    marginTop: 4,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: 'rgba(56,189,248,0.5)',
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  guestBtnOutlinePressed: { backgroundColor: 'rgba(56,189,248,0.08)' },
+  guestBtnOutlineText: {
+    color: '#38bdf8',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  guestDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  guestDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: GLASS_BORDER,
+  },
+  guestDividerText: {
+    color: 'rgba(148,163,184,0.5)',
+    fontSize: 13,
   },
 });

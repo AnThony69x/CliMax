@@ -1,8 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   ScrollView,
   StatusBar,
@@ -15,17 +15,23 @@ import type { Alert } from '../../types';
 const GLASS_BG     = 'rgba(255,255,255,0.12)';
 const GLASS_BORDER = 'rgba(255,255,255,0.18)';
 
-const SEVERITY_CONFIG = {
-  critical: { label: 'CRÍTICO',     color: '#ffb4ab', border: '#ffb4ab', icon: '⛈️' },
-  warning:  { label: 'MODERADO',    color: '#ffb95a', border: '#ffb95a', icon: '🌊' },
-  info:     { label: 'AVISO',       color: '#90cdfd', border: '#90cdfd', icon: '💨' },
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+const SEVERITY_CONFIG: Record<string, {
+  label: string;
+  color: string;
+  iconName: IoniconName;
+}> = {
+  critical: { label: 'CRÍTICO',  color: '#ffb4ab', iconName: 'thunderstorm-outline' },
+  warning:  { label: 'MODERADO', color: '#ffb95a', iconName: 'rainy-outline'        },
+  info:     { label: 'AVISO',    color: '#90cdfd', iconName: 'partly-sunny-outline' },
 };
 
-const SAFETY_TIPS = [
-  { icon: '🏠', text: 'Permanezca bajo techo' },
-  { icon: '🔦', text: 'Prepare linternas' },
-  { icon: '🔌', text: 'Desconecte aparatos' },
-  { icon: '🚗', text: 'Evite desplazamientos' },
+const SAFETY_TIPS: { iconName: IoniconName; text: string }[] = [
+  { iconName: 'home-outline',        text: 'Permanezca bajo techo' },
+  { iconName: 'flashlight-outline',  text: 'Prepare linternas'     },
+  { iconName: 'flash-outline',       text: 'Desconecte aparatos'   },
+  { iconName: 'car-outline',         text: 'Evite desplazamientos' },
 ];
 
 export default function AlertsScreen() {
@@ -67,8 +73,8 @@ export default function AlertsScreen() {
     router.push(`/alert/${alert.id}` as any);
   };
 
-  const unreadCount = alerts.filter((a) => !a.is_read).length;
-  const primaryAlert = alerts[0] ?? null;
+  const unreadCount    = alerts.filter((a) => !a.is_read).length;
+  const primaryAlert   = alerts[0] ?? null;
   const secondaryAlerts = alerts.slice(1);
 
   const getSeverity = (severity: Alert['severity']) =>
@@ -104,7 +110,7 @@ export default function AlertsScreen() {
         {alerts.length === 0 ? (
           /* ── Estado vacío ── */
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyIcon}>🔔</Text>
+            <Ionicons name="notifications-outline" size={48} color="rgba(255,255,255,0.4)" />
             <Text style={styles.emptyTitle}>Sin alertas activas</Text>
             <Text style={styles.emptyText}>
               Te notificaremos cuando haya alertas climáticas en tu zona.
@@ -136,9 +142,11 @@ export default function AlertsScreen() {
                 </View>
 
                 <View style={styles.primaryRow}>
-                  <Text style={styles.primaryIcon}>
-                    {getSeverity(primaryAlert.severity).icon}
-                  </Text>
+                  <Ionicons
+                    name={getSeverity(primaryAlert.severity).iconName}
+                    size={36}
+                    color={getSeverity(primaryAlert.severity).color}
+                  />
                   <Text style={styles.primaryTitle} numberOfLines={2}>
                     {primaryAlert.title}
                   </Text>
@@ -190,7 +198,7 @@ export default function AlertsScreen() {
                     >
                       <View style={styles.secondaryHeader}>
                         <View style={styles.secondaryTitleRow}>
-                          <Text style={styles.secondaryIcon}>{sev.icon}</Text>
+                          <Ionicons name={sev.iconName} size={22} color={sev.color} />
                           <Text style={styles.secondaryTitle} numberOfLines={1}>
                             {item.title}
                           </Text>
@@ -210,7 +218,8 @@ export default function AlertsScreen() {
                         style={({ pressed }) => [styles.detailBtn, pressed && { opacity: 0.7 }]}
                         onPress={() => handlePress(item)}
                       >
-                        <Text style={styles.detailBtnText}>Ver detalles →</Text>
+                        <Text style={styles.detailBtnText}>Ver detalles</Text>
+                        <Ionicons name="arrow-forward" size={13} color="rgba(255,255,255,0.8)" />
                       </Pressable>
                     </Pressable>
                   );
@@ -222,12 +231,15 @@ export default function AlertsScreen() {
 
         {/* ── Recomendaciones de seguridad ── */}
         <View style={styles.safetySection}>
-          <Text style={styles.safetyTitle}>🛡️  Recomendaciones de seguridad</Text>
+          <View style={styles.safetyTitleRow}>
+            <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.safetyTitle}>Recomendaciones de seguridad</Text>
+          </View>
           <View style={styles.safetyGrid}>
             {SAFETY_TIPS.map((tip) => (
               <View key={tip.text} style={styles.safetyCard}>
                 <View style={styles.safetyIconWrap}>
-                  <Text style={styles.safetyIcon}>{tip.icon}</Text>
+                  <Ionicons name={tip.iconName} size={22} color="rgba(255,255,255,0.85)" />
                 </View>
                 <Text style={styles.safetyText}>{tip.text}</Text>
               </View>
@@ -283,7 +295,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  emptyIcon: { fontSize: 48 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
   emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 20 },
 
@@ -320,9 +331,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  primaryIcon: {
-    fontSize: 36,
   },
   primaryTitle: {
     flex: 1,
@@ -381,9 +389,6 @@ const styles = StyleSheet.create({
     gap: 10,
     flex: 1,
   },
-  secondaryIcon: {
-    fontSize: 22,
-  },
   secondaryTitle: {
     flex: 1,
     fontSize: 17,
@@ -407,11 +412,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   detailBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
     borderRadius: 12,
     paddingVertical: 10,
-    alignItems: 'center',
   },
   detailBtnText: {
     fontSize: 13,
@@ -424,6 +432,11 @@ const styles = StyleSheet.create({
   safetySection: {
     gap: 14,
     marginTop: 4,
+  },
+  safetyTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   safetyTitle: {
     fontSize: 17,
@@ -452,9 +465,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  safetyIcon: {
-    fontSize: 22,
   },
   safetyText: {
     fontSize: 13,

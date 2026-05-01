@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Weather, Location, City } from '../types';
-import { API_URL, fetchWeather as apiFetchWeather, fetchAddress as apiFetchAddress, saveLocation as apiSaveLocation } from '../core/api/weatherApi';
+import { fetchWeather as apiFetchWeather, fetchAddress as apiFetchAddress, saveLocation as apiSaveLocation, searchCities as apiSearchCities } from '../core/api/weatherApi';
 import { getToken } from '../core/auth/authStorage';
 
 type WeatherStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -75,7 +75,14 @@ export function useWeather() {
   }, []);
 
   const searchCities = useCallback(async (query: string): Promise<City[]> => {
-    return [];
+    if (!query.trim()) return [];
+    try {
+      const data = await apiSearchCities(query.trim());
+      return data.results ?? [];
+    } catch (error) {
+      console.warn('Error searching cities:', error);
+      return [];
+    }
   }, []);
 
   const persistLocation = useCallback(async (weatherData?: Weather) => {

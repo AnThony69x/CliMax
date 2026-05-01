@@ -19,6 +19,11 @@ return [
         'verify' => env('GEOCODING_API_VERIFY', false),
     ],
 
+    'geocoding_search' => [
+        'base_url' => env('GEOCODING_SEARCH_API_URL', 'https://geocoding-api.open-meteo.com/v1/search'),
+        'verify' => env('GEOCODING_SEARCH_API_VERIFY', false),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

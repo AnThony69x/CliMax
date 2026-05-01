@@ -14,6 +14,14 @@ export async function fetchAddress(lat: number, lon: number) {
   return response.json();
 }
 
+export async function searchCities(query: string, count = 10) {
+  const response = await fetch(
+    `${API_URL}/search?city=${encodeURIComponent(query)}&count=${count}`
+  );
+  if (!response.ok) throw new Error('Error searching cities');
+  return response.json() as Promise<{ results: { id: string; name: string; country: string; lat: number; lon: number }[] }>;
+}
+
 export async function saveLocation(data: {
   latitude: number;
   longitude: number;

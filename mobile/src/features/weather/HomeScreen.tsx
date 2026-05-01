@@ -1,14 +1,23 @@
 import * as Location from 'expo-location';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Dimensions,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
+import type { City } from '../../types';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type WeatherState = {
   temperature: number;
@@ -16,271 +25,420 @@ type WeatherState = {
   windSpeed: number;
 };
 
+type SlideData = {
+  key: string;
+  label: string;
+  cityName: string;
+  coords: { latitude: number; longitude: number } | null;
+  weather: WeatherState | null;
+  updatedAt: string | null;
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  message: string;
+};
+
 const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
-  0:  { label: 'Despejado',               icon: '☀️' },
-  1:  { label: 'Mayormente despejado',     icon: '🌤️' },
-  2:  { label: 'Parcialmente nublado',     icon: '⛅' },
-  3:  { label: 'Nublado',                  icon: '☁️' },
-  45: { label: 'Niebla',                   icon: '🌫️' },
-  48: { label: 'Niebla con escarcha',      icon: '🌫️' },
-  51: { label: 'Llovizna ligera',          icon: '🌦️' },
-  53: { label: 'Llovizna',                 icon: '🌦️' },
-  55: { label: 'Llovizna intensa',         icon: '🌧️' },
-  61: { label: 'Lluvia ligera',            icon: '🌧️' },
-  63: { label: 'Lluvia',                   icon: '🌧️' },
-  65: { label: 'Lluvia intensa',           icon: '🌧️' },
-  71: { label: 'Nieve ligera',             icon: '🌨️' },
-  73: { label: 'Nieve',                    icon: '❄️' },
-  75: { label: 'Nieve intensa',            icon: '❄️' },
-  80: { label: 'Chubascos ligeros',        icon: '🌦️' },
-  81: { label: 'Chubascos',               icon: '🌧️' },
-  82: { label: 'Chubascos intensos',       icon: '⛈️' },
-  95: { label: 'Tormenta',                 icon: '⛈️' },
-  96: { label: 'Tormenta con granizo',     icon: '⛈️' },
-  99: { label: 'Tormenta con granizo fuerte', icon: '⛈️' },
+  0:  { label: 'Despejado',                   icon: '☀️' },
+  1:  { label: 'Mayormente despejado',         icon: '🌤️' },
+  2:  { label: 'Parcialmente nublado',         icon: '⛅' },
+  3:  { label: 'Nublado',                      icon: '☁️' },
+  45: { label: 'Niebla',                       icon: '🌫️' },
+  48: { label: 'Niebla con escarcha',          icon: '🌫️' },
+  51: { label: 'Llovizna ligera',              icon: '🌦️' },
+  53: { label: 'Llovizna',                     icon: '🌦️' },
+  55: { label: 'Llovizna intensa',             icon: '🌧️' },
+  61: { label: 'Lluvia ligera',                icon: '🌧️' },
+  63: { label: 'Lluvia',                       icon: '🌧️' },
+  65: { label: 'Lluvia intensa',               icon: '🌧️' },
+  71: { label: 'Nieve ligera',                 icon: '🌨️' },
+  73: { label: 'Nieve',                        icon: '❄️' },
+  75: { label: 'Nieve intensa',                icon: '❄️' },
+  80: { label: 'Chubascos ligeros',            icon: '🌦️' },
+  81: { label: 'Chubascos',                    icon: '🌧️' },
+  82: { label: 'Chubascos intensos',           icon: '⛈️' },
+  95: { label: 'Tormenta',                     icon: '⛈️' },
+  96: { label: 'Tormenta con granizo',         icon: '⛈️' },
+  99: { label: 'Tormenta con granizo fuerte',  icon: '⛈️' },
 };
 
 const HOURLY_SLOTS = ['Ahora', '+1h', '+2h', '+3h', '+4h'];
 
-export default function HomeScreen() {
-  const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [message, setMessage] = useState('');
-  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [weather, setWeather] = useState<WeatherState | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
+function weatherInfo(code: number | undefined) {
+  if (code == null) return { label: 'Cargando...', icon: '⏳' };
+  return WEATHER_CODES[code] ?? { label: 'Condición desconocida', icon: '🌡️' };
+}
 
-  const weatherInfo = useMemo(() => {
-    if (!weather) return { label: 'Cargando...', icon: '⏳' };
-    return WEATHER_CODES[weather.weatherCode] ?? { label: 'Condición desconocida', icon: '🌡️' };
-  }, [weather]);
-
-  const fetchWeather = async (latitude: number, longitude: number) => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-    if (!apiUrl) throw new Error('API backend no configurada');
-    const response = await fetch(`${apiUrl}/clima?lat=${latitude}&lon=${longitude}`);
-    if (!response.ok) throw new Error('No se pudo obtener el clima');
-    const data = await response.json();
-    const current = data?.current;
-    if (!current) throw new Error('Datos del clima incompletos');
-    return {
-      temperature: current.temperature_2m,
-      weatherCode: current.weather_code,
-      windSpeed: current.wind_speed_10m,
-    };
+async function apiFetchWeather(latitude: number, longitude: number): Promise<WeatherState> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!apiUrl) throw new Error('API backend no configurada');
+  const res = await fetch(`${apiUrl}/clima?lat=${latitude}&lon=${longitude}`);
+  if (!res.ok) throw new Error('No se pudo obtener el clima');
+  const data = await res.json();
+  const current = data?.current;
+  if (!current) throw new Error('Datos del clima incompletos');
+  return {
+    temperature: current.temperature_2m,
+    weatherCode: current.weather_code,
+    windSpeed: current.wind_speed_10m,
   };
+}
 
-  const fetchAddress = async (latitude: number, longitude: number) => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-    if (!apiUrl) throw new Error('API backend no configurada');
-    const response = await fetch(`${apiUrl}/geocode?lat=${latitude}&lon=${longitude}`);
-    if (!response.ok) throw new Error('No se pudo obtener la ubicación en texto');
-    const data = await response.json();
-    return data?.display_name ?? null;
-  };
+async function apiFetchAddress(latitude: number, longitude: number): Promise<string | null> {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!apiUrl) return null;
+  const res = await fetch(`${apiUrl}/geocode?lat=${latitude}&lon=${longitude}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data?.display_name ?? null;
+}
 
-  const persistLocation = async (
-    latitude: number,
-    longitude: number,
-    payload: {
-      address: string | null;
-      temperature: number | null;
-      weatherCode: number | null;
-      windSpeed: number | null;
-    }
-  ) => {
-    const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-    if (!apiUrl) return;
-    try {
-      const token = await getToken();
-      await fetch(`${apiUrl}/location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-          address: payload.address,
-          temperature: payload.temperature,
-          weather_code: payload.weatherCode,
-          wind_speed: payload.windSpeed,
-          captured_at: new Date().toISOString(),
-        }),
-      });
-    } catch (error) {
-      console.warn('No se pudo guardar la ubicación', error);
-    }
-  };
-
-  const updateFromCoords = async (latitude: number, longitude: number) => {
-    setCoords({ latitude, longitude });
-    const [weatherData, addressData] = await Promise.all([
-      fetchWeather(latitude, longitude),
-      fetchAddress(latitude, longitude),
-    ]);
-    setWeather(weatherData);
-    setAddress(addressData);
-    setUpdatedAt(new Date().toLocaleTimeString());
-    await persistLocation(latitude, longitude, {
-      address: addressData,
-      temperature: weatherData.temperature,
-      weatherCode: weatherData.weatherCode,
-      windSpeed: weatherData.windSpeed,
+async function persistLocation(
+  latitude: number,
+  longitude: number,
+  payload: { address: string | null; temperature: number; weatherCode: number; windSpeed: number }
+) {
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (!apiUrl) return;
+  try {
+    const token = await getToken();
+    await fetch(`${apiUrl}/location`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        latitude,
+        longitude,
+        address: payload.address,
+        temperature: payload.temperature,
+        weather_code: payload.weatherCode,
+        wind_speed: payload.windSpeed,
+        captured_at: new Date().toISOString(),
+      }),
     });
-  };
+  } catch {
+    // non-critical
+  }
+}
 
-  const refreshOnce = async () => {
-    setStatus('loading');
-    setMessage('');
+/* ─────────────────────────────────────────────
+   WeatherSlide — una tarjeta del carrusel
+───────────────────────────────────────────── */
+function WeatherSlide({
+  slide,
+  onRefresh,
+  isGPS,
+}: {
+  slide: SlideData;
+  onRefresh?: () => void;
+  isGPS: boolean;
+}) {
+  const info = weatherInfo(slide.weather?.weatherCode);
+  const refreshing = isGPS && slide.status === 'loading';
+
+  return (
+    <ScrollView
+      style={{ width: SCREEN_WIDTH }}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.slideScroll}
+      refreshControl={
+        isGPS ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#90cdfd"
+            colors={['#90cdfd']}
+          />
+        ) : undefined
+      }
+    >
+      {/* Hero */}
+      <View style={styles.heroCard}>
+        <Text style={styles.locationLabel}>
+          {isGPS ? 'UBICACIÓN ACTUAL' : 'CIUDAD GUARDADA'}
+        </Text>
+        <Text style={styles.locationName} numberOfLines={2}>
+          {slide.cityName}
+        </Text>
+
+        <View style={styles.heroRow}>
+          <View style={styles.heroLeft}>
+            <Text style={styles.temperature}>
+              {slide.weather != null ? `${slide.weather.temperature}°` : '--°'}
+            </Text>
+            <Text style={styles.condition}>{info.label}</Text>
+
+            <View style={styles.pillRow}>
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>
+                  💨 {slide.weather?.windSpeed ?? '--'} km/h
+                </Text>
+              </View>
+              {slide.coords && (
+                <View style={styles.pill}>
+                  <Text style={styles.pillText}>
+                    📍 {slide.coords.latitude.toFixed(2)}, {slide.coords.longitude.toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          <Text style={styles.heroEmoji}>{info.icon}</Text>
+        </View>
+
+        {slide.status === 'loading' && !isGPS && (
+          <ActivityIndicator color="#90cdfd" style={{ marginTop: 16 }} />
+        )}
+        {slide.updatedAt && (
+          <Text style={styles.updatedAt}>Actualizado: {slide.updatedAt}</Text>
+        )}
+        {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
+      </View>
+
+      {/* Pronóstico por hora (indicativo) */}
+      <View style={styles.glassCard}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Pronóstico por hora</Text>
+          <Text style={styles.cardHeaderIcon}>🕐</Text>
+        </View>
+        {HOURLY_SLOTS.map((slot, i) => (
+          <View
+            key={slot}
+            style={[styles.hourRow, i === 0 && styles.hourRowActive]}
+          >
+            <Text style={[styles.hourTime, i === 0 && styles.hourTimeActive]}>{slot}</Text>
+            <Text style={styles.hourIcon}>{info.icon}</Text>
+            <Text style={styles.hourTemp}>
+              {slide.weather != null
+                ? `${Math.round(slide.weather.temperature + i * -0.5)}°`
+                : '--°'}
+            </Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Coordenadas */}
+      {slide.coords && (
+        <View style={styles.glassCard}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Coordenadas GPS</Text>
+            <Text style={styles.cardHeaderIcon}>🛰️</Text>
+          </View>
+          <View style={styles.coordRow}>
+            <View style={styles.coordItem}>
+              <Text style={styles.coordLabel}>LATITUD</Text>
+              <Text style={styles.coordValue}>{slide.coords.latitude.toFixed(6)}</Text>
+            </View>
+            <View style={styles.coordDivider} />
+            <View style={styles.coordItem}>
+              <Text style={styles.coordLabel}>LONGITUD</Text>
+              <Text style={styles.coordValue}>{slide.coords.longitude.toFixed(6)}</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </ScrollView>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   HomeScreen principal
+───────────────────────────────────────────── */
+export default function HomeScreen() {
+  const { savedCities, removeCity } = useCities();
+  const scrollRef = useRef<ScrollView>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // Slide de GPS (siempre índice 0)
+  const [gpsSlide, setGpsSlide] = useState<SlideData>({
+    key: '__gps__',
+    label: 'UBICACIÓN ACTUAL',
+    cityName: 'Buscando ubicación...',
+    coords: null,
+    weather: null,
+    updatedAt: null,
+    status: 'idle',
+    message: '',
+  });
+
+  // Slides de ciudades guardadas
+  const [citySlides, setCitySlides] = useState<Record<string, SlideData>>({});
+
+  const allSlides: SlideData[] = useMemo(() => {
+    const cityItems = savedCities.map((c): SlideData => {
+      const saved = citySlides[c.id];
+      return {
+        key: c.id,
+        label: c.name,
+        cityName: saved?.cityName ?? c.name,
+        coords: saved?.coords ?? { latitude: c.lat, longitude: c.lon },
+        weather: saved?.weather ?? null,
+        updatedAt: saved?.updatedAt ?? null,
+        status: saved?.status ?? 'idle',
+        message: saved?.message ?? '',
+      };
+    });
+    return [gpsSlide, ...cityItems];
+  }, [gpsSlide, savedCities, citySlides]);
+
+  const updateGpsSlide = (patch: Partial<SlideData>) =>
+    setGpsSlide((prev) => ({ ...prev, ...patch }));
+
+  const updateCitySlide = (id: string, patch: Partial<SlideData>) =>
+    setCitySlides((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? {}), ...patch, key: id } as SlideData,
+    }));
+
+  // Cargar clima de GPS
+  const loadGpsWeather = async (latitude: number, longitude: number) => {
+    updateGpsSlide({ status: 'loading', message: '' });
     try {
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+      const [weather, address] = await Promise.all([
+        apiFetchWeather(latitude, longitude),
+        apiFetchAddress(latitude, longitude),
+      ]);
+      const cityName = address
+        ? address.split(',').slice(0, 2).join(',').trim()
+        : `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+      updateGpsSlide({
+        coords: { latitude, longitude },
+        weather,
+        cityName,
+        updatedAt: new Date().toLocaleTimeString(),
+        status: 'ready',
+        message: '',
       });
-      await updateFromCoords(current.coords.latitude, current.coords.longitude);
-      setStatus('ready');
+      await persistLocation(latitude, longitude, {
+        address,
+        temperature: weather.temperature,
+        weatherCode: weather.weatherCode,
+        windSpeed: weather.windSpeed,
+      });
     } catch {
-      setStatus('error');
-      setMessage('No se pudo actualizar la ubicación');
+      updateGpsSlide({ status: 'error', message: 'No se pudo obtener el clima' });
     }
   };
 
-  useEffect(() => {
-    let subscription: Location.LocationSubscription | null = null;
+  // Cargar clima de ciudad guardada
+  const loadCityWeather = async (city: City) => {
+    updateCitySlide(city.id, { status: 'loading', message: '' });
+    try {
+      const weather = await apiFetchWeather(city.lat, city.lon);
+      updateCitySlide(city.id, {
+        key: city.id,
+        cityName: city.name,
+        coords: { latitude: city.lat, longitude: city.lon },
+        weather,
+        updatedAt: new Date().toLocaleTimeString(),
+        status: 'ready',
+        message: '',
+      });
+    } catch {
+      updateCitySlide(city.id, { status: 'error', message: 'No se pudo obtener el clima' });
+    }
+  };
 
-    const start = async () => {
-      setStatus('loading');
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setStatus('error');
-        setMessage('Permiso de ubicación denegado');
+  // GPS watcher
+  useEffect(() => {
+    let sub: Location.LocationSubscription | null = null;
+    (async () => {
+      updateGpsSlide({ status: 'loading' });
+      const perm = await Location.requestForegroundPermissionsAsync();
+      if (perm.status !== 'granted') {
+        updateGpsSlide({ status: 'error', message: 'Permiso de ubicación denegado' });
         return;
       }
-
-      subscription = await Location.watchPositionAsync(
+      sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 30 },
-        async (location) => {
-          try {
-            await updateFromCoords(location.coords.latitude, location.coords.longitude);
-            setStatus('ready');
-          } catch {
-            setStatus('error');
-            setMessage('No se pudo obtener el clima');
-          }
-        }
+        (loc) => loadGpsWeather(loc.coords.latitude, loc.coords.longitude)
       );
-    };
-
-    start();
-    return () => { subscription?.remove(); };
+    })();
+    return () => { sub?.remove(); };
   }, []);
 
-  const cityName = address
-    ? address.split(',').slice(0, 2).join(',').trim()
-    : 'Buscando ubicación...';
+  // Cargar clima de ciudades guardadas nuevas
+  useEffect(() => {
+    for (const city of savedCities) {
+      if (!citySlides[city.id] || citySlides[city.id].status === 'idle') {
+        loadCityWeather(city);
+      }
+    }
+  }, [savedCities]);
+
+  const handleScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    setActiveIndex(idx);
+  };
+
+  const activeSlide = allSlides[activeIndex];
+  const isActiveGPS = activeIndex === 0;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
+      {/* Botón eliminar ciudad (solo en slides no-GPS) */}
+      {!isActiveGPS && activeSlide && (
+        <Pressable
+          style={styles.removeBtn}
+          onPress={() => {
+            const city = savedCities[activeIndex - 1];
+            if (!city) return;
+            removeCity(city.id);
+            const newIdx = Math.max(0, activeIndex - 1);
+            setActiveIndex(newIdx);
+            scrollRef.current?.scrollTo({ x: newIdx * SCREEN_WIDTH, animated: true });
+          }}
+        >
+          <Text style={styles.removeBtnText}>✕</Text>
+        </Pressable>
+      )}
+
+      {/* Carrusel horizontal */}
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScroll}
+        scrollEventThrottle={16}
+        style={{ flex: 1 }}
       >
-        {/* ── Hero Card ── */}
-        <View style={styles.heroCard}>
-          <Text style={styles.locationLabel}>UBICACIÓN ACTUAL</Text>
-          <Text style={styles.locationName} numberOfLines={2}>{cityName}</Text>
+        {allSlides.map((slide, i) => (
+          <WeatherSlide
+            key={slide.key}
+            slide={slide}
+            isGPS={i === 0}
+            onRefresh={
+              i === 0
+                ? () => {
+                    if (gpsSlide.coords) {
+                      loadGpsWeather(gpsSlide.coords.latitude, gpsSlide.coords.longitude);
+                    }
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </ScrollView>
 
-          <View style={styles.heroRow}>
-            <View style={styles.heroLeft}>
-              <Text style={styles.temperature}>
-                {weather != null ? `${weather.temperature}°` : '--°'}
-              </Text>
-              <Text style={styles.condition}>{weatherInfo.label}</Text>
-
-              <View style={styles.pillRow}>
-                <View style={styles.pill}>
-                  <Text style={styles.pillText}>💨 {weather?.windSpeed ?? '--'} km/h</Text>
-                </View>
-                {coords && (
-                  <View style={styles.pill}>
-                    <Text style={styles.pillText}>
-                      📍 {coords.latitude.toFixed(2)}, {coords.longitude.toFixed(2)}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-
-            <Text style={styles.heroEmoji}>{weatherInfo.icon}</Text>
-          </View>
-
-          {updatedAt && (
-            <Text style={styles.updatedAt}>Actualizado: {updatedAt}</Text>
-          )}
-          {message ? <Text style={styles.errorText}>{message}</Text> : null}
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.refreshBtn,
-              status === 'loading' && styles.refreshBtnDisabled,
-              pressed && { opacity: 0.75 },
-            ]}
-            onPress={refreshOnce}
-            disabled={status === 'loading'}
-          >
-            <Text style={styles.refreshBtnText}>
-              {status === 'loading' ? 'Actualizando...' : '↻  Actualizar ahora'}
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* ── Pronóstico por hora (indicativo) ── */}
-        <View style={styles.glassCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Pronóstico por hora</Text>
-            <Text style={styles.cardHeaderIcon}>🕐</Text>
-          </View>
-
-          {HOURLY_SLOTS.map((slot, i) => (
-            <View
-              key={slot}
-              style={[styles.hourRow, i === 0 && styles.hourRowActive]}
-            >
-              <Text style={[styles.hourTime, i === 0 && styles.hourTimeActive]}>
-                {slot}
-              </Text>
-              <Text style={styles.hourIcon}>{weatherInfo.icon}</Text>
-              <Text style={styles.hourTemp}>
-                {weather != null ? `${Math.round(weather.temperature + (i * -0.5))}°` : '--°'}
-              </Text>
-            </View>
+      {/* Indicadores de puntos */}
+      {allSlides.length > 1 && (
+        <View style={styles.dotsRow}>
+          {allSlides.map((_, i) => (
+            <Pressable
+              key={i}
+              style={[styles.dot, i === activeIndex && styles.dotActive]}
+              onPress={() => {
+                setActiveIndex(i);
+                scrollRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
+              }}
+            />
           ))}
         </View>
-
-        {/* ── Coordenadas detalladas ── */}
-        {coords && (
-          <View style={styles.glassCard}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Coordenadas GPS</Text>
-              <Text style={styles.cardHeaderIcon}>🛰️</Text>
-            </View>
-            <View style={styles.coordRow}>
-              <View style={styles.coordItem}>
-                <Text style={styles.coordLabel}>LATITUD</Text>
-                <Text style={styles.coordValue}>{coords.latitude.toFixed(6)}</Text>
-              </View>
-              <View style={styles.coordDivider} />
-              <View style={styles.coordItem}>
-                <Text style={styles.coordLabel}>LONGITUD</Text>
-                <Text style={styles.coordValue}>{coords.longitude.toFixed(6)}</Text>
-              </View>
-            </View>
-          </View>
-        )}
-      </ScrollView>
+      )}
     </View>
   );
 }
@@ -293,11 +451,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#111316',
   },
-  scrollContent: {
+  slideScroll: {
     paddingTop: 60,
-    paddingBottom: 32,
+    paddingBottom: 100,
     paddingHorizontal: 20,
     gap: 16,
+  },
+
+  /* ── Botón eliminar ── */
+  removeBtn: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    zIndex: 10,
+    backgroundColor: 'rgba(255,100,100,0.2)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,100,100,0.35)',
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeBtnText: {
+    color: '#ffb4ab',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   /* ── Hero ── */
@@ -326,9 +505,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  heroLeft: {
-    flex: 1,
-  },
+  heroLeft: { flex: 1 },
   temperature: {
     fontSize: 80,
     fontWeight: '800',
@@ -358,10 +535,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  pillText: {
-    fontSize: 13,
-    color: '#FFFFFF',
-  },
+  pillText: { fontSize: 13, color: '#FFFFFF' },
   updatedAt: {
     marginTop: 16,
     fontSize: 11,
@@ -372,25 +546,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#ffb4ab',
   },
-  refreshBtn: {
-    marginTop: 20,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  refreshBtnDisabled: {
-    opacity: 0.5,
-  },
-  refreshBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 15,
-  },
 
-  /* ── Glass Card genérico ── */
+  /* ── Glass Card ── */
   glassCard: {
     backgroundColor: GLASS_BG,
     borderRadius: 24,
@@ -404,14 +561,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  cardHeaderIcon: {
-    fontSize: 20,
-  },
+  cardTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
+  cardHeaderIcon: { fontSize: 20 },
 
   /* ── Hourly ── */
   hourRow: {
@@ -427,20 +578,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GLASS_BORDER,
   },
-  hourTime: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.6)',
-    width: 60,
-  },
-  hourTimeActive: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-  },
-  hourIcon: {
-    fontSize: 22,
-    flex: 1,
-    textAlign: 'center',
-  },
+  hourTime: { fontSize: 15, color: 'rgba(255,255,255,0.6)', width: 60 },
+  hourTimeActive: { color: '#FFFFFF', fontWeight: '600' },
+  hourIcon: { fontSize: 22, flex: 1, textAlign: 'center' },
   hourTemp: {
     fontSize: 18,
     fontWeight: '600',
@@ -450,15 +590,8 @@ const styles = StyleSheet.create({
   },
 
   /* ── Coordenadas ── */
-  coordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  coordItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
+  coordRow: { flexDirection: 'row', alignItems: 'center' },
+  coordItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   coordDivider: {
     width: 1,
     height: 40,
@@ -472,9 +605,26 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.45)',
     marginBottom: 6,
   },
-  coordValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#90cdfd',
+  coordValue: { fontSize: 16, fontWeight: '600', color: '#90cdfd' },
+
+  /* ── Dots ── */
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: 16,
+    paddingTop: 8,
+    backgroundColor: '#111316',
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  dotActive: {
+    width: 20,
+    backgroundColor: '#90cdfd',
   },
 });

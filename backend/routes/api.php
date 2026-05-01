@@ -14,4 +14,5 @@ Route::middleware('supabase.auth')->group(function () {
 
 Route::get('/clima', [ClimaController::class, 'getClima']);
 Route::get('/geocode', [ClimaController::class, 'getAddress']);
+Route::get('/search', [ClimaController::class, 'searchCities']);
 Route::post('/location', [WeatherLogController::class, 'store']);
