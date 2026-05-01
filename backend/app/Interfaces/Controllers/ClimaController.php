@@ -17,7 +17,11 @@ class ClimaController extends Controller
         ]);
 
         $baseUrl = config('services.weather.base_url', 'https://api.open-meteo.com/v1/forecast');
-        $response = Http::get($baseUrl, [
+        $verify = config('services.weather.verify', false);
+
+        $response = Http::withOptions([
+            'verify' => $verify,
+        ])->get($baseUrl, [
             'latitude' => $validated['lat'],
             'longitude' => $validated['lon'],
             'current' => 'temperature_2m,weather_code,wind_speed_10m',
@@ -41,7 +45,11 @@ class ClimaController extends Controller
         ]);
 
         $baseUrl = config('services.geocoding.base_url', 'https://nominatim.openstreetmap.org/reverse');
-        $response = Http::withHeaders([
+        $verify = config('services.geocoding.verify', false);
+
+        $response = Http::withOptions([
+            'verify' => $verify,
+        ])->withHeaders([
             'User-Agent' => 'CliMax/1.0 (climax-backend)',
         ])->get($baseUrl, [
             'format' => 'jsonv2',

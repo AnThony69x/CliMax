@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { clearToken, getToken } from '../../core/auth/authStorage';
+import { clearToken } from '../../core/auth/authStorage';
+import { getSession, signOut } from '../../core/auth/supabaseClient';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -9,10 +10,24 @@ export default function WelcomeScreen() {
 
   useEffect(() => {
     const loadSession = async () => {
-      const token = await getToken();
-      if (token) {
-        router.replace('/(tabs)');
-        return;
+      try {
+        const supabaseSession = await getSession();
+        if (supabaseSession) {
+          const emailConfirmed = (supabaseSession.session?.user as any)?.email_confirmed_at;
+          if (emailConfirmed) {
+            router.replace('/(tabs)');
+            return;
+          }
+          // Sesión de usuario sin confirmar: limpiar para que no quede en segundo plano
+          try {
+            await clearToken();
+            await signOut();
+          } catch {
+            // ignorar errores de limpieza
+          }
+        }
+      } catch (error) {
+        console.warn('No session:', error);
       }
       setChecking(false);
     };
@@ -38,10 +53,10 @@ export default function WelcomeScreen() {
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>Bienvenido</Text>
-        <Text style={styles.subtitle}>Inicia sesion o entra como invitado</Text>
+        <Text style={styles.subtitle}>Inicia sesión o entra como invitado</Text>
 
         <Pressable style={styles.button} onPress={() => router.push('/login')}>
-          <Text style={styles.buttonText}>Iniciar sesion</Text>
+          <Text style={styles.buttonText}>Iniciar sesión</Text>
         </Pressable>
 
         <Pressable style={styles.outlineButton} onPress={() => router.push('/register')}>

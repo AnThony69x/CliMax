@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { login } from '../../core/auth/authApi';
+import { StyleSheet, Text, View } from 'react-native';
+import { Button, Card, Input } from '../../components';
+import { signInWithPassword } from '../../core/auth/supabaseClient';
 import { saveToken } from '../../core/auth/authStorage';
 
 export default function LoginScreen() {
@@ -17,12 +18,14 @@ export default function LoginScreen() {
       setMessage('');
 
       try {
-        const response = await login(email.trim(), password);
-        await saveToken(response.token);
+        const { session } = await signInWithPassword(email.trim(), password);
+        if (session?.access_token) {
+          await saveToken(session.access_token);
+        }
         router.replace('/(tabs)');
       } catch (error) {
         setStatus('error');
-        setMessage('No se pudo iniciar sesion');
+        setMessage(error instanceof Error ? error.message : 'No se pudo iniciar sesión');
       }
     };
 
@@ -31,26 +34,22 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>Iniciar sesion</Text>
+      <Card variant="elevated">
+        <Text style={styles.title}>Iniciar sesión</Text>
         <Text style={styles.subtitle}>Accede a tu cuenta</Text>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Correo</Text>
-          <TextInput
-            style={styles.input}
+        <View style={styles.form}>
+          <Input
+            label="Correo"
             value={email}
             onChangeText={setEmail}
             placeholder="tu@correo.com"
             autoCapitalize="none"
             keyboardType="email-address"
           />
-        </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Contrasena</Text>
-          <TextInput
-            style={styles.input}
+          <Input
+            label="Contraseña"
             value={password}
             onChangeText={setPassword}
             placeholder="********"
@@ -60,20 +59,14 @@ export default function LoginScreen() {
 
         {message ? <Text style={styles.error}>{message}</Text> : null}
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.button,
-            status === 'loading' && styles.buttonDisabled,
-            pressed && status !== 'loading' && styles.buttonPressed,
-          ]}
-          disabled={status === 'loading'}
+        <Button
+          title={status === 'loading' ? 'Entrando...' : 'Entrar'}
           onPress={handleLogin}
-        >
-          <Text style={styles.buttonText}>
-            {status === 'loading' ? 'Entrando...' : 'Entrar'}
-          </Text>
-        </Pressable>
-      </View>
+          variant="primary"
+          loading={status === 'loading'}
+          disabled={status === 'loading'}
+        />
+      </Card>
     </View>
   );
 }
@@ -85,15 +78,6 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: '#F1F5F2',
   },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#0B1411',
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 3,
-  },
   title: {
     fontSize: 24,
     fontWeight: '700',
@@ -103,45 +87,13 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 14,
     color: '#52655A',
+    marginBottom: 24,
   },
-  field: {
-    marginTop: 18,
-  },
-  label: {
-    fontSize: 12,
-    color: '#52655A',
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D6DED9',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: '#0B1411',
-    backgroundColor: '#FBFDFB',
-  },
-  button: {
-    marginTop: 24,
-    backgroundColor: '#2A7A4B',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonPressed: {
-    opacity: 0.85,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  form: {
+    gap: 16,
   },
   error: {
-    marginTop: 10,
+    marginTop: 12,
     fontSize: 12,
     color: '#A33A3A',
   },

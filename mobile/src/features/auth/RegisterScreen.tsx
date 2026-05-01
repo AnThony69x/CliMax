@@ -1,8 +1,8 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { register } from '../../core/auth/authApi';
-import { saveToken } from '../../core/auth/authStorage';
+import { clearToken } from '../../core/auth/authStorage';
+import { signOut, signUp } from '../../core/auth/supabaseClient';
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -11,20 +11,50 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [registered, setRegistered] = useState(false);
 
   const handleRegister = async () => {
     setStatus('loading');
     setMessage('');
 
     try {
-      const response = await register(name.trim(), email.trim(), password);
-      await saveToken(response.token);
-      router.replace('/(tabs)');
+      await signUp(name.trim(), email.trim(), password);
+      try {
+        await clearToken();
+        await signOut();
+      } catch {
+        // La sesión puede no existir si el correo requiere confirmación; ignoramos este error
+      }
+      setStatus('idle');
+      setRegistered(true);
     } catch (error) {
       setStatus('error');
-      setMessage('No se pudo registrar');
+      setMessage(error instanceof Error ? error.message : 'No se pudo registrar');
     }
   };
+
+  if (registered) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.card}>
+          <Text style={styles.title}>¡Registro exitoso!</Text>
+          <Text style={styles.subtitle}>
+            Te enviamos un correo de verificación a{'\n'}
+            <Text style={styles.emailHighlight}>{email.trim()}</Text>
+          </Text>
+          <Text style={styles.instructions}>
+            Revisa tu bandeja de entrada, confirma tu cuenta y después inicia sesión.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+            onPress={() => router.replace('/login')}
+          >
+            <Text style={styles.buttonText}>Ir al login</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -55,7 +85,7 @@ export default function RegisterScreen() {
         </View>
 
         <View style={styles.field}>
-          <Text style={styles.label}>Contrasena</Text>
+          <Text style={styles.label}>Contraseña</Text>
           <TextInput
             style={styles.input}
             value={password}
@@ -110,6 +140,16 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 14,
     color: '#52655A',
+  },
+  emailHighlight: {
+    fontWeight: '700',
+    color: '#1F3D2E',
+  },
+  instructions: {
+    marginTop: 14,
+    fontSize: 14,
+    color: '#52655A',
+    lineHeight: 20,
   },
   field: {
     marginTop: 18,
