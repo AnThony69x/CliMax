@@ -17,7 +17,11 @@ class ClimaController extends Controller
         ]);
 
         $baseUrl = config('services.weather.base_url', 'https://api.open-meteo.com/v1/forecast');
-        $response = Http::get($baseUrl, [
+        $verify = config('services.weather.verify', false);
+
+        $response = Http::withOptions([
+            'verify' => $verify,
+        ])->get($baseUrl, [
             'latitude' => $validated['lat'],
             'longitude' => $validated['lon'],
             'current' => 'temperature_2m,weather_code,wind_speed_10m',
@@ -33,6 +37,46 @@ class ClimaController extends Controller
         return response()->json($response->json());
     }
 
+    public function searchCities(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'city'     => ['required', 'string', 'min:1', 'max:100'],
+            'count'    => ['sometimes', 'integer', 'min:1', 'max:20'],
+            'language' => ['sometimes', 'string', 'size:2'],
+        ]);
+
+        $baseUrl  = config('services.geocoding_search.base_url', 'https://geocoding-api.open-meteo.com/v1/search');
+        $verify   = config('services.geocoding_search.verify', false);
+        $count    = $validated['count'] ?? 10;
+        $language = $validated['language'] ?? 'es';
+
+        $response = Http::withOptions([
+            'verify' => $verify,
+        ])->get($baseUrl, [
+            'name'     => $validated['city'],
+            'count'    => $count,
+            'language' => $language,
+            'format'   => 'json',
+        ]);
+
+        if (! $response->successful()) {
+            return response()->json([
+                'message' => 'No se pudo realizar la búsqueda de ciudades.',
+            ], 502);
+        }
+
+        $data    = $response->json();
+        $results = collect($data['results'] ?? [])->map(fn ($item) => [
+            'id'      => (string) ($item['id'] ?? uniqid()),
+            'name'    => $item['name'] ?? '',
+            'country' => $item['country'] ?? ($item['country_code'] ?? ''),
+            'lat'     => $item['latitude'],
+            'lon'     => $item['longitude'],
+        ])->values();
+
+        return response()->json(['results' => $results]);
+    }
+
     public function getAddress(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -41,7 +85,11 @@ class ClimaController extends Controller
         ]);
 
         $baseUrl = config('services.geocoding.base_url', 'https://nominatim.openstreetmap.org/reverse');
-        $response = Http::withHeaders([
+        $verify = config('services.geocoding.verify', false);
+
+        $response = Http::withOptions([
+            'verify' => $verify,
+        ])->withHeaders([
             'User-Agent' => 'CliMax/1.0 (climax-backend)',
         ])->get($baseUrl, [
             'format' => 'jsonv2',

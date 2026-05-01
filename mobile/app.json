@@ -11,7 +11,11 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicacion para personalizar el clima."
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicación para mostrarte el clima de donde estás.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Necesitamos tu ubicación para mostrarte el clima de donde estás.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -35,6 +39,12 @@
     "plugins": [
       "expo-router",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Necesitamos tu ubicación para mostrarte el clima de donde estás."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
@@ -46,7 +56,14 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Necesitamos acceso a tu galería para que puedas cambiar tu foto de perfil.",
+          "cameraPermission": "Necesitamos acceso a tu cámara para que puedas tomar una foto de perfil."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
