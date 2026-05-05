@@ -58,8 +58,16 @@ export default function ProfileScreen() {
       if (response.ok) {
         const data = await response.json();
         if (data.data) {
-          setProfile(data.data);
-          setName(data.data.name ?? fallback.name ?? '');
+          const mergedProfile: User = {
+            ...fallback,
+            ...data.data,
+            name: data.data.name ?? fallback.name ?? '',
+            email: data.data.email ?? fallback.email,
+            avatar_url: data.data.avatar_url ?? fallback.avatar_url,
+            created_at: data.data.created_at ?? fallback.created_at,
+          };
+          setProfile(mergedProfile);
+          setName(mergedProfile.name ?? '');
         }
       }
     } catch (error) {

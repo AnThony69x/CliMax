@@ -20,13 +20,17 @@ class ProfileController extends Controller
             ], 401);
         }
 
-        $profile = Profile::query()->firstOrCreate(
-            ['id' => $supabaseUserId],
-            []
-        );
+        $defaults = [
+            'name' => $supabaseUser['user_metadata']['name']
+                ?? $supabaseUser['user_metadata']['full_name']
+                ?? null,
+            'avatar_url' => $supabaseUser['user_metadata']['avatar_url'] ?? null,
+        ];
+
+        $profile = Profile::query()->firstOrCreate(['id' => $supabaseUserId], $defaults);
 
         return response()->json([
-            'data' => $this->toResponse($profile),
+            'data' => $this->toResponse($profile, $supabaseUser),
         ]);
     }
 
@@ -55,18 +59,25 @@ class ProfileController extends Controller
         $profile->save();
 
         return response()->json([
-            'data' => $this->toResponse($profile),
+            'data' => $this->toResponse($profile, $supabaseUser),
         ]);
     }
 
-    private function toResponse(Profile $profile): array
+    private function toResponse(Profile $profile, array $supabaseUser): array
     {
+        $fallbackName = $supabaseUser['user_metadata']['name']
+            ?? $supabaseUser['user_metadata']['full_name']
+            ?? null;
+        $fallbackAvatar = $supabaseUser['user_metadata']['avatar_url'] ?? null;
+
         return [
             'id' => $profile->id,
-            'name' => $profile->name,
-            'avatar_url' => $profile->avatar_url,
-            'created_at' => $profile->created_at,
-            'updated_at' => $profile->updated_at,
+            'email' => $supabaseUser['email'] ?? null,
+            'phone' => $supabaseUser['phone'] ?? null,
+            'name' => $profile->name ?: $fallbackName,
+            'avatar_url' => $profile->avatar_url ?: $fallbackAvatar,
+            'created_at' => $profile->created_at ?? ($supabaseUser['created_at'] ?? null),
+            'updated_at' => $profile->updated_at ?? ($supabaseUser['updated_at'] ?? null),
         ];
     }
 }
