@@ -341,10 +341,19 @@ export default function HomeScreen() {
     }
   };
 
-  // GPS watcher
+  // GPS polling seguro (evita errores de removeSubscription en algunos entornos)
   useEffect(() => {
-    let sub: Location.LocationSubscription | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
     let isMounted = true;
+
+    const readAndLoadLocation = async () => {
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      if (!isMounted) return;
+      await loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
+    };
+
     (async () => {
       try {
         updateGpsSlide({ status: 'loading', message: '' });
@@ -355,23 +364,11 @@ export default function HomeScreen() {
           return;
         }
 
-        // En web expo-location puede fallar al crear subscriptions;
-        // obtenemos una lectura única y evitamos el watcher continuo.
-        if (Platform.OS === 'web') {
-          const loc = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          if (!isMounted) return;
-          await loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
-          return;
-        }
-
-        sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 30 },
-          (loc) => {
-            void loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
-          }
-        );
+        await readAndLoadLocation();
+        // Refresco periódico para mantener clima/ubicación al día sin usar watcher.
+        pollTimer = setInterval(() => {
+          void readAndLoadLocation();
+        }, 30000);
       } catch {
         if (!isMounted) return;
         updateGpsSlide({
@@ -382,7 +379,7 @@ export default function HomeScreen() {
     })();
     return () => {
       isMounted = false;
-      sub?.remove();
+      if (pollTimer) clearInterval(pollTimer);
     };
   }, []);
 
