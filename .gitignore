@@ -33,3 +33,6 @@ docker-compose.override.yml
 
 # github
 .github/
+
+# curso
+.cursorrules
