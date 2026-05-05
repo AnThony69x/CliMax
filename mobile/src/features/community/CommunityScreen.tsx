@@ -2,7 +2,9 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
+import { Buffer } from 'buffer';
 import {
   ActivityIndicator,
   Alert as NativeAlert,
@@ -11,6 +13,7 @@ import {
   Image,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,6 +22,7 @@ import {
 } from 'react-native';
 
 const GHOST_ITEMS = Array.from({ length: 6 });
+const COMMUNITY_BUCKET_IDS = ['community-alerts', 'COMMUNITY-ALERTS'] as const;
 type PostSeverity = 'informacion' | 'alerta' | 'grave';
 type CommunityPost = {
   id: string;
@@ -42,9 +46,13 @@ export default function CommunityScreen() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [imageMimeType, setImageMimeType] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [severity, setSeverity] = useState<PostSeverity>('informacion');
+  const [communityTableMissing, setCommunityTableMissing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const goToLogin = () => {
     router.push('/login?force=1');
@@ -87,6 +95,23 @@ export default function CommunityScreen() {
     }
   };
 
+  const refreshFeed = async () => {
+    setRefreshing(true);
+    try {
+      const session = await getSession();
+      const uid = (session?.user?.id as string | undefined) ?? null;
+      setIsLoggedIn(Boolean(uid));
+      setUserId(uid);
+      if (uid) {
+        await loadPosts(uid);
+      } else {
+        setPosts([]);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const loadPosts = async (uid: string) => {
     const { data, error } = await supabase
       .from('community_posts')
@@ -95,10 +120,19 @@ export default function CommunityScreen() {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.warn('Error loading community posts:', error.message);
+      const missingTable =
+        error.code === 'PGRST205' ||
+        error.message?.includes("Could not find the table 'public.community_posts'");
+      if (missingTable) {
+        setCommunityTableMissing(true);
+        console.warn('[Community][loadPosts] Tabla faltante: public.community_posts');
+      } else {
+        console.warn('[Community][loadPosts] Error inesperado:', error.message);
+      }
       setPosts([]);
       return;
     }
+    setCommunityTableMissing(false);
     const normalized = (data ?? []).map((row: any) => ({
       id: row.id,
       user_id: row.user_id,
@@ -114,7 +148,7 @@ export default function CommunityScreen() {
   const seleccionarImagen = async () => {
     const permiso = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permiso.granted) {
-      NativeAlert.alert('Permiso requerido', 'Debes permitir acceso a la galeria.');
+      NativeAlert.alert('Permiso requerido', 'Debes permitir acceso a la galería.');
       return;
     }
 
@@ -122,18 +156,22 @@ export default function CommunityScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.9,
+      quality: 0.7,
+      base64: true,
     });
 
-    if (!resultado.canceled && resultado.assets[0]?.uri) {
-      setImageUri(resultado.assets[0].uri);
+    const selected = resultado.assets?.[0];
+    if (!resultado.canceled && selected?.uri) {
+      setImageUri(selected.uri);
+      setImageBase64(selected.base64 ?? null);
+      setImageMimeType(selected.mimeType ?? null);
     }
   };
 
   const tomarFoto = async () => {
     const permiso = await ImagePicker.requestCameraPermissionsAsync();
     if (!permiso.granted) {
-      NativeAlert.alert('Permiso requerido', 'Debes permitir acceso a la camara.');
+      NativeAlert.alert('Permiso requerido', 'Debes permitir acceso a la cámara.');
       return;
     }
 
@@ -141,17 +179,23 @@ export default function CommunityScreen() {
       mediaTypes: ['images'],
       allowsEditing: true,
       aspect: [4, 3],
-      quality: 0.9,
+      quality: 0.7,
+      base64: true,
     });
 
-    if (!resultado.canceled && resultado.assets[0]?.uri) {
-      setImageUri(resultado.assets[0].uri);
+    const selected = resultado.assets?.[0];
+    if (!resultado.canceled && selected?.uri) {
+      setImageUri(selected.uri);
+      setImageBase64(selected.base64 ?? null);
+      setImageMimeType(selected.mimeType ?? null);
     }
   };
 
   const limpiarFormulario = () => {
     setContent('');
     setImageUri(null);
+    setImageBase64(null);
+    setImageMimeType(null);
     setEditingId(null);
     setSeverity('informacion');
   };
@@ -162,37 +206,53 @@ export default function CommunityScreen() {
       NativeAlert.alert('Advertencia', 'Debes seleccionar o tomar una imagen.');
       return;
     }
-    if (!content.trim()) {
-      NativeAlert.alert('Advertencia', 'Debes escribir una observación.');
+    const normalizedLocation = content.trim();
+    if (!normalizedLocation || normalizedLocation.length < 6) {
+      NativeAlert.alert('Advertencia', 'Debes escribir una ubicación válida. Ejemplo: Avenida 10 de Agosto y Colón.');
       return;
     }
 
     setSaving(true);
+    console.log('[Community][savePost] Inicio', {
+      editing: Boolean(editingId),
+      hasImageUri: Boolean(imageUri),
+      hasBase64: Boolean(imageBase64),
+      severity,
+    });
     try {
+      if (communityTableMissing) {
+        NativeAlert.alert(
+          'Configuración pendiente',
+          'Falta crear la tabla community_posts en Supabase para guardar publicaciones.'
+        );
+        return;
+      }
       let imageUrlToSave: string | null = imageUri;
       let imagePathToSave: string | null = null;
 
       if (!imageUri.startsWith('http')) {
-        const ext = imageUri.split('.').pop()?.toLowerCase() ?? 'jpg';
+        const mimeType = normalizeMimeType(imageMimeType, imageUri);
+        const ext = extensionFromMimeTypeOrUri(mimeType, imageUri);
         const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
         imagePathToSave = `${userId}/${fileName}`;
 
-        const response = await fetch(imageUri);
-        const blob = await response.blob();
-        const { error: uploadError } = await supabase.storage
-          .from('community-posts')
-          .upload(imagePathToSave, blob, { upsert: false, contentType: `image/${ext}` });
-        if (uploadError) throw uploadError;
-
-        const { data: publicData } = supabase.storage.from('community-posts').getPublicUrl(imagePathToSave);
-        imageUrlToSave = publicData.publicUrl;
+        const imageBase64Payload = imageBase64 ?? (await fileUriToBase64(imageUri));
+        const fileBody = base64ToUint8Array(imageBase64Payload);
+        console.log('[Community][savePost] Imagen convertida', {
+          path: imagePathToSave,
+          source: imageBase64 ? 'picker-base64' : 'file-system-base64',
+          mimeType,
+        });
+        const uploadResult = await uploadToCommunityBucket(imagePathToSave, fileBody, mimeType);
+        console.log('[Community][savePost] Upload OK', uploadResult);
+        imageUrlToSave = uploadResult.publicUrl;
       }
 
       if (editingId) {
         let { error } = await supabase
           .from('community_posts')
           .update({
-            content: content.trim(),
+            content: normalizedLocation,
             image_url: imageUrlToSave,
             image_path: imagePathToSave,
             severity,
@@ -202,15 +262,16 @@ export default function CommunityScreen() {
         if (error && error.message?.includes('column')) {
           ({ error } = await supabase
             .from('community_posts')
-            .update({ content: content.trim() })
+            .update({ content: normalizedLocation })
             .eq('id', editingId)
             .eq('user_id', userId));
         }
         if (error) throw error;
+        console.log('[Community][savePost] Update DB OK', { id: editingId });
       } else {
         let { error } = await supabase.from('community_posts').insert({
           user_id: userId,
-          content: content.trim(),
+          content: normalizedLocation,
           image_url: imageUrlToSave,
           image_path: imagePathToSave,
           severity,
@@ -218,20 +279,37 @@ export default function CommunityScreen() {
         if (error && error.message?.includes('column')) {
           ({ error } = await supabase.from('community_posts').insert({
             user_id: userId,
-            content: content.trim(),
+            content: normalizedLocation,
           }));
         }
         if (error) throw error;
+        console.log('[Community][savePost] Insert DB OK');
       }
       limpiarFormulario();
       setComposerOpen(false);
       await loadPosts(userId);
+      console.log('[Community][savePost] Finalizado OK');
     } catch (error: any) {
+      console.error('[Community][savePost] ERROR', {
+        name: error?.name,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        code: error?.code,
+      });
+      const rawMessage = typeof error?.message === 'string' ? error.message : '';
+      const normalizedError = rawMessage.toLowerCase();
+      const networkError =
+        normalizedError.includes('network request failed') ||
+        normalizedError.includes('failed to fetch');
+
       NativeAlert.alert(
         'No se pudo guardar',
-        error?.message?.includes('relation')
-          ? 'Falta la tabla community_posts en Supabase.'
-          : (error?.message ?? 'Ocurrió un error guardando la publicación.')
+        networkError
+          ? 'Falló la conexión de red al subir la foto. Verifica internet, permisos de cámara/galería y vuelve a intentarlo.'
+          : rawMessage.includes('relation')
+            ? 'Falta la tabla community_posts en Supabase.'
+            : (rawMessage || 'Ocurrió un error guardando la publicación.')
       );
     } finally {
       setSaving(false);
@@ -242,6 +320,8 @@ export default function CommunityScreen() {
     setEditingId(post.id);
     setContent(post.content);
     setImageUri(post.image_url ?? null);
+    setImageBase64(null);
+    setImageMimeType(null);
     setSeverity(post.severity ?? 'informacion');
     setComposerOpen(true);
   };
@@ -258,7 +338,7 @@ export default function CommunityScreen() {
       if (evidenceHasPath(posts, id)) {
         const path = posts.find((post) => post.id === id)?.image_path;
         if (path) {
-          await supabase.storage.from('community-posts').remove([path]);
+          await removeFromCommunityBuckets([path]);
         }
       }
       setPosts((prev) => prev.filter((post) => post.id !== id));
@@ -272,7 +352,21 @@ export default function CommunityScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView
+        style={{ flex: 1 }}
+        alwaysBounceVertical
+        overScrollMode="always"
+        contentContainerStyle={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refreshFeed}
+            tintColor="#90cdfd"
+            colors={['#90cdfd']}
+            progressViewOffset={70}
+          />
+        }
+      >
         <Text style={styles.title}>Comunidad</Text>
         <Text style={styles.subtitle}>Espacio de publicaciones y reportes ciudadanos.</Text>
 
@@ -281,11 +375,8 @@ export default function CommunityScreen() {
             <ActivityIndicator size="large" color="#90cdfd" />
           </View>
         ) : isLoggedIn ? (
-          <View style={styles.crudWrap}>
-          <Text style={styles.crudTitle}>Comunidad</Text>
-          <Text style={styles.crudSubtitle}>Publicaciones de la comunidad tipo feed</Text>
-
-          <View style={styles.postsList}>
+          <>
+          <View style={styles.postsListOutside}>
             <Text style={styles.feedSectionTitle}>Publicaciones recientes</Text>
             {posts.length === 0 ? (
               <View style={styles.feedSkeletonWrap}>
@@ -336,7 +427,7 @@ export default function CommunityScreen() {
               ))
             )}
           </View>
-          </View>
+          </>
         ) : (
           <View style={styles.skeletonWrap}>
           <Animated.View style={{ transform: [{ translateY: feedOffset }] }}>
@@ -429,12 +520,12 @@ export default function CommunityScreen() {
                 ))}
               </View>
 
-              <Text style={styles.label}>Observación:</Text>
+              <Text style={styles.label}>Ubicacion:</Text>
               <TextInput
                 style={styles.input}
                 value={content}
                 onChangeText={setContent}
-                placeholder="Escribe una observación sobre la evidencia..."
+                placeholder="Ejemplo: Avenida Amazonas y Naciones Unidas"
                 placeholderTextColor="rgba(255,255,255,0.45)"
                 multiline
               />
@@ -494,8 +585,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.14)',
     backgroundColor: 'rgba(9,12,18,0.95)',
     padding: 14,
-    gap: 12,
-    minHeight: 500,
+    gap: 8,
   },
   crudTitle: {
     color: '#FFFFFF',
@@ -626,6 +716,11 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 2,
   },
+  postsListOutside: {
+    gap: 12,
+    marginTop: 12,
+    marginHorizontal: -4,
+  },
   feedSectionTitle: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -696,10 +791,10 @@ const styles = StyleSheet.create({
   },
   postCard: {
     backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 14,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
-    padding: 12,
+    padding: 14,
     gap: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -736,8 +831,8 @@ const styles = StyleSheet.create({
   },
   postImage: {
     width: '100%',
-    height: 180,
-    borderRadius: 10,
+    height: 240,
+    borderRadius: 14,
     marginBottom: 4,
   },
   postDate: {
@@ -899,4 +994,78 @@ const styles = StyleSheet.create({
 
 function evidenceHasPath(posts: CommunityPost[], id: string) {
   return Boolean(posts.find((post) => post.id === id)?.image_path);
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const cleaned = base64.includes(',') ? base64.split(',').pop() ?? '' : base64;
+  return Buffer.from(cleaned, 'base64');
+}
+
+async function fileUriToBase64(uri: string): Promise<string> {
+  return FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+}
+
+function normalizeMimeType(rawMimeType: string | null, uri: string): string {
+  const normalized = (rawMimeType ?? '').toLowerCase().trim();
+  if (normalized === 'image/jpg') return 'image/jpeg';
+  if (normalized.startsWith('image/')) return normalized;
+
+  const extFromUri = extensionFromUri(uri);
+  if (extFromUri === 'jpg') return 'image/jpeg';
+  if (extFromUri) return `image/${extFromUri}`;
+  return 'image/jpeg';
+}
+
+function extensionFromMimeTypeOrUri(mimeType: string, uri: string): string {
+  const extFromMime = mimeType.split('/')[1]?.toLowerCase();
+  if (extFromMime === 'jpeg') return 'jpg';
+  if (extFromMime) return extFromMime;
+  return extensionFromUri(uri) || 'jpg';
+}
+
+function extensionFromUri(uri: string): string {
+  const cleanUri = uri.split('?')[0];
+  const fromUri = cleanUri.split('.').pop()?.toLowerCase();
+  if (!fromUri) return 'jpg';
+  return fromUri.replace(/[^a-z0-9]/g, '');
+}
+
+async function uploadToCommunityBucket(path: string, body: ArrayBufferView | Blob, contentType: string) {
+  let lastError: any = null;
+
+  for (const bucketId of COMMUNITY_BUCKET_IDS) {
+    console.log('[Community][upload] Intentando bucket', { bucketId, path });
+    const { error } = await supabase.storage
+      .from(bucketId)
+      .upload(path, body, { upsert: false, contentType });
+
+    if (!error) {
+      const { data } = supabase.storage.from(bucketId).getPublicUrl(path);
+      console.log('[Community][upload] Upload exitoso', { bucketId, publicUrl: data.publicUrl });
+      return { bucketId, publicUrl: data.publicUrl };
+    }
+    console.warn('[Community][upload] Fallo bucket', {
+      bucketId,
+      message: error.message,
+      code: (error as any)?.code,
+    });
+    lastError = error;
+  }
+
+  const msg = (lastError?.message ?? '').toLowerCase();
+  if (msg.includes('bucket') || msg.includes('not found')) {
+    throw new Error('No se encontró el bucket community-alerts/COMMUNITY-ALERTS en Supabase.');
+  }
+  if (msg.includes('row-level security') || msg.includes('policy') || msg.includes('unauthorized')) {
+    throw new Error('Las políticas del bucket no permiten subir archivos para este usuario.');
+  }
+  throw lastError ?? new Error('No se pudo subir la imagen al bucket de comunidad.');
+}
+
+async function removeFromCommunityBuckets(paths: string[]) {
+  for (const bucketId of COMMUNITY_BUCKET_IDS) {
+    await supabase.storage.from(bucketId).remove(paths).catch(() => {});
+  }
 }
