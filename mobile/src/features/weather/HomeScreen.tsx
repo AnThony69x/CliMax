@@ -357,6 +357,47 @@ export default function HomeScreen() {
     (async () => {
       try {
         updateGpsSlide({ status: 'loading', message: '' });
+
+        if (Platform.OS === 'web') {
+          if (!navigator.geolocation) {
+            updateGpsSlide({ status: 'error', message: 'Geolocalizacion no disponible en este navegador' });
+            return;
+          }
+
+          const getWebPosition = async () =>
+            new Promise<{ latitude: number; longitude: number }>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(
+                (position) =>
+                  resolve({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                  }),
+                (error) => reject(error),
+                {
+                  enableHighAccuracy: true,
+                  timeout: 15000,
+                  maximumAge: 10000,
+                }
+              );
+            });
+
+          const coords = await getWebPosition();
+          if (!isMounted) return;
+          await loadGpsWeather(coords.latitude, coords.longitude);
+
+          pollTimer = setInterval(() => {
+            void getWebPosition()
+              .then((next) => {
+                if (!isMounted) return;
+                return loadGpsWeather(next.latitude, next.longitude);
+              })
+              .catch(() => {
+                // ignorar errores intermitentes en web polling
+              });
+          }, 30000);
+          return;
+        }
+
         const perm = await Location.requestForegroundPermissionsAsync();
         if (!isMounted) return;
         if (perm.status !== 'granted') {
