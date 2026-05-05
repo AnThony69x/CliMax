@@ -5,6 +5,7 @@ import {
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -343,19 +344,46 @@ export default function HomeScreen() {
   // GPS watcher
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
+    let isMounted = true;
     (async () => {
-      updateGpsSlide({ status: 'loading' });
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (perm.status !== 'granted') {
-        updateGpsSlide({ status: 'error', message: 'Permiso de ubicación denegado' });
-        return;
+      try {
+        updateGpsSlide({ status: 'loading', message: '' });
+        const perm = await Location.requestForegroundPermissionsAsync();
+        if (!isMounted) return;
+        if (perm.status !== 'granted') {
+          updateGpsSlide({ status: 'error', message: 'Permiso de ubicación denegado' });
+          return;
+        }
+
+        // En web expo-location puede fallar al crear subscriptions;
+        // obtenemos una lectura única y evitamos el watcher continuo.
+        if (Platform.OS === 'web') {
+          const loc = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          if (!isMounted) return;
+          await loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
+          return;
+        }
+
+        sub = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 30 },
+          (loc) => {
+            void loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
+          }
+        );
+      } catch {
+        if (!isMounted) return;
+        updateGpsSlide({
+          status: 'error',
+          message: 'No se pudo inicializar la ubicación en este dispositivo',
+        });
       }
-      sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 30 },
-        (loc) => loadGpsWeather(loc.coords.latitude, loc.coords.longitude)
-      );
     })();
-    return () => { sub?.remove(); };
+    return () => {
+      isMounted = false;
+      sub?.remove();
+    };
   }, []);
 
   // Cargar clima de ciudades guardadas nuevas

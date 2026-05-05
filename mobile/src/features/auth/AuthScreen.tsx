@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -106,6 +106,8 @@ const fieldStyles = StyleSheet.create({
 /* ── Pantalla principal ── */
 export default function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }) {
   const router = useRouter();
+  const params = useLocalSearchParams<{ force?: string }>();
+  const forceLoginView = params.force === '1';
   const [mode, setMode]         = useState<AuthMode>(initialMode);
   const [checking, setChecking] = useState(true);
 
@@ -130,11 +132,11 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
     getSession()
       .then((result) => {
         const confirmed = (result?.session?.user as any)?.email_confirmed_at;
-        if (confirmed) router.replace('/(tabs)');
+        if (confirmed && !forceLoginView) router.replace('/(tabs)');
         else setChecking(false);
       })
       .catch(() => setChecking(false));
-  }, []);
+  }, [forceLoginView]);
 
   const handleGuest = async () => {
     await clearToken();
