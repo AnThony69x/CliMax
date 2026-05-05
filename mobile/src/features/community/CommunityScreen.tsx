@@ -2,12 +2,14 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert as NativeAlert,
   Animated,
   Easing,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +19,7 @@ import {
 } from 'react-native';
 
 const GHOST_ITEMS = Array.from({ length: 6 });
+type PostSeverity = 'informacion' | 'alerta' | 'grave';
 type CommunityPost = {
   id: string;
   user_id: string;
@@ -24,7 +27,10 @@ type CommunityPost = {
   created_at: string;
   image_url?: string | null;
   image_path?: string | null;
+  severity?: PostSeverity;
 };
+
+const SEVERITY_OPTIONS: PostSeverity[] = ['informacion', 'alerta', 'grave'];
 
 export default function CommunityScreen() {
   const router = useRouter();
@@ -37,6 +43,8 @@ export default function CommunityScreen() {
   const [content, setContent] = useState('');
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [severity, setSeverity] = useState<PostSeverity>('informacion');
 
   const goToLogin = () => {
     router.push('/login?force=1');
@@ -98,6 +106,7 @@ export default function CommunityScreen() {
       created_at: row.created_at,
       image_url: typeof row.image_url === 'string' ? row.image_url : null,
       image_path: typeof row.image_path === 'string' ? row.image_path : null,
+      severity: (row.severity as PostSeverity | null) ?? 'informacion',
     })) as CommunityPost[];
     setPosts(normalized);
   };
@@ -144,6 +153,7 @@ export default function CommunityScreen() {
     setContent('');
     setImageUri(null);
     setEditingId(null);
+    setSeverity('informacion');
   };
 
   const savePost = async () => {
@@ -181,7 +191,12 @@ export default function CommunityScreen() {
       if (editingId) {
         let { error } = await supabase
           .from('community_posts')
-          .update({ content: content.trim(), image_url: imageUrlToSave, image_path: imagePathToSave })
+          .update({
+            content: content.trim(),
+            image_url: imageUrlToSave,
+            image_path: imagePathToSave,
+            severity,
+          })
           .eq('id', editingId)
           .eq('user_id', userId);
         if (error && error.message?.includes('column')) {
@@ -198,6 +213,7 @@ export default function CommunityScreen() {
           content: content.trim(),
           image_url: imageUrlToSave,
           image_path: imagePathToSave,
+          severity,
         });
         if (error && error.message?.includes('column')) {
           ({ error } = await supabase.from('community_posts').insert({
@@ -208,6 +224,7 @@ export default function CommunityScreen() {
         if (error) throw error;
       }
       limpiarFormulario();
+      setComposerOpen(false);
       await loadPosts(userId);
     } catch (error: any) {
       NativeAlert.alert(
@@ -225,6 +242,8 @@ export default function CommunityScreen() {
     setEditingId(post.id);
     setContent(post.content);
     setImageUri(post.image_url ?? null);
+    setSeverity(post.severity ?? 'informacion');
+    setComposerOpen(true);
   };
 
   const deletePost = async (id: string) => {
@@ -252,65 +271,54 @@ export default function CommunityScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Comunidad</Text>
-      <Text style={styles.subtitle}>Espacio de publicaciones y reportes ciudadanos.</Text>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>Comunidad</Text>
+        <Text style={styles.subtitle}>Espacio de publicaciones y reportes ciudadanos.</Text>
 
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color="#90cdfd" />
-        </View>
-      ) : isLoggedIn ? (
-        <View style={styles.crudWrap}>
-          <Text style={styles.crudTitle}>Registro de Evidencia</Text>
-          <Text style={styles.crudSubtitle}>Uso de camara y galeria para publicaciones de comunidad</Text>
-
-          <Text style={styles.label}>Imagen seleccionada:</Text>
-          {imageUri ? (
-            <Image source={{ uri: imageUri }} style={styles.previewImage} />
-          ) : (
-            <View style={styles.emptyPreview}>
-              <Text style={styles.emptyPreviewText}>No hay imagen seleccionada</Text>
-            </View>
-          )}
-
-          <Pressable style={styles.cameraBtn} onPress={tomarFoto}>
-            <Text style={styles.actionBtnText}>Tomar Foto</Text>
-          </Pressable>
-          <Pressable style={styles.galleryBtn} onPress={seleccionarImagen}>
-            <Text style={styles.actionBtnText}>Seleccionar de Galeria</Text>
-          </Pressable>
-
-          <Text style={styles.label}>Observación:</Text>
-          <TextInput
-            style={styles.input}
-            value={content}
-            onChangeText={setContent}
-            placeholder="Escribe una observación sobre la evidencia..."
-            placeholderTextColor="rgba(255,255,255,0.45)"
-            multiline
-          />
-          <View style={styles.crudActions}>
-            <Pressable
-              style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.85 }, saving && { opacity: 0.6 }]}
-              onPress={savePost}
-              disabled={saving}
-            >
-              <Text style={styles.saveBtnText}>
-                {saving ? 'Guardando...' : editingId ? 'Actualizar' : 'Publicar'}
-              </Text>
-            </Pressable>
-            <Pressable style={styles.cancelBtn} onPress={limpiarFormulario}>
-              <Text style={styles.cancelBtnText}>{editingId ? 'Cancelar' : 'Limpiar'}</Text>
-            </Pressable>
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color="#90cdfd" />
           </View>
+        ) : isLoggedIn ? (
+          <View style={styles.crudWrap}>
+          <Text style={styles.crudTitle}>Comunidad</Text>
+          <Text style={styles.crudSubtitle}>Publicaciones de la comunidad tipo feed</Text>
 
           <View style={styles.postsList}>
+            <Text style={styles.feedSectionTitle}>Publicaciones recientes</Text>
             {posts.length === 0 ? (
-              <Text style={styles.emptyPostsText}>Aun no tienes publicaciones.</Text>
+              <View style={styles.feedSkeletonWrap}>
+                {[0, 1, 2].map((item) => (
+                  <View key={item} style={styles.feedSkeletonCard}>
+                    <View style={styles.feedSkeletonHeader}>
+                      <View style={styles.feedSkeletonAvatar} />
+                      <View style={styles.feedSkeletonHeadLines}>
+                        <View style={styles.feedSkeletonLineLg} />
+                        <View style={styles.feedSkeletonLineSm} />
+                      </View>
+                    </View>
+                    <View style={styles.feedSkeletonImage} />
+                    <View style={styles.feedSkeletonLineMd} />
+                    <View style={styles.feedSkeletonLineXs} />
+                  </View>
+                ))}
+                <Text style={styles.emptyPostsText}>Aun no tienes publicaciones.</Text>
+              </View>
             ) : (
               posts.map((post) => (
                 <View key={post.id} style={styles.postCard}>
+                  <View style={styles.feedHeader}>
+                    <View style={styles.avatarDot} />
+                    <Text style={styles.feedUser}>Tu reporte</Text>
+                    <Text style={styles.feedBadge}>
+                      {(post.severity ?? 'informacion') === 'informacion'
+                        ? 'Información'
+                        : (post.severity ?? 'informacion') === 'alerta'
+                          ? 'Alerta'
+                          : 'Grave'}
+                    </Text>
+                  </View>
                   {post.image_url ? <Image source={{ uri: post.image_url }} style={styles.postImage} /> : null}
                   <Text style={styles.postText}>{post.content}</Text>
                   <Text style={styles.postDate}>
@@ -328,9 +336,9 @@ export default function CommunityScreen() {
               ))
             )}
           </View>
-        </View>
-      ) : (
-        <View style={styles.skeletonWrap}>
+          </View>
+        ) : (
+          <View style={styles.skeletonWrap}>
           <Animated.View style={{ transform: [{ translateY: feedOffset }] }}>
             {[...GHOST_ITEMS, ...GHOST_ITEMS].map((_, index) => (
               <View key={index} style={styles.skeletonCard}>
@@ -353,13 +361,110 @@ export default function CommunityScreen() {
               <Text style={styles.loginBtnText}>Ir a login</Text>
             </Pressable>
           </View>
-        </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {isLoggedIn && !loading && (
+        <Pressable
+          style={({ pressed }) => [styles.fabBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => {
+            if (composerOpen && !editingId) limpiarFormulario();
+            setComposerOpen((prev) => !prev);
+          }}
+        >
+          <Ionicons name={composerOpen ? 'close' : 'camera'} size={24} color="#FFFFFF" />
+        </Pressable>
       )}
-    </ScrollView>
+
+      <Modal
+        visible={isLoggedIn && composerOpen}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setComposerOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingId ? 'Editar publicación' : 'Nueva publicación'}
+              </Text>
+              <Pressable
+                style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.75 }]}
+                onPress={() => setComposerOpen(false)}
+              >
+                <Ionicons name="close" size={20} color="#FFFFFF" />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScrollContent}>
+              <Text style={styles.stepLabel}>Paso 1: toma o selecciona una foto</Text>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.previewImage} />
+              ) : (
+                <View style={styles.emptyPreview}>
+                  <Text style={styles.emptyPreviewText}>No hay imagen seleccionada</Text>
+                </View>
+              )}
+
+              <Pressable style={styles.cameraBtn} onPress={tomarFoto}>
+                <Text style={styles.actionBtnText}>Tomar Foto</Text>
+              </Pressable>
+              <Pressable style={styles.galleryBtn} onPress={seleccionarImagen}>
+                <Text style={styles.actionBtnText}>Seleccionar de Galeria</Text>
+              </Pressable>
+
+              <Text style={styles.stepLabel}>Paso 2: clasifica la publicación</Text>
+              <View style={styles.severityRow}>
+                {SEVERITY_OPTIONS.map((item) => (
+                  <Pressable
+                    key={item}
+                    onPress={() => setSeverity(item)}
+                    style={[styles.severityChip, severity === item && styles.severityChipActive]}
+                  >
+                    <Text style={styles.severityChipText}>
+                      {item === 'informacion' ? 'Información' : item === 'alerta' ? 'Alerta' : 'Grave'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              <Text style={styles.label}>Observación:</Text>
+              <TextInput
+                style={styles.input}
+                value={content}
+                onChangeText={setContent}
+                placeholder="Escribe una observación sobre la evidencia..."
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                multiline
+              />
+              <View style={styles.crudActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.85 }, saving && { opacity: 0.6 }]}
+                  onPress={savePost}
+                  disabled={saving}
+                >
+                  <Text style={styles.saveBtnText}>
+                    {saving ? 'Guardando...' : editingId ? 'Actualizar' : 'Publicar'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.cancelBtn} onPress={limpiarFormulario}>
+                  <Text style={styles.cancelBtnText}>{editingId ? 'Cancelar' : 'Limpiar'}</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#0c0e11',
+  },
   container: {
     flexGrow: 1,
     backgroundColor: '#0c0e11',
@@ -403,6 +508,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
     marginTop: -4,
+    marginBottom: 8,
+  },
+  stepLabel: {
+    color: '#dbeafe',
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 6,
   },
   label: {
     color: '#FFFFFF',
@@ -450,6 +562,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 14,
   },
+  severityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 2,
+  },
+  severityChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 999,
+    paddingVertical: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  severityChipActive: {
+    borderColor: '#90cdfd',
+    backgroundColor: 'rgba(144,205,253,0.25)',
+  },
+  severityChipText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
   input: {
     minHeight: 96,
     borderRadius: 12,
@@ -491,17 +626,108 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 2,
   },
-  emptyPostsText: {
-    color: 'rgba(255,255,255,0.58)',
-    fontSize: 13,
+  feedSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 2,
   },
-  postCard: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 12,
+  feedSkeletonWrap: {
+    gap: 10,
+  },
+  feedSkeletonCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.14)',
     padding: 12,
+    gap: 10,
+  },
+  feedSkeletonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  feedSkeletonAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  feedSkeletonHeadLines: {
+    flex: 1,
+    gap: 6,
+  },
+  feedSkeletonImage: {
+    width: '100%',
+    height: 140,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  feedSkeletonLineLg: {
+    width: '62%',
+    height: 8,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  feedSkeletonLineMd: {
+    width: '84%',
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+  },
+  feedSkeletonLineSm: {
+    width: '38%',
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  feedSkeletonLineXs: {
+    width: '55%',
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  emptyPostsText: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  postCard: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    padding: 12,
+    gap: 9,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.22,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  feedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+  },
+  avatarDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#2A7A4B',
+  },
+  feedUser: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+    flex: 1,
+  },
+  feedBadge: {
+    color: '#dbeafe',
+    fontSize: 11,
+    fontWeight: '700',
   },
   postText: {
     color: '#FFFFFF',
@@ -615,6 +841,59 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+  fabBtn: {
+    position: 'absolute',
+    right: 20,
+    bottom: 24,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#1565c0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    maxHeight: '88%',
+    backgroundColor: '#0f1522',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    padding: 14,
+    gap: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  modalCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  modalScrollContent: {
+    gap: 10,
+    paddingBottom: 10,
   },
 });
 
