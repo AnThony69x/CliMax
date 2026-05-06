@@ -245,7 +245,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
     return (
       <View style={styles.splash}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <Image source={LOGO} style={styles.splashLogo} resizeMode="contain" />
+        <Image source={LOGO} style={styles.splashLogo} resizeMode="contain" accessibilityLabel="CliMax" />
         <Text style={styles.splashTitle}>CliMax</Text>
         <ActivityIndicator color="#38bdf8" style={{ marginTop: 20 }} />
       </View>
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 12,
   },
-  splashLogo: { width: 80, height: 80, borderRadius: 18 },
+  splashLogo: { width: 112, height: 112, borderRadius: 24 },
   splashTitle: {
     fontSize: 28,
     fontWeight: '800',

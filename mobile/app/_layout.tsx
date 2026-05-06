@@ -1,13 +1,21 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
 import 'react-native-reanimated';
 import { CitiesProvider } from '../src/core/cities/CitiesContext';
+
+SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
   anchor: 'login',
 };
 
 export default function RootLayout() {
+  useEffect(() => {
+    SplashScreen.hideAsync();
+  }, []);
+
   return (
     <CitiesProvider>
       <Stack
