@@ -1,4 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
+import { decode } from 'base64-arraybuffer';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -32,6 +34,23 @@ export default function ProfileScreen() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => { loadProfile(); }, []);
+
+  const upsertProfileRow = async (
+    userId: string,
+    payload: { name?: string | null; avatar_url?: string | null }
+  ) => {
+    const { error } = await supabase.from('profiles').upsert(
+      {
+        id: userId,
+        ...payload,
+      },
+      { onConflict: 'id' }
+    );
+
+    if (error) {
+      throw error;
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -81,20 +100,31 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) return;
       const tokenResponse = await getSession();
-      if (!tokenResponse?.session) return;
-      await fetch(`${apiUrl}/profile`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${tokenResponse.session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name }),
-      });
+      if (!tokenResponse?.session || !tokenResponse.user?.id) return;
+
+      const nextName = name.trim() || null;
+
+      if (apiUrl) {
+        const response = await fetch(`${apiUrl}/profile`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${tokenResponse.session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: nextName }),
+        });
+
+        if (!response.ok) {
+          throw new Error('No se pudo actualizar el perfil en la API.');
+        }
+      }
+
+      await upsertProfileRow(tokenResponse.user.id, { name: nextName });
       setEditing(false);
       loadProfile();
     } catch (error) {
+      Alert.alert('Error', 'No se pudo guardar el perfil. Intenta nuevamente.');
       console.warn('Error saving profile:', error);
     } finally {
       setSaving(false);
@@ -126,13 +156,14 @@ export default function ProfileScreen() {
 
       const userId = (tokenResponse.user as any).id as string;
       const filePath = `${userId}/avatar.${ext}`;
-
-      const response = await fetch(asset.uri);
-      const blob = await response.blob();
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      const fileBody = decode(base64);
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, blob, { upsert: true, contentType: `image/${ext}` });
+        .upload(filePath, fileBody, { upsert: true, contentType: normalizeImageContentType(ext) });
 
       if (uploadError) throw uploadError;
 
@@ -140,19 +171,24 @@ export default function ProfileScreen() {
       const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
 
       await supabase.auth.updateUser({ data: { avatar_url: avatarUrl } });
+      await upsertProfileRow(userId, { avatar_url: avatarUrl });
 
       setProfile((prev) => prev ? { ...prev, avatar_url: avatarUrl } : prev);
 
       const apiUrl = process.env.EXPO_PUBLIC_API_URL;
       if (apiUrl && tokenResponse.session) {
-        await fetch(`${apiUrl}/profile`, {
+        const response = await fetch(`${apiUrl}/profile`, {
           method: 'PATCH',
           headers: {
             Authorization: `Bearer ${tokenResponse.session.access_token}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ avatar_url: avatarUrl }),
-        }).catch(() => {});
+        });
+
+        if (!response.ok) {
+          console.warn('Profile API avatar update failed, avatar persisted in profiles table.');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'No se pudo subir la foto. Intenta de nuevo.');
@@ -390,6 +426,14 @@ export default function ProfileScreen() {
       </ScrollView>
     </View>
   );
+}
+
+function normalizeImageContentType(extRaw: string): string {
+  const ext = extRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  return 'image/jpeg';
 }
 
 const styles = StyleSheet.create({
