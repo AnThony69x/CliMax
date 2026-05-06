@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import type { Alert as WeatherAlert } from '../../types';
+import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
+import { IntelligentAlertCard } from '../../components/IntelligentAlertCard';
 
 const GLASS_BG     = 'rgba(255,255,255,0.12)';
 const GLASS_BORDER = 'rgba(255,255,255,0.18)';
@@ -60,6 +62,14 @@ export default function AlertsScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
+  // ── Alertas inteligentes de Groq ──
+  const {
+    alerts: intelligentAlerts,
+    loading: intelligentLoading,
+    markAsRead: markIntelligentAsRead,
+    provideFeedback: provideIntelligentFeedback,
+  } = useIntelligentAlerts();
+
   const [formOpen, setFormOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [reloadingEvidence, setReloadingEvidence] = useState(false);
@@ -74,24 +84,11 @@ export default function AlertsScreen() {
   }, []);
 
   const bootstrap = async () => {
-    await Promise.all([loadAlerts(), loadAuthState()]);
+    await loadAuthState();
+    setLoading(false);
   };
 
-  const loadAlerts = async () => {
-    try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) { setAlerts([]); return; }
-      const response = await fetch(`${apiUrl}/alerts`);
-      if (response.ok) {
-        const data = await response.json();
-        setAlerts(data.data || []);
-      }
-    } catch (error) {
-      console.warn('Error loading alerts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Alertas inteligentes se cargan automáticamente con el hook useIntelligentAlerts()
 
   const loadAuthState = async () => {
     try {
@@ -290,12 +287,8 @@ export default function AlertsScreen() {
     }
   };
 
-  const unreadCount    = alerts.filter((a) => !a.is_read).length;
-  const primaryAlert   = alerts[0] ?? null;
-  const secondaryAlerts = alerts.slice(1);
-
-  const getSeverity = (severity: WeatherAlert['severity']) =>
-    SEVERITY_CONFIG[severity] ?? SEVERITY_CONFIG.info;
+  const unreadCount = intelligentAlerts?.filter((a) => !a.is_read).length ?? 0;
+  const hasAlerts = intelligentAlerts && intelligentAlerts.length > 0;
 
   if (loading) {
     return (
@@ -324,126 +317,35 @@ export default function AlertsScreen() {
           </Text>
         </View>
 
-        {alerts.length === 0 ? (
+        {/* ── Alertas inteligentes de Groq ── */}
+        {intelligentAlerts && intelligentAlerts.length > 0 && (
+          <View style={styles.intelligentAlertsSection}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="sparkles" size={20} color="#90cdfd" />
+              <Text style={styles.sectionTitle}>Análisis de Riesgo IA</Text>
+            </View>
+            {intelligentAlerts.map((alert) => (
+              <IntelligentAlertCard
+                key={alert.id}
+                alert={alert}
+                onMarkAsRead={() => markIntelligentAsRead(alert.id as string)}
+                onProvideFeedback={(feedback) =>
+                  provideIntelligentFeedback(alert.id as string, feedback)
+                }
+              />
+            ))}
+          </View>
+        )}
+
+        {!hasAlerts && (
           /* ── Estado vacío ── */
           <View style={styles.emptyCard}>
             <Ionicons name="notifications-outline" size={48} color="rgba(255,255,255,0.4)" />
-            <Text style={styles.emptyTitle}>Sin alertas activas</Text>
+            <Text style={styles.emptyTitle}>Sin alertas inteligentes</Text>
             <Text style={styles.emptyText}>
-              Te notificaremos cuando haya alertas climáticas en tu zona.
+              Te notificaremos cuando Groq AI detecte patrones de riesgo climático en tu zona.
             </Text>
           </View>
-        ) : (
-          <>
-            {/* ── Alerta principal ── */}
-            {primaryAlert && (
-              <Pressable
-                style={({ pressed }) => [styles.primaryCard, pressed && { opacity: 0.88 }]}
-                onPress={() => handlePress(primaryAlert)}
-              >
-                {/* Badge de severidad */}
-                <View style={[
-                  styles.severityBadge,
-                  { borderColor: getSeverity(primaryAlert.severity).color },
-                ]}>
-                  <View style={[
-                    styles.severityDot,
-                    { backgroundColor: getSeverity(primaryAlert.severity).color },
-                  ]} />
-                  <Text style={[
-                    styles.severityLabel,
-                    { color: getSeverity(primaryAlert.severity).color },
-                  ]}>
-                    {getSeverity(primaryAlert.severity).label}
-                  </Text>
-                </View>
-
-                <View style={styles.primaryRow}>
-                  <Ionicons
-                    name={getSeverity(primaryAlert.severity).iconName}
-                    size={36}
-                    color={getSeverity(primaryAlert.severity).color}
-                  />
-                  <Text style={styles.primaryTitle} numberOfLines={2}>
-                    {primaryAlert.title}
-                  </Text>
-                </View>
-
-                <Text style={styles.primaryDescription}>
-                  {primaryAlert.description}
-                </Text>
-
-                <View style={styles.primaryMeta}>
-                  {primaryAlert.location && (
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>ZONA</Text>
-                      <Text style={styles.metaValue}>{primaryAlert.location}</Text>
-                    </View>
-                  )}
-                  <View style={styles.metaItem}>
-                    <Text style={styles.metaLabel}>FECHA</Text>
-                    <Text style={styles.metaValue}>
-                      {new Date(primaryAlert.created_at).toLocaleTimeString('es-ES', {
-                        hour: '2-digit', minute: '2-digit',
-                      })}
-                    </Text>
-                  </View>
-                  {!primaryAlert.is_read && (
-                    <View style={styles.metaItem}>
-                      <Text style={styles.metaLabel}>ESTADO</Text>
-                      <Text style={[styles.metaValue, { color: '#90cdfd' }]}>Sin leer</Text>
-                    </View>
-                  )}
-                </View>
-              </Pressable>
-            )}
-
-            {/* ── Alertas secundarias ── */}
-            {secondaryAlerts.length > 0 && (
-              <View style={styles.secondaryGrid}>
-                {secondaryAlerts.map((item) => {
-                  const sev = getSeverity(item.severity);
-                  return (
-                    <Pressable
-                      key={item.id}
-                      style={({ pressed }) => [
-                        styles.secondaryCard,
-                        { borderLeftColor: sev.color },
-                        pressed && { opacity: 0.85 },
-                      ]}
-                      onPress={() => handlePress(item)}
-                    >
-                      <View style={styles.secondaryHeader}>
-                        <View style={styles.secondaryTitleRow}>
-                          <Ionicons name={sev.iconName} size={22} color={sev.color} />
-                          <Text style={styles.secondaryTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                        </View>
-                        <View style={[styles.miniBadge, { borderColor: sev.color }]}>
-                          <Text style={[styles.miniBadgeText, { color: sev.color }]}>
-                            {sev.label}
-                          </Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.secondaryDescription} numberOfLines={2}>
-                        {item.description}
-                      </Text>
-
-                      <Pressable
-                        style={({ pressed }) => [styles.detailBtn, pressed && { opacity: 0.7 }]}
-                        onPress={() => handlePress(item)}
-                      >
-                        <Text style={styles.detailBtnText}>Ver detalles</Text>
-                        <Ionicons name="arrow-forward" size={13} color="rgba(255,255,255,0.8)" />
-                      </Pressable>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-          </>
         )}
 
         {/* ── Recomendaciones de seguridad ── */}
@@ -1032,5 +934,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 13,
+  },
+
+  /* ── Alertas Inteligentes ── */
+  intelligentAlertsSection: {
+    gap: 12,
+    marginVertical: 8,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+    marginBottom: 4,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#90cdfd',
+    letterSpacing: 0.5,
   },
 });

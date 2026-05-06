@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'supabase.auth' => \App\Http\Middleware\AuthenticateWithSupabase::class,
+            'auth.intelligent' => \App\Http\Middleware\AuthenticateIntelligentAlerts::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
