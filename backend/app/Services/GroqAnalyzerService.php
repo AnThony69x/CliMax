@@ -179,7 +179,7 @@ class GroqAnalyzerService
         $isNightText = $context['user_context']['is_night'] ? 'Sí' : 'No';
         
         return <<<PROMPT
-Analiza el siguiente contexto climático y proporciona un análisis de riesgo estructurado:
+Analiza el siguiente contexto climático y proporciona un análisis de riesgo estructurado con acciones concretas y específicas:
 
 **CONTEXTO ACTUAL:**
 - Temperatura: {$context['current_conditions']['temperature']}°C
@@ -196,16 +196,24 @@ Analiza el siguiente contexto climático y proporciona un análisis de riesgo es
 - Viento promedio: {$context['historical_pattern']['avg_wind_speed']} km/h
 - Viento máximo: {$context['historical_pattern']['max_wind_speed']} km/h
 
+**INSTRUCCIONES IMPORTANTES:**
+- Genera acciones CONCRETAS y ACCIONABLES específicas para la situación actual
+- Si hay lluvia intensa: sugiere refugio, transporte seguro, cuidado de posesiones
+- Si hay viento fuerte: advierte sobre objetos sueltos, conducción cautelosa, estabilidad estructural
+- Si hay cambios de temperatura: sugiere ajustes de ropa, actividades, hidratación
+- Personaliza según hora del día (si es noche, más énfasis en seguridad) y patrón histórico
+- IMPORTANTE: Siempre proporciona exactamente 3 acciones en ACTIONS
+
 **ANÁLISIS REQUERIDO:**
 1. Nivel de riesgo: low | medium | high | severe
 2. Razón del análisis (máximo 150 palabras)
-3. Acciones recomendadas (lista de 2-4 acciones específicas)
+3. Acciones recomendadas (exactamente 3 acciones ESPECÍFICAS y ACCIONABLES)
 4. Confianza del análisis (0-100%)
 
 Formato la respuesta así:
 RISK_LEVEL: [nivel]
 REASON: [razón]
-ACTIONS: [acción1] | [acción2] | [acción3]
+ACTIONS: [acción específica 1] | [acción específica 2] | [acción específica 3]
 CONFIDENCE: [número]%
 PATTERN: [descripción breve del patrón detectado]
 PROMPT;
@@ -226,7 +234,8 @@ PROMPT;
                 $parsed['reason'] = trim(str_replace('REASON:', '', $line));
             } elseif (str_starts_with($line, 'ACTIONS:')) {
                 $actions = trim(str_replace('ACTIONS:', '', $line));
-                $parsed['actions'] = array_map('trim', explode('|', $actions));
+                $actionsList = array_filter(array_map('trim', explode('|', $actions)), fn($a) => !empty($a));
+                $parsed['actions'] = !empty($actionsList) ? array_values($actionsList) : [];
             } elseif (str_starts_with($line, 'CONFIDENCE:')) {
                 $parsed['confidence'] = (int) trim(str_replace('CONFIDENCE:', '', str_replace('%', '', $line)));
             } elseif (str_starts_with($line, 'PATTERN:')) {
@@ -237,10 +246,16 @@ PROMPT;
         // Validar riesgo
         $riskLevel = $this->normalizeRiskLevel($parsed['risk_level'] ?? 'low');
 
+        // Generar acciones por defecto si no hay
+        $actions = $parsed['actions'] ?? [];
+        if (empty($actions)) {
+            $actions = $this->generateDefaultActions($riskLevel, $currentLog);
+        }
+
         return [
             'risk_level' => $riskLevel,
             'analysis_reason' => $parsed['reason'] ?? 'Análisis realizado por IA',
-            'recommended_actions' => $parsed['actions'] ?? [],
+            'recommended_actions' => $actions,
             'historical_pattern' => $context['historical_pattern'],
             'user_context' => $context['user_context'],
             'confidence' => $parsed['confidence'] ?? 50,
@@ -255,6 +270,42 @@ PROMPT;
         $normalized = strtolower(trim($level));
         $valid = ['low', 'medium', 'high', 'severe'];
         return in_array($normalized, $valid) ? $normalized : 'low';
+    }
+
+    /**
+     * Genera acciones por defecto si Groq no proporciona
+     */
+    private function generateDefaultActions(string $riskLevel, WeatherLog $currentLog): array
+    {
+        $actions = [];
+        
+        match($riskLevel) {
+            'severe' => [
+                $actions[] = '🏠 Refugiarse en lugar seguro inmediatamente',
+                $actions[] = '📵 Evitar trasporte público y conducción',
+                $actions[] = '👥 Activar plan familiar de emergencia',
+                $actions[] = '🚨 Contactar autoridades de emergencia si es necesario',
+            ],
+            'high' => [
+                $actions[] = '⚠️ Limitar salidas y actividades al exterior',
+                $actions[] = '🚗 Extremar precaución si debe conducir',
+                $actions[] = '👕 Usar ropa apropiada para las condiciones',
+                $actions[] = '💧 Mantener hidratación constante',
+            ],
+            'medium' => [
+                $actions[] = '👁️ Vigilancia activa de condiciones meteorológicas',
+                $actions[] = '🧥 Revisar información meteorológica periódicamente',
+                $actions[] = '📱 Mantener dispositivos cargados',
+                $actions[] = '🚶 Actividades normales con precaución',
+            ],
+            default => [
+                $actions[] = '✅ Condiciones estables y seguras',
+                $actions[] = '📍 Continuar con actividades normales',
+                $actions[] = '🌤️ Disfrutar del clima actual',
+            ]
+        };
+
+        return array_filter($actions, fn($a) => !empty($a));
     }
 
     /**

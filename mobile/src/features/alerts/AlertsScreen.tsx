@@ -17,7 +17,7 @@ import {
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import type { Alert as WeatherAlert } from '../../types';
 import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
-import { IntelligentAlertCard } from '../../components/IntelligentAlertCard';
+import { IntelligentAlertCardImproved } from '../../components/IntelligentAlertCardImproved';
 
 const GLASS_BG     = 'rgba(255,255,255,0.12)';
 const GLASS_BORDER = 'rgba(255,255,255,0.18)';
@@ -325,7 +325,7 @@ export default function AlertsScreen() {
               <Text style={styles.sectionTitle}>Análisis de Riesgo IA</Text>
             </View>
             {intelligentAlerts.map((alert) => (
-              <IntelligentAlertCard
+              <IntelligentAlertCardImproved
                 key={alert.id}
                 alert={alert}
                 onMarkAsRead={() => markIntelligentAsRead(alert.id as string)}
