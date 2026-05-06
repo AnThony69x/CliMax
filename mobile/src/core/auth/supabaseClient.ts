@@ -47,6 +47,26 @@ export type AuthUser = {
   phone?: string;
 };
 
+async function ensureProfileExists(user: {
+  id: string;
+  user_metadata?: { name?: string };
+}): Promise<void> {
+  const fallbackName =
+    typeof user.user_metadata?.name === 'string' ? user.user_metadata.name.trim() : '';
+
+  const { error } = await supabase.from('profiles').upsert(
+    {
+      id: user.id,
+      name: fallbackName || null,
+    },
+    { onConflict: 'id' }
+  );
+
+  if (error) {
+    throw new Error(`No se pudo sincronizar el perfil: ${error.message}`);
+  }
+}
+
 export async function signInWithPassword(
   email: string,
   password: string
@@ -66,6 +86,8 @@ export async function signInWithPassword(
     throw new Error('No se pudo iniciar sesión');
   }
 
+  await ensureProfileExists(data.user as any);
+
   return {
     user: data.user,
     session: data.session,
@@ -77,12 +99,13 @@ export async function signUp(
   email: string,
   password: string
 ): Promise<{ user: AuthUser; session: any }> {
+  const trimmedName = name.trim();
   const { data, error } = await supabase.auth.signUp({
     email: email.trim(),
     password,
     options: {
       data: {
-        name: name.trim(),
+        name: trimmedName,
       },
     },
   });
@@ -94,6 +117,11 @@ export async function signUp(
   if (!data.user) {
     throw new Error('No se pudo registrar');
   }
+
+  await ensureProfileExists({
+    id: data.user.id,
+    user_metadata: { name: trimmedName || undefined },
+  });
 
   return {
     user: data.user,
@@ -118,6 +146,8 @@ export async function getSession(): Promise<{ user: AuthUser; session: any } | n
   if (!data.session || !data.session.user) {
     return null;
   }
+
+  await ensureProfileExists(data.session.user as any);
 
   return {
     user: data.session.user,

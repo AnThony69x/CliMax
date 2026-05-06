@@ -10,6 +10,7 @@ import {
   Modal,
   ScrollView,
   Alert as NativeAlert,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { IntelligentAlert } from '../hooks/useIntelligentAlerts';
@@ -191,10 +192,12 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
         visible={detailsOpen}
         transparent
         animationType="slide"
+        statusBarTranslucent
+        hardwareAccelerated
         onRequestClose={() => setDetailsOpen(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <SafeAreaView style={styles.modalContent}>
             {/* Header del modal */}
             <View style={[styles.modalHeader, { backgroundColor: config.border }]}>
               <View style={styles.modalHeaderLeft}>
@@ -209,7 +212,11 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
               </Pressable>
             </View>
 
-            <ScrollView style={styles.modalScroll}>
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
               {/* Ubicación */}
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
@@ -400,7 +407,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
             <Pressable style={styles.closeButton} onPress={() => setDetailsOpen(false)}>
               <Text style={styles.closeButtonText}>Cerrar Detalles</Text>
             </Pressable>
-          </View>
+          </SafeAreaView>
         </View>
       </Modal>
     </>
@@ -514,14 +521,16 @@ const styles = StyleSheet.create({
   // MODAL
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'flex-end',
+    paddingTop: 24,
   },
   modalContent: {
-    backgroundColor: '#fff',
+    flex: 1,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '90%',
+    marginTop: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.15,
@@ -558,6 +567,9 @@ const styles = StyleSheet.create({
   modalScroll: {
     flex: 1,
     paddingHorizontal: 16,
+  },
+  modalScrollContent: {
+    paddingBottom: 12,
   },
 
   // SECCIONES

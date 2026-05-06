@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert as NativeAlert,
@@ -24,6 +24,7 @@ const GLASS_BORDER = 'rgba(255,255,255,0.18)';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type EvidenceSeverity = 'info' | 'warning' | 'critical';
+type SafetyTip = { iconName: IoniconName; text: string };
 
 type AlertEvidence = {
   id: string;
@@ -46,18 +47,80 @@ const SEVERITY_CONFIG: Record<string, {
   info:     { label: 'AVISO',    color: '#90cdfd', iconName: 'partly-sunny-outline' },
 };
 
-const SAFETY_TIPS: { iconName: IoniconName; text: string }[] = [
-  { iconName: 'home-outline',        text: 'Permanezca bajo techo' },
-  { iconName: 'flashlight-outline',  text: 'Prepare linternas'     },
-  { iconName: 'flash-outline',       text: 'Desconecte aparatos'   },
-  { iconName: 'car-outline',         text: 'Evite desplazamientos' },
+const DEFAULT_SAFETY_TIPS: SafetyTip[] = [
+  { iconName: 'flashlight-outline', text: 'Prepare linternas y baterias de respaldo' },
+  { iconName: 'notifications-outline', text: 'Mantenga activas alertas meteorologicas oficiales' },
+  { iconName: 'medical-outline', text: 'Revise su botiquin y suministros basicos' },
+  { iconName: 'water-outline', text: 'Mantenga agua disponible para hidratacion' },
+];
+
+const RISK_PRIORITY: Record<'low' | 'medium' | 'high' | 'severe', number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  severe: 4,
+};
+
+const RISK_SAFETY_TIP: Record<'low' | 'medium' | 'high' | 'severe', SafetyTip> = {
+  low: { iconName: 'checkmark-circle-outline', text: 'Mantenga monitoreo preventivo del clima local' },
+  medium: { iconName: 'alert-circle-outline', text: 'Tenga lista una mochila de emergencia básica' },
+  high: { iconName: 'warning-outline', text: 'Evite salir y asegure puertas, ventanas y objetos sueltos' },
+  severe: { iconName: 'thunderstorm-outline', text: 'Refúgiese de inmediato y siga instrucciones oficiales' },
+};
+
+const RISK_BASELINE_TIPS: Record<'low' | 'medium' | 'high' | 'severe', SafetyTip[]> = {
+  low: [
+    { iconName: 'flashlight-outline', text: 'Prepare linternas y baterias de respaldo' },
+    { iconName: 'notifications-outline', text: 'Mantenga activas alertas meteorologicas oficiales' },
+    { iconName: 'water-outline', text: 'Mantenga agua disponible para hidratacion' },
+  ],
+  medium: [
+    { iconName: 'flashlight-outline', text: 'Prepare linternas y baterias de respaldo' },
+    { iconName: 'bag-add-outline', text: 'Prepare una mochila de emergencia ligera' },
+    { iconName: 'car-outline', text: 'Planifique rutas alternativas por precaucion' },
+  ],
+  high: [
+    { iconName: 'home-outline', text: 'Permanezca bajo techo mientras pasa el evento' },
+    { iconName: 'flash-outline', text: 'Desconecte aparatos sensibles durante tormenta electrica' },
+    { iconName: 'car-outline', text: 'Evite desplazamientos no esenciales' },
+  ],
+  severe: [
+    { iconName: 'home-outline', text: 'Refugiese de inmediato en un lugar seguro' },
+    { iconName: 'flash-outline', text: 'Desconecte aparatos y corte energia si hay riesgo electrico' },
+    { iconName: 'car-outline', text: 'No se desplace salvo instruccion oficial' },
+  ],
+};
+
+const ACTION_KEYWORD_TIPS: Array<{
+  keywords: string[];
+  tip: SafetyTip;
+}> = [
+  {
+    keywords: ['refugio', 'evacua', 'resguard'],
+    tip: { iconName: 'home-outline', text: 'Identifique y prepare su refugio más seguro' },
+  },
+  {
+    keywords: ['transporte', 'conducción', 'manej', 'movilidad'],
+    tip: { iconName: 'car-outline', text: 'Limite desplazamientos y evite rutas inundables' },
+  },
+  {
+    keywords: ['informar', 'vigilancia', 'monitore', 'alerta'],
+    tip: { iconName: 'notifications-outline', text: 'Mantenga activas notificaciones y canales oficiales' },
+  },
+  {
+    keywords: ['hidrat', 'calor', 'temperatura'],
+    tip: { iconName: 'water-outline', text: 'Aumente hidratación y evite exposición prolongada al calor' },
+  },
+  {
+    keywords: ['proteger', 'posesiones', 'asegurar', 'ventana'],
+    tip: { iconName: 'shield-checkmark-outline', text: 'Proteja documentos y equipos ante lluvia o viento fuerte' },
+  },
 ];
 
 export default function AlertsScreen() {
   const router = useRouter();
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [evidences, setEvidences] = useState<AlertEvidence[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -80,13 +143,8 @@ export default function AlertsScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
 
   useEffect(() => {
-    void bootstrap();
+    void loadAuthState();
   }, []);
-
-  const bootstrap = async () => {
-    await loadAuthState();
-    setLoading(false);
-  };
 
   // Alertas inteligentes se cargan automáticamente con el hook useIntelligentAlerts()
 
@@ -101,7 +159,7 @@ export default function AlertsScreen() {
       }
       setIsLoggedIn(true);
       setUserId(current.user.id);
-      await loadEvidences(current.user.id);
+      void loadEvidences(current.user.id);
     } catch {
       setIsLoggedIn(false);
       setUserId(null);
@@ -289,8 +347,39 @@ export default function AlertsScreen() {
 
   const unreadCount = intelligentAlerts?.filter((a) => !a.is_read).length ?? 0;
   const hasAlerts = intelligentAlerts && intelligentAlerts.length > 0;
+  const showingIntelligentLoading = intelligentLoading && !hasAlerts;
+  const adaptiveSafetyTips = useMemo<SafetyTip[]>(() => {
+    if (!intelligentAlerts || intelligentAlerts.length === 0) return DEFAULT_SAFETY_TIPS;
 
-  if (loading) {
+    const sortedAlerts = [...intelligentAlerts].sort((a, b) => {
+      const unreadDelta = Number(a.is_read) - Number(b.is_read);
+      if (unreadDelta !== 0) return unreadDelta;
+      return RISK_PRIORITY[b.risk_level] - RISK_PRIORITY[a.risk_level];
+    });
+
+    const primaryAlert = sortedAlerts[0];
+    const tips: SafetyTip[] = [RISK_SAFETY_TIP[primaryAlert.risk_level]];
+
+    sortedAlerts
+      .slice(0, 3)
+      .flatMap((alert) => alert.recommended_actions ?? [])
+      .forEach((action) => {
+        const normalizedAction = action.toLowerCase();
+        const match = ACTION_KEYWORD_TIPS.find(({ keywords }) =>
+          keywords.some((keyword) => normalizedAction.includes(keyword))
+        );
+        if (match) tips.push(match.tip);
+      });
+
+    const baselineTips = RISK_BASELINE_TIPS[primaryAlert.risk_level];
+    const uniqueTips = [...tips, ...baselineTips, ...DEFAULT_SAFETY_TIPS].filter(
+      (tip, index, allTips) => allTips.findIndex((currentTip) => currentTip.text === tip.text) === index
+    );
+
+    return uniqueTips.slice(0, 4);
+  }, [intelligentAlerts]);
+
+  if (!sessionReady) {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -329,7 +418,7 @@ export default function AlertsScreen() {
                 key={alert.id}
                 alert={alert}
                 onMarkAsRead={() => markIntelligentAsRead(alert.id as string)}
-                onProvideFeedback={(feedback) =>
+                onProvideFeedback={(_, feedback) =>
                   provideIntelligentFeedback(alert.id as string, feedback)
                 }
               />
@@ -337,7 +426,17 @@ export default function AlertsScreen() {
           </View>
         )}
 
-        {!hasAlerts && (
+        {showingIntelligentLoading && (
+          <View style={styles.emptyCard}>
+            <ActivityIndicator size="small" color="#90cdfd" />
+            <Text style={styles.emptyTitle}>Cargando alertas inteligentes...</Text>
+            <Text style={styles.emptyText}>
+              Estamos analizando las condiciones de riesgo en tu zona.
+            </Text>
+          </View>
+        )}
+
+        {!hasAlerts && !showingIntelligentLoading && (
           /* ── Estado vacío ── */
           <View style={styles.emptyCard}>
             <Ionicons name="notifications-outline" size={48} color="rgba(255,255,255,0.4)" />
@@ -352,10 +451,12 @@ export default function AlertsScreen() {
         <View style={styles.safetySection}>
           <View style={styles.safetyTitleRow}>
             <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
-            <Text style={styles.safetyTitle}>Recomendaciones de seguridad</Text>
+            <Text style={styles.safetyTitle}>
+              {hasAlerts ? 'Recomendaciones adaptativas (IA)' : 'Recomendaciones de seguridad'}
+            </Text>
           </View>
           <View style={styles.safetyGrid}>
-            {SAFETY_TIPS.map((tip) => (
+            {adaptiveSafetyTips.map((tip) => (
               <View key={tip.text} style={styles.safetyCard}>
                 <View style={styles.safetyIconWrap}>
                   <Ionicons name={tip.iconName} size={22} color="rgba(255,255,255,0.85)" />
