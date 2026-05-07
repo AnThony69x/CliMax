@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('weather_logs', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('user_id')->nullable()->index();
+            $table->uuid('user_id')->nullable()->index();
             $table->decimal('latitude', 10, 7);
             $table->decimal('longitude', 10, 7);
             $table->text('address')->nullable();
