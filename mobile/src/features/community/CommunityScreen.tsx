@@ -799,6 +799,23 @@ export default function CommunityScreen() {
     }
   };
 
+  const confirmDeletePost = (post: CommunityPost) => {
+    NativeAlert.alert(
+      'Eliminar publicación',
+      '¿Seguro que deseas eliminar esta publicación de la comunidad?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            void deletePost(post.id);
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -1032,7 +1049,10 @@ export default function CommunityScreen() {
                       <Pressable style={styles.smallBtn} onPress={() => startEdit(post)}>
                         <Text style={styles.smallBtnText}>Editar</Text>
                       </Pressable>
-                      <Pressable style={styles.smallDangerBtn} onPress={() => deletePost(post.id)}>
+                      <Pressable
+                        style={styles.smallDangerBtn}
+                        onPress={() => confirmDeletePost(post)}
+                      >
                         <Text style={styles.smallBtnText}>Eliminar</Text>
                       </Pressable>
                     </View>
