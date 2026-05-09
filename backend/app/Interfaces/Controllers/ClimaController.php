@@ -25,6 +25,8 @@ class ClimaController extends Controller
             'latitude' => $validated['lat'],
             'longitude' => $validated['lon'],
             'current' => 'temperature_2m,weather_code,wind_speed_10m',
+            'daily' => 'temperature_2m_max,temperature_2m_min',
+            'forecast_days' => 1,
             'timezone' => 'auto',
         ]);
 

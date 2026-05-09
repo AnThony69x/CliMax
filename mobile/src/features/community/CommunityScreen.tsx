@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -21,11 +22,16 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const SURFACE_DEEP = '#0c1222';
+const ACCENT       = '#38bdf8';
 
 const GHOST_ITEMS = Array.from({ length: 6 });
 const COMMUNITY_BUCKET_IDS = ['community-alerts', 'COMMUNITY-ALERTS'] as const;
@@ -82,6 +88,7 @@ const getAvatarFallbackColor = (id: string) => {
 
 export default function CommunityScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const feedOffset = useRef(new Animated.Value(0)).current;
   const locatePulse = useRef(new Animated.Value(0)).current;
   const dotsCycle = useRef(new Animated.Value(0)).current;
@@ -119,6 +126,16 @@ export default function CommunityScreen() {
   useEffect(() => {
     void bootstrap();
   }, []);
+
+  /** Al volver a esta pestaña, el scroll vuelve arriba (publicaciones más recientes primero). */
+  useFocusEffect(
+    useCallback(() => {
+      const tick = requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
+      });
+      return () => cancelAnimationFrame(tick);
+    }, [])
+  );
 
   useEffect(() => {
     if (!isLoggedIn || !userId) return;
@@ -822,6 +839,10 @@ export default function CommunityScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 52}
     >
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.bgGlowTop} pointerEvents="none" />
+      <View style={styles.bgGlowBottom} pointerEvents="none" />
+
       <ScrollView
         ref={scrollViewRef}
         style={{ flex: 1 }}
@@ -830,24 +851,35 @@ export default function CommunityScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.container,
-          { paddingBottom: 32 + (keyboardHeight > 0 ? keyboardHeight + 20 : 0) },
+          {
+            paddingTop: insets.top + 14,
+            paddingBottom: Math.max(insets.bottom, 16) + 32 + (keyboardHeight > 0 ? keyboardHeight + 20 : 0),
+          },
         ]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={refreshFeed}
-            tintColor="#90cdfd"
-            colors={['#90cdfd']}
-            progressViewOffset={70}
+            tintColor={ACCENT}
+            colors={[ACCENT]}
+            progressViewOffset={insets.top + 52}
           />
         }
       >
-        <Text style={styles.title}>Comunidad</Text>
-        <Text style={styles.subtitle}>Espacio de publicaciones y reportes ciudadanos.</Text>
+        <View style={styles.titleBlock}>
+          <View style={styles.titleIconWrap}>
+            <Ionicons name="people-outline" size={22} color={ACCENT} />
+          </View>
+          <View style={styles.titleTextCol}>
+            <Text style={styles.eyebrow}>Ciudadanos</Text>
+            <Text style={styles.title}>Comunidad</Text>
+            <Text style={styles.subtitle}>Publicaciones y reportes con ubicación.</Text>
+          </View>
+        </View>
 
         {loading ? (
           <View style={styles.centerBox}>
-            <ActivityIndicator size="large" color="#90cdfd" />
+            <ActivityIndicator size="large" color={ACCENT} />
           </View>
         ) : isLoggedIn ? (
           <>
@@ -1079,7 +1111,7 @@ export default function CommunityScreen() {
                         <Ionicons
                           name={openCommentsByPost[post.id] ? 'chevron-up' : 'chevron-down'}
                           size={16}
-                          color="#FFFFFF"
+                          color="rgba(241,245,249,0.9)"
                         />
                       </View>
                     </Pressable>
@@ -1174,13 +1206,35 @@ export default function CommunityScreen() {
 
       {isLoggedIn && !loading && (
         <Pressable
-          style={({ pressed }) => [styles.fabBtn, pressed && { opacity: 0.85 }]}
+          style={({ pressed }) => [
+            styles.fabOuter,
+            {
+              /** El layout de pestañas ya deja hueco inferior; no sumamos insets para no duplicar y elevar el FAB. */
+              bottom: 4,
+              right: 14,
+            },
+            pressed && styles.fabOuterPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={composerOpen ? 'Cerrar editor de publicación' : 'Nueva publicación con foto'}
           onPress={() => {
             if (composerOpen && !editingId) limpiarFormulario();
             setComposerOpen((prev) => !prev);
           }}
         >
-          <Ionicons name={composerOpen ? 'close' : 'camera'} size={24} color="#FFFFFF" />
+          <View style={styles.fabInner}>
+            <Ionicons
+              name={composerOpen ? 'close' : 'cloud-upload-outline'}
+              size={26}
+              color="#f8fafc"
+              style={styles.fabMainIconOffset}
+            />
+          </View>
+          {!composerOpen ? (
+            <View style={styles.fabBadge} accessibilityElementsHidden>
+              <Ionicons name="camera-outline" size={11} color={ACCENT} />
+            </View>
+          ) : null}
         </Pressable>
       )}
 
@@ -1344,25 +1398,69 @@ export default function CommunityScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#0c0e11',
+    backgroundColor: SURFACE_DEEP,
+    overflow: 'hidden',
+  },
+  bgGlowTop: {
+    position: 'absolute',
+    top: -100,
+    left: -100,
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.24)',
+    zIndex: 0,
+  },
+  bgGlowBottom: {
+    position: 'absolute',
+    bottom: -80,
+    right: -100,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    zIndex: 0,
   },
   container: {
     flexGrow: 1,
-    backgroundColor: '#0c0e11',
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 32,
+    paddingHorizontal: 20,
+    paddingBottom: 0,
+  },
+  titleBlock: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    marginBottom: 18,
+  },
+  titleIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleTextCol: { flex: 1, gap: 4, minWidth: 0 },
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.15,
+    color: 'rgba(148,163,184,0.95)',
+    textTransform: 'uppercase',
   },
   title: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 8,
+    color: '#f8fafc',
+    letterSpacing: -0.35,
   },
   subtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.62)',
-    marginBottom: 16,
+    fontSize: 13,
+    color: 'rgba(148,163,184,0.92)',
+    lineHeight: 19,
+    marginTop: 2,
   },
   centerBox: {
     minHeight: 320,
@@ -1534,19 +1632,20 @@ const styles = StyleSheet.create({
     marginHorizontal: -4,
   },
   feedSectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: '#f1f5f9',
+    fontSize: 17,
     fontWeight: '700',
-    marginBottom: 2,
+    marginBottom: 6,
+    letterSpacing: -0.2,
   },
   feedSkeletonWrap: {
-    gap: 10,
+    gap: 12,
   },
   feedSkeletonCard: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 14,
+    backgroundColor: 'rgba(15,23,42,0.55)',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(255,255,255,0.1)',
     padding: 12,
     gap: 10,
   },
@@ -1602,17 +1701,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   postCard: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    padding: 14,
-    gap: 9,
+    borderColor: 'rgba(56,189,248,0.16)',
+    padding: 16,
+    gap: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.22,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 6,
   },
   feedHeader: {
     flexDirection: 'row',
@@ -1701,12 +1800,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   smallBtn: {
-    backgroundColor: 'rgba(144,205,253,0.18)',
-    borderColor: '#90cdfd',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderColor: ACCENT,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   smallDangerBtn: {
     backgroundColor: 'rgba(255,90,90,0.24)',
@@ -1722,11 +1821,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   skeletonWrap: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(9,12,18,0.95)',
-    padding: 14,
+    borderColor: 'rgba(56,189,248,0.14)',
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    padding: 16,
     gap: 10,
     overflow: 'hidden',
     minHeight: 650,
@@ -1794,21 +1893,51 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
-  fabBtn: {
+  fabOuter: {
     position: 'absolute',
-    right: 20,
-    bottom: 24,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#1565c0',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(15,23,42,0.94)',
+    borderWidth: 2,
+    borderColor: 'rgba(56,189,248,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  fabOuterPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.96 }],
+  },
+  fabInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: ACCENT,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+  },
+  fabMainIconOffset: {
+    marginTop: 2,
+  },
+  fabBadge: {
+    position: 'absolute',
+    bottom: 3,
+    right: 3,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(15,23,42,0.98)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(56,189,248,0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBackdrop: {
     flex: 1,
@@ -1817,13 +1946,18 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '88%',
-    backgroundColor: '#0f1522',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: 'rgba(12,18,34,0.98)',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    padding: 14,
+    borderColor: 'rgba(56,189,248,0.22)',
+    padding: 18,
     gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1862,7 +1996,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#90cdfd',
+    backgroundColor: ACCENT,
   },
   locationHintError: {
     color: '#fca5a5',

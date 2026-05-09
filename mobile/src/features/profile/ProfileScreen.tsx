@@ -14,18 +14,32 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { clearToken } from '../../core/auth/authStorage';
 import { getSession, signOut, supabase } from '../../core/auth/supabaseClient';
 import type { User } from '../../types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const GLASS_BG     = 'rgba(255,255,255,0.10)';
 const GLASS_BORDER = 'rgba(255,255,255,0.18)';
-const GLASS_ACCENT = 'rgba(255,255,255,0.22)';
+const ACCENT       = '#38bdf8';
+const ACCENT_MUTED = 'rgba(56,189,248,0.35)';
+const SURFACE_DEEP = '#0c1222';
+
+/** Altura aproximada del header del Stack en pantalla de perfil (título “Mi perfil”). */
+const PROFILE_STACK_HEADER = 56;
+/** Alto aproximado del bloque foto + nombre + acciones (para repartir espacio sin ir a extremos). */
+const HERO_BLOCK_ESTIMATE = 248;
+/** Límites del margen superior del hero: ni pegado al header ni demasiado abajo. */
+const HERO_PAD_TOP_MIN = 18;
+const HERO_PAD_TOP_MAX = 44;
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [profile, setProfile] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -208,13 +222,27 @@ export default function ProfileScreen() {
     ? new Date(profile.created_at).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })
     : null;
 
-  const initials = profile?.email?.charAt(0).toUpperCase() ?? '?';
+  const displayInitial =
+    (profile?.name?.trim()?.charAt(0) || profile?.email?.charAt(0) || '?').toUpperCase();
+
+  // Reparto vertical suave: intento de centrado respecto al cuerpo útil, pero acotado para que
+  // en pantallas altas no quede “muy abajo” ni en pequeñas “muy arriba”.
+  const bodyHeightApprox =
+    windowHeight - PROFILE_STACK_HEADER - insets.top - insets.bottom;
+  const idealHeroPad = Math.floor(
+    (bodyHeightApprox - HERO_BLOCK_ESTIMATE) / 2
+  );
+  const scrollHeroPaddingTop = Math.max(
+    HERO_PAD_TOP_MIN,
+    Math.min(HERO_PAD_TOP_MAX, idealHeroPad)
+  );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <ActivityIndicator size="large" color="#90cdfd" />
+        <View style={[styles.bgGlowTop, { opacity: 0.6 }]} />
+        <ActivityIndicator size="large" color={ACCENT} />
       </View>
     );
   }
@@ -223,8 +251,8 @@ export default function ProfileScreen() {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <View style={styles.guestGlow1} />
-        <View style={styles.guestGlow2} />
+        <View style={styles.bgGlowTop} />
+        <View style={styles.bgGlowBottom} />
 
         <ScrollView
           contentContainerStyle={styles.guestScroll}
@@ -287,31 +315,47 @@ export default function ProfileScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: scrollHeroPaddingTop,
+            paddingBottom: Math.max(insets.bottom, 16) + 24,
+          },
+        ]}
       >
-        {/* ── Hero: avatar + nombre ── */}
+        {/* ── Hero ── */}
         <View style={styles.heroCard}>
-          <View style={styles.avatarWrapper}>
-            {profile?.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>{initials}</Text>
-              </View>
-            )}
+          <View style={styles.heroAvatarCol}>
             <Pressable
-              style={[styles.editAvatarBtn, uploadingAvatar && { opacity: 0.5 }]}
               onPress={pickAndUploadAvatar}
               disabled={uploadingAvatar}
+              style={({ pressed }) => [
+                styles.avatarRing,
+                pressed && styles.avatarRingPressed,
+                uploadingAvatar && { opacity: 0.65 },
+              ]}
             >
-              {uploadingAvatar
-                ? <ActivityIndicator size={14} color="#ffffff" />
-                : <Ionicons name="create-outline" size={14} color="#ffffff" />
-              }
+              {profile?.avatar_url ? (
+                <Image source={{ uri: profile.avatar_url }} style={styles.avatar} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>{displayInitial}</Text>
+                </View>
+              )}
+              <View style={styles.editAvatarFab}>
+                {uploadingAvatar ? (
+                  <ActivityIndicator size={16} color="#ffffff" />
+                ) : (
+                  <Ionicons name="camera" size={16} color="#ffffff" />
+                )}
+              </View>
             </Pressable>
+            <Text style={styles.photoHint}>Toca la foto para cambiarla</Text>
           </View>
 
           <View style={styles.heroInfo}>
@@ -325,24 +369,37 @@ export default function ProfileScreen() {
                 autoFocus
               />
             ) : (
-              <Text style={styles.heroName}>{profile?.name || 'Sin nombre'}</Text>
+              <Text style={styles.heroName} numberOfLines={2}>
+                {profile?.name || 'Sin nombre'}
+              </Text>
             )}
-            <Text style={styles.heroSub}>
-              {memberSince ? `Miembro desde ${memberSince}` : profile?.email ?? ''}
+            <Text style={styles.heroEmail} numberOfLines={1}>
+              {profile?.email ?? ''}
             </Text>
+            {memberSince ? (
+              <Text style={styles.heroSub}>Miembro desde {memberSince}</Text>
+            ) : null}
 
             <View style={styles.heroActions}>
               {editing ? (
                 <>
                   <Pressable
-                    style={({ pressed }) => [styles.accentBtn, pressed && { opacity: 0.75 }]}
+                    style={({ pressed }) => [
+                      styles.primaryBtn,
+                      styles.heroEditBtnNatural,
+                      pressed && styles.primaryBtnPressed,
+                    ]}
                     onPress={saveProfile}
                     disabled={saving}
                   >
-                    <Text style={styles.accentBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                    <Text style={styles.primaryBtnText}>{saving ? 'Guardando…' : 'Guardar'}</Text>
                   </Pressable>
                   <Pressable
-                    style={({ pressed }) => [styles.ghostBtn, pressed && { opacity: 0.75 }]}
+                    style={({ pressed }) => [
+                      styles.ghostBtn,
+                      styles.heroEditBtnNatural,
+                      pressed && styles.ghostBtnPressed,
+                    ]}
                     onPress={() => { setEditing(false); setName(profile?.name || ''); }}
                   >
                     <Text style={styles.ghostBtnText}>Cancelar</Text>
@@ -350,78 +407,115 @@ export default function ProfileScreen() {
                 </>
               ) : (
                 <Pressable
-                  style={({ pressed }) => [styles.accentBtn, pressed && { opacity: 0.75 }]}
+                  style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
                   onPress={() => setEditing(true)}
                 >
-                  <Text style={styles.accentBtnText}>Editar perfil</Text>
+                  <Ionicons name="pencil" size={16} color="#082f49" style={{ marginRight: 6 }} />
+                  <Text style={styles.primaryBtnText}>Editar perfil</Text>
                 </Pressable>
               )}
             </View>
           </View>
         </View>
 
-        {/* ── Información de cuenta ── */}
-        <View style={styles.glassCard}>
-          <Text style={styles.cardTitle}>Información personal</Text>
-
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>NOMBRE</Text>
-            <Text style={styles.infoValue}>{profile?.name || 'Sin nombre'}</Text>
+        {/* ── Datos ── */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconWrap}>
+              <Ionicons name="id-card-outline" size={18} color={ACCENT} />
+            </View>
+            <View>
+              <Text style={styles.sectionEyebrow}>Resumen</Text>
+              <Text style={styles.sectionTitle}>Tus datos</Text>
+            </View>
           </View>
-          <View style={styles.separator} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>CORREO</Text>
-            <Text style={styles.infoValue} numberOfLines={1}>{profile?.email || 'No disponible'}</Text>
-          </View>
-          <View style={styles.separator} />
+          <View style={styles.glassCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBadge}>
+                <Ionicons name="person" size={18} color={ACCENT} />
+              </View>
+              <View style={styles.infoTextCol}>
+                <Text style={styles.infoLabel}>Nombre</Text>
+                <Text style={styles.infoValue}>{profile?.name || 'Sin nombre'}</Text>
+              </View>
+            </View>
+            <View style={styles.separator} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>MIEMBRO DESDE</Text>
-            <Text style={styles.infoValue}>{memberSince ?? 'No disponible'}</Text>
-          </View>
-          <View style={styles.separator} />
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBadge}>
+                <Ionicons name="mail-outline" size={18} color={ACCENT} />
+              </View>
+              <View style={styles.infoTextCol}>
+                <Text style={styles.infoLabel}>Correo</Text>
+                <Text style={styles.infoValue} numberOfLines={2}>
+                  {profile?.email || 'No disponible'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.separator} />
 
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>ID</Text>
-            <Text style={[styles.infoValue, styles.infoValueMono]} numberOfLines={1}>
-              {profile?.id || 'No disponible'}
-            </Text>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIconBadge}>
+                <Ionicons name="calendar-outline" size={18} color={ACCENT} />
+              </View>
+              <View style={styles.infoTextCol}>
+                <Text style={styles.infoLabel}>Miembro desde</Text>
+                <Text style={styles.infoValue}>{memberSince ?? 'No disponible'}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* ── Cuenta ── */}
-        <View style={styles.glassCard}>
-          <Text style={styles.cardTitle}>Cuenta</Text>
+        {/* ── Acciones ── */}
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconWrap}>
+              <Ionicons name="settings-outline" size={18} color={ACCENT} />
+            </View>
+            <View>
+              <Text style={styles.sectionEyebrow}>Preferencias</Text>
+              <Text style={styles.sectionTitle}>Cuenta</Text>
+            </View>
+          </View>
 
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
-            onPress={() => setEditing(true)}
-          >
-            <Ionicons name="person-outline" size={20} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.menuLabel}>Información personal</Text>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
-          </Pressable>
+          <View style={styles.glassCard}>
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+              onPress={() => setEditing(true)}
+            >
+              <View style={styles.menuIconWrap}>
+                <Ionicons name="person-outline" size={20} color="#e2e8f0" />
+              </View>
+              <Text style={styles.menuLabel}>Editar información personal</Text>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.28)" />
+            </Pressable>
 
-          <View style={styles.menuDivider} />
+            <View style={styles.menuDivider} />
 
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
-          >
-            <Ionicons name="lock-closed-outline" size={20} color="rgba(255,255,255,0.7)" />
-            <Text style={styles.menuLabel}>Seguridad y privacidad</Text>
-            <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.3)" />
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
+            >
+              <View style={styles.menuIconWrap}>
+                <Ionicons name="shield-checkmark-outline" size={20} color="#e2e8f0" />
+              </View>
+              <Text style={styles.menuLabel}>Seguridad y privacidad</Text>
+              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.28)" />
+            </Pressable>
 
-          <View style={styles.menuDivider} />
+            <View style={styles.logoutDivider} />
 
-          <Pressable
-            style={({ pressed }) => [styles.menuRow, pressed && styles.menuRowPressed]}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#ffb4ab" />
-            <Text style={styles.menuLabelDanger}>Cerrar sesión</Text>
-          </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.menuRow, styles.menuRowLogout, pressed && styles.menuRowPressed]}
+              onPress={handleLogout}
+            >
+              <View style={[styles.menuIconWrap, styles.menuIconWrapDanger]}>
+                <Ionicons name="log-out-outline" size={20} color="#fecaca" />
+              </View>
+              <Text style={styles.menuLabelDanger}>Cerrar sesión</Text>
+              <Ionicons name="chevron-forward" size={20} color="rgba(254,202,202,0.35)" />
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -439,213 +533,343 @@ function normalizeImageContentType(extRaw: string): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111316',
+    backgroundColor: SURFACE_DEEP,
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#111316',
+    backgroundColor: SURFACE_DEEP,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  bgGlowTop: {
+    position: 'absolute',
+    top: -100,
+    left: -100,
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.28)',
+  },
+  bgGlowBottom: {
+    position: 'absolute',
+    bottom: -60,
+    right: -80,
+    width: 280,
+    height: 280,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.12)',
   },
   scrollContent: {
-    paddingTop: 60,
-    paddingBottom: 32,
     paddingHorizontal: 20,
-    gap: 16,
+    gap: 22,
   },
 
   /* ── Hero ── */
   heroCard: {
-    backgroundColor: 'rgba(2,87,129,0.30)',
+    backgroundColor: 'rgba(15,23,42,0.72)',
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    padding: 24,
+    borderColor: 'rgba(56,189,248,0.22)',
+    paddingVertical: 22,
+    paddingHorizontal: 20,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
+    alignItems: 'flex-start',
+    gap: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.35,
+    shadowRadius: 28,
+    elevation: 10,
   },
-  avatarWrapper: {
-    position: 'relative',
+  heroAvatarCol: {
+    alignItems: 'center',
+    width: 118,
+  },
+  avatarRing: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    padding: 3,
+    borderWidth: 2,
+    borderColor: ACCENT_MUTED,
+    backgroundColor: 'rgba(8,47,73,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarRingPressed: {
+    borderColor: ACCENT,
+    backgroundColor: 'rgba(8,47,73,0.75)',
   },
   avatar: {
     width: 100,
     height: 100,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: GLASS_BORDER,
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   avatarPlaceholder: {
     width: 100,
     height: 100,
-    borderRadius: 20,
-    backgroundColor: 'rgba(144,205,253,0.25)',
-    borderWidth: 2,
-    borderColor: GLASS_BORDER,
+    borderRadius: 50,
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarInitial: {
-    fontSize: 40,
+    fontSize: 38,
     fontWeight: '700',
-    color: '#90cdfd',
+    color: ACCENT,
   },
-  editAvatarBtn: {
+  editAvatarFab: {
     position: 'absolute',
-    bottom: -6,
-    right: -6,
-    backgroundColor: GLASS_ACCENT,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    padding: 6,
+    bottom: 2,
+    right: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.95)',
+    borderWidth: 1.5,
+    borderColor: ACCENT_MUTED,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoHint: {
+    marginTop: 10,
+    fontSize: 11,
+    color: 'rgba(148,163,184,0.85)',
+    textAlign: 'center',
+    lineHeight: 15,
   },
   heroInfo: {
     flex: 1,
-    gap: 4,
+    gap: 2,
+    minWidth: 0,
+    paddingTop: 4,
   },
   heroName: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#f8fafc',
+    letterSpacing: -0.3,
+  },
+  heroEmail: {
+    fontSize: 13,
+    color: 'rgba(148,163,184,0.95)',
+    marginTop: 2,
   },
   nameInput: {
     fontSize: 20,
     fontWeight: '600',
     color: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#90cdfd',
+    borderBottomWidth: 1.5,
+    borderBottomColor: ACCENT,
     paddingVertical: 4,
     marginBottom: 4,
   },
   heroSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.55)',
-    marginBottom: 12,
+    fontSize: 12,
+    color: 'rgba(148,163,184,0.8)',
+    marginTop: 6,
+    marginBottom: 14,
+    fontWeight: '500',
   },
   heroActions: {
     flexDirection: 'row',
-    gap: 10,
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 8,
+    marginTop: 8,
   },
-  accentBtn: {
-    backgroundColor: GLASS_ACCENT,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
+  /** Modo edición: ancho según texto (sin estirar a media fila). */
+  heroEditBtnNatural: {
+    flexGrow: 0,
+    flexShrink: 0,
+    alignSelf: 'center',
+  },
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: ACCENT,
+    borderRadius: 14,
     paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingVertical: 10,
+    minHeight: 42,
   },
-  accentBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
+  primaryBtnPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  primaryBtnText: {
+    color: '#082f49',
+    fontWeight: '700',
     fontSize: 13,
   },
   ghostBtn: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
     paddingHorizontal: 16,
-    paddingVertical: 9,
+    paddingVertical: 10,
+    minHeight: 42,
+    justifyContent: 'center',
+  },
+  ghostBtnPressed: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   ghostBtnText: {
-    color: 'rgba(255,255,255,0.7)',
-    fontWeight: '500',
+    color: 'rgba(226,232,240,0.9)',
+    fontWeight: '600',
     fontSize: 13,
+    textAlign: 'center',
+  },
+
+  /* ── Secciones ── */
+  sectionBlock: {
+    gap: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 2,
+  },
+  sectionIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sectionEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: 'rgba(148,163,184,0.75)',
+    textTransform: 'uppercase',
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    marginTop: 2,
   },
 
   /* ── Glass Card ── */
   glassCard: {
     backgroundColor: GLASS_BG,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
-    padding: 20,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    marginBottom: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.22,
+    shadowRadius: 20,
+    elevation: 6,
   },
 
   /* ── Info rows ── */
   infoRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    gap: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+  },
+  infoIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoTextCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
   },
   infoLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.9,
-    color: 'rgba(255,255,255,0.4)',
+    fontWeight: '600',
+    letterSpacing: 0.4,
+    color: 'rgba(148,163,184,0.9)',
+    textTransform: 'uppercase',
   },
   infoValue: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    maxWidth: '60%',
-    textAlign: 'right',
-  },
-  infoValueMono: {
-    fontVariant: ['tabular-nums'],
-    fontSize: 12,
-    color: '#90cdfd',
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#f8fafc',
   },
   separator: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: GLASS_BORDER,
+    marginLeft: 54,
   },
 
   /* ── Menu rows ── */
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingVertical: 13,
+    paddingHorizontal: 6,
     borderRadius: 14,
-    gap: 14,
+    gap: 12,
+  },
+  menuRowLogout: {
+    marginTop: 2,
   },
   menuRowPressed: {
     backgroundColor: 'rgba(255,255,255,0.06)',
   },
+  menuIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuIconWrapDanger: {
+    backgroundColor: 'rgba(239,68,68,0.12)',
+  },
   menuLabel: {
     flex: 1,
     fontSize: 15,
-    color: '#FFFFFF',
+    fontWeight: '500',
+    color: '#f1f5f9',
   },
   menuLabelDanger: {
     flex: 1,
     fontSize: 15,
-    fontWeight: '600',
-    color: '#ffb4ab',
+    fontWeight: '700',
+    color: '#fecaca',
   },
   menuDivider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: GLASS_BORDER,
+    marginLeft: 58,
+  },
+  logoutDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    marginVertical: 8,
     marginHorizontal: 4,
   },
 
   /* ── Vista de invitado ── */
-  guestGlow1: {
-    position: 'absolute',
-    top: -80,
-    left: -80,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.22)',
-  },
-  guestGlow2: {
-    position: 'absolute',
-    bottom: -40,
-    right: -60,
-    width: 240,
-    height: 240,
-    borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.10)',
-  },
   guestScroll: {
     flexGrow: 1,
     justifyContent: 'center',

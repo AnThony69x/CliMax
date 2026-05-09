@@ -14,13 +14,16 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import type { Alert as WeatherAlert } from '../../types';
 import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
 import { IntelligentAlertCardImproved } from '../../components/IntelligentAlertCardImproved';
 
-const GLASS_BG     = 'rgba(255,255,255,0.12)';
-const GLASS_BORDER = 'rgba(255,255,255,0.18)';
+const GLASS_BG     = 'rgba(255,255,255,0.08)';
+const GLASS_BORDER = 'rgba(255,255,255,0.14)';
+const SURFACE_DEEP = '#0c1222';
+const ACCENT       = '#38bdf8';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type EvidenceSeverity = 'info' | 'warning' | 'critical';
@@ -44,7 +47,7 @@ const SEVERITY_CONFIG: Record<string, {
 }> = {
   critical: { label: 'CRÍTICO',  color: '#ffb4ab', iconName: 'thunderstorm-outline' },
   warning:  { label: 'MODERADO', color: '#ffb95a', iconName: 'rainy-outline'        },
-  info:     { label: 'AVISO',    color: '#90cdfd', iconName: 'partly-sunny-outline' },
+  info:     { label: 'AVISO',    color: ACCENT, iconName: 'partly-sunny-outline' },
 };
 
 const DEFAULT_SAFETY_TIPS: SafetyTip[] = [
@@ -119,6 +122,7 @@ const ACTION_KEYWORD_TIPS: Array<{
 
 export default function AlertsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [evidences, setEvidences] = useState<AlertEvidence[]>([]);
   const [sessionReady, setSessionReady] = useState(false);
@@ -383,7 +387,7 @@ export default function AlertsScreen() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <ActivityIndicator size="large" color="#90cdfd" />
+        <ActivityIndicator size="large" color={ACCENT} />
       </View>
     );
   }
@@ -391,14 +395,32 @@ export default function AlertsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.bgGlowTop} pointerEvents="none" />
+      <View style={styles.bgGlowBottom} pointerEvents="none" />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + 14,
+            paddingBottom: Math.max(insets.bottom, 16) + 28,
+          },
+        ]}
       >
         {/* ── Encabezado ── */}
         <View style={styles.header}>
-          <Text style={styles.title}>Alertas Meteorológicas</Text>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerTitleBlock}>
+              <Text style={styles.eyebrow}>Panel</Text>
+              <Text style={styles.title}>Alertas meteorológicas</Text>
+            </View>
+            {unreadCount > 0 ? (
+              <View style={styles.unreadPill}>
+                <Text style={styles.unreadPillText}>{unreadCount}</Text>
+              </View>
+            ) : null}
+          </View>
           <Text style={styles.subtitle}>
             {unreadCount > 0
               ? `${unreadCount} alerta${unreadCount > 1 ? 's' : ''} sin leer`
@@ -410,8 +432,14 @@ export default function AlertsScreen() {
         {intelligentAlerts && intelligentAlerts.length > 0 && (
           <View style={styles.intelligentAlertsSection}>
             <View style={styles.sectionHeader}>
-              <Ionicons name="sparkles" size={20} color="#90cdfd" />
-              <Text style={styles.sectionTitle}>Análisis de Riesgo IA</Text>
+              <View style={styles.sectionIconWrap}>
+                <Ionicons name="sparkles" size={18} color={ACCENT} />
+              </View>
+              <View style={styles.sectionHeaderTextWrap}>
+                <Text style={styles.sectionEyebrow}>IA</Text>
+                <Text style={styles.sectionTitle}>Análisis de riesgo</Text>
+              </View>
+              <View style={styles.sectionHeaderAccent} />
             </View>
             {intelligentAlerts.map((alert) => (
               <IntelligentAlertCardImproved
@@ -428,7 +456,7 @@ export default function AlertsScreen() {
 
         {showingIntelligentLoading && (
           <View style={styles.emptyCard}>
-            <ActivityIndicator size="small" color="#90cdfd" />
+            <ActivityIndicator size="small" color={ACCENT} />
             <Text style={styles.emptyTitle}>Cargando alertas inteligentes...</Text>
             <Text style={styles.emptyText}>
               Estamos analizando las condiciones de riesgo en tu zona.
@@ -450,7 +478,9 @@ export default function AlertsScreen() {
         {/* ── Recomendaciones de seguridad ── */}
         <View style={styles.safetySection}>
           <View style={styles.safetyTitleRow}>
-            <Ionicons name="shield-checkmark-outline" size={18} color="#FFFFFF" />
+            <View style={styles.safetyTitleIconWrap}>
+              <Ionicons name="shield-checkmark-outline" size={17} color={ACCENT} />
+            </View>
             <Text style={styles.safetyTitle}>
               {hasAlerts ? 'Recomendaciones adaptativas (IA)' : 'Recomendaciones de seguridad'}
             </Text>
@@ -459,7 +489,7 @@ export default function AlertsScreen() {
             {adaptiveSafetyTips.map((tip) => (
               <View key={tip.text} style={styles.safetyCard}>
                 <View style={styles.safetyIconWrap}>
-                  <Ionicons name={tip.iconName} size={22} color="rgba(255,255,255,0.85)" />
+                  <Ionicons name={tip.iconName} size={21} color="rgba(241,245,249,0.92)" />
                 </View>
                 <Text style={styles.safetyText}>{tip.text}</Text>
               </View>
@@ -475,49 +505,111 @@ export default function AlertsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0c0e11',
+    backgroundColor: SURFACE_DEEP,
+    overflow: 'hidden',
+  },
+  bgGlowTop: {
+    position: 'absolute',
+    top: -90,
+    left: -100,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.24)',
+  },
+  bgGlowBottom: {
+    position: 'absolute',
+    bottom: -70,
+    right: -90,
+    width: 290,
+    height: 290,
+    borderRadius: 999,
+    backgroundColor: 'rgba(251,146,60,0.06)',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: '#0c0e11',
+    backgroundColor: SURFACE_DEEP,
     justifyContent: 'center',
     alignItems: 'center',
   },
   scrollContent: {
-    paddingTop: 60,
-    paddingBottom: 32,
     paddingHorizontal: 20,
-    gap: 16,
+    gap: 18,
   },
 
-  /* ── Header ── */
   header: {
-    marginBottom: 8,
+    marginBottom: 6,
+    gap: 8,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.5)',
-  },
-
-  /* ── Empty ── */
-  emptyCard: {
-    backgroundColor: GLASS_BG,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    padding: 40,
-    alignItems: 'center',
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     gap: 12,
   },
-  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
-  emptyText: { fontSize: 14, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 20 },
+  headerTitleBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  eyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.15,
+    color: 'rgba(148,163,184,0.95)',
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontSize: 27,
+    fontWeight: '700',
+    color: '#f8fafc',
+    letterSpacing: -0.4,
+  },
+  unreadPill: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadPillText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: ACCENT,
+    fontVariant: ['tabular-nums'],
+  },
+  subtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(148,163,184,0.95)',
+    lineHeight: 20,
+  },
+
+  emptyCard: {
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.14)',
+    padding: 36,
+    alignItems: 'center',
+    gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
+    elevation: 4,
+  },
+  emptyTitle: { fontSize: 19, fontWeight: '700', color: '#f1f5f9' },
+  emptyText: {
+    fontSize: 14,
+    color: 'rgba(148,163,184,0.92)',
+    textAlign: 'center',
+    lineHeight: 21,
+  },
 
   /* ── Primary alert card ── */
   primaryCard: {
@@ -657,12 +749,14 @@ const styles = StyleSheet.create({
   safetyTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   safetyTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f1f5f9',
+    lineHeight: 22,
   },
   safetyGrid: {
     flexDirection: 'row',
@@ -671,28 +765,30 @@ const styles = StyleSheet.create({
   },
   safetyCard: {
     width: '47%',
-    backgroundColor: GLASS_BG,
+    backgroundColor: 'rgba(15,23,42,0.55)',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    padding: 18,
+    borderColor: 'rgba(56,189,248,0.14)',
+    padding: 16,
     alignItems: 'center',
     gap: 10,
   },
   safetyIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
     justifyContent: 'center',
     alignItems: 'center',
   },
   safetyText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#e2e8f0',
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 17,
   },
 
   /* ── Evidence CRUD ── */
@@ -804,8 +900,8 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   severityOptionActive: {
-    backgroundColor: 'rgba(144,205,253,0.22)',
-    borderColor: '#90cdfd',
+    backgroundColor: 'rgba(56,189,248,0.16)',
+    borderColor: ACCENT,
   },
   severityOptionText: {
     color: '#FFFFFF',
@@ -928,7 +1024,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   unreadText: {
-    color: '#90cdfd',
+    color: ACCENT,
     fontWeight: '700',
   },
   evidenceActions: {
@@ -937,9 +1033,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   smallActionBtn: {
-    backgroundColor: 'rgba(144,205,253,0.18)',
+    backgroundColor: 'rgba(56,189,248,0.14)',
     borderWidth: 1,
-    borderColor: '#90cdfd',
+    borderColor: ACCENT,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 5,
@@ -1039,20 +1135,60 @@ const styles = StyleSheet.create({
 
   /* ── Alertas Inteligentes ── */
   intelligentAlertsSection: {
-    gap: 12,
-    marginVertical: 8,
+    gap: 14,
+    marginVertical: 4,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 4,
-    marginBottom: 4,
+    gap: 12,
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  sectionHeaderTextWrap: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  sectionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.26)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    color: 'rgba(148,163,184,0.85)',
+    textTransform: 'uppercase',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#90cdfd',
-    letterSpacing: 0.5,
+    color: '#f1f5f9',
+    marginTop: 2,
+    letterSpacing: -0.2,
+  },
+  sectionHeaderAccent: {
+    width: 4,
+    height: 38,
+    borderRadius: 4,
+    backgroundColor: ACCENT,
+    opacity: 0.65,
+  },
+  safetyTitleIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,6 +15,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
 import type { City } from '../../types';
@@ -24,6 +26,8 @@ type WeatherState = {
   temperature: number;
   weatherCode: number;
   windSpeed: number;
+  tempMax?: number | null;
+  tempMin?: number | null;
 };
 
 type SlideData = {
@@ -63,9 +67,27 @@ const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
 
 const HOURLY_SLOTS = ['Ahora', '+1h', '+2h', '+3h', '+4h'];
 
+const SURFACE_DEEP = '#0c1222';
+const ACCENT = '#38bdf8';
+const ACCENT_SOFT = '#7dd3fc';
+
+
 function weatherInfo(code: number | undefined) {
   if (code == null) return { label: 'Cargando...', icon: '⏳' };
   return WEATHER_CODES[code] ?? { label: 'Condición desconocida', icon: '🌡️' };
+}
+
+function formatTempRounded(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return '--';
+  return `${Math.round(v)}`;
+}
+
+/** Icono de “posición actual” (GPS): mira de puntería, sin pin de mapa. */
+function gpsLocationIconProps() {
+  if (Platform.OS === 'ios') {
+    return { name: 'locate' as const, size: 22 };
+  }
+  return { name: 'locate-outline' as const, size: 22 };
 }
 
 async function apiFetchWeather(latitude: number, longitude: number): Promise<WeatherState> {
@@ -76,10 +98,15 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
   const data = await res.json();
   const current = data?.current;
   if (!current) throw new Error('Datos del clima incompletos');
+  const daily = data?.daily as Record<string, number[] | undefined> | undefined;
+  const tempMaxRaw = daily?.temperature_2m_max?.[0];
+  const tempMinRaw = daily?.temperature_2m_min?.[0];
   return {
     temperature: current.temperature_2m,
     weatherCode: current.weather_code,
     windSpeed: current.wind_speed_10m,
+    tempMax: typeof tempMaxRaw === 'number' ? tempMaxRaw : null,
+    tempMin: typeof tempMinRaw === 'number' ? tempMinRaw : null,
   };
 }
 
@@ -134,65 +161,82 @@ function WeatherSlide({
   onRefresh?: () => void;
   isGPS: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const info = weatherInfo(slide.weather?.weatherCode);
   const refreshing = isGPS && slide.status === 'loading';
+  const bottomPad = Math.max(insets.bottom, 12) + 84;
 
   return (
     <ScrollView
       style={{ width: SCREEN_WIDTH }}
       showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.slideScroll}
+      contentContainerStyle={[styles.slideScroll, { paddingTop: insets.top + 12, paddingBottom: bottomPad }]}
       refreshControl={
         isGPS ? (
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#90cdfd"
-            colors={['#90cdfd']}
+            tintColor={ACCENT_SOFT}
+            colors={[ACCENT_SOFT]}
           />
         ) : undefined
       }
     >
-      {/* Hero */}
+      {/* Hero: temperatura arriba (fija); el nombre largo ya no la empuja */}
       <View style={styles.heroCard}>
-        <Text style={styles.locationLabel}>
-          {isGPS ? 'UBICACIÓN ACTUAL' : 'CIUDAD GUARDADA'}
-        </Text>
-        <Text style={styles.locationName} numberOfLines={2}>
-          {slide.cityName}
-        </Text>
+        {isGPS ? (
+          <View style={styles.gpsIconOnly}>
+            <Ionicons {...gpsLocationIconProps()} color={ACCENT} />
+          </View>
+        ) : null}
 
-        <View style={styles.heroRow}>
-          <View style={styles.heroLeft}>
-            <Text style={styles.temperature}>
-              {slide.weather != null ? `${slide.weather.temperature}°` : '--°'}
-            </Text>
-            <Text style={styles.condition}>{info.label}</Text>
-
-            <View style={styles.pillRow}>
-              <View style={styles.pill}>
-                <Text style={styles.pillText}>
-                  💨 {slide.weather?.windSpeed ?? '--'} km/h
-                </Text>
-              </View>
-              {slide.coords && (
-                <View style={styles.pill}>
-                  <Text style={styles.pillText}>
-                    📍 {slide.coords.latitude.toFixed(2)}, {slide.coords.longitude.toFixed(2)}
-                  </Text>
-                </View>
-              )}
+        <View style={styles.heroMainRow}>
+          <View style={styles.heroTempColumn}>
+            <View style={styles.tempRow}>
+              <Text
+                style={styles.temperature}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.85}
+              >
+                {slide.weather != null ? Math.round(slide.weather.temperature) : '--'}
+              </Text>
+              <Text style={styles.degreeMark}>°</Text>
             </View>
           </View>
+          <View style={styles.heroEmojiWrap} accessibilityLabel={`Icono ${info.label}`}>
+            <Text style={styles.heroEmoji}>{info.icon}</Text>
+          </View>
+        </View>
 
-          <Text style={styles.heroEmoji}>{info.icon}</Text>
+        <Text style={styles.locationName} numberOfLines={2} ellipsizeMode="tail">
+          {slide.cityName}
+        </Text>
+        <Text style={styles.condition}>{info.label}</Text>
+
+        <View style={styles.pillRow}>
+          <View style={styles.pill}>
+            <Ionicons name="speedometer-outline" size={15} color={ACCENT} style={styles.pillIcon} />
+            <Text style={styles.pillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+          </View>
+          <View style={[styles.pill, styles.pillMuted]}>
+            <Ionicons name="trending-up-outline" size={15} color="#fda4af" style={styles.pillIcon} />
+            <Text style={styles.pillTextSecondary}>Máx {formatTempRounded(slide.weather?.tempMax)}°</Text>
+          </View>
+          <View style={[styles.pill, styles.pillMuted]}>
+            <Ionicons name="trending-down-outline" size={15} color={ACCENT_SOFT} style={styles.pillIcon} />
+            <Text style={styles.pillTextSecondary}>Mín {formatTempRounded(slide.weather?.tempMin)}°</Text>
+          </View>
         </View>
 
         {slide.status === 'loading' && !isGPS && (
-          <ActivityIndicator color="#90cdfd" style={{ marginTop: 16 }} />
+          <ActivityIndicator color={ACCENT_SOFT} style={styles.heroLoader} />
         )}
         {slide.updatedAt && (
-          <Text style={styles.updatedAt}>Actualizado: {slide.updatedAt}</Text>
+          <View style={styles.updatedRow}>
+            <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
+            <Text style={styles.updatedAt}>Actualizado · {slide.updatedAt}</Text>
+          </View>
         )}
         {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
       </View>
@@ -200,8 +244,16 @@ function WeatherSlide({
       {/* Pronóstico por hora (indicativo) */}
       <View style={styles.glassCard}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Pronóstico por hora</Text>
-          <Text style={styles.cardHeaderIcon}>🕐</Text>
+          <View style={styles.cardHeaderTitles}>
+            <View style={styles.cardTitleIconWrap}>
+              <Ionicons name="today-outline" size={18} color={ACCENT} />
+            </View>
+            <View>
+              <Text style={styles.cardEyebrow}>Próximas horas</Text>
+              <Text style={styles.cardTitle}>Por hora</Text>
+            </View>
+          </View>
+          <View style={styles.cardHeaderAccent} />
         </View>
         {HOURLY_SLOTS.map((slot, i) => (
           <View
@@ -221,10 +273,17 @@ function WeatherSlide({
 
       {/* Coordenadas */}
       {slide.coords && (
-        <View style={styles.glassCard}>
+        <View style={[styles.glassCard, styles.glassCardMuted]}>
           <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Coordenadas GPS</Text>
-            <Text style={styles.cardHeaderIcon}>🛰️</Text>
+            <View style={styles.cardHeaderTitles}>
+              <View style={styles.cardTitleIconWrap}>
+                <Ionicons name="map-outline" size={18} color={ACCENT} />
+              </View>
+              <View>
+                <Text style={styles.cardEyebrow}>Referencia</Text>
+                <Text style={styles.cardTitle}>Coordenadas GPS</Text>
+              </View>
+            </View>
           </View>
           <View style={styles.coordRow}>
             <View style={styles.coordItem}>
@@ -247,6 +306,7 @@ function WeatherSlide({
    HomeScreen principal
 ───────────────────────────────────────────── */
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
   const { savedCities, removeCity } = useCities();
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -444,11 +504,15 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
 
       {/* Botón eliminar ciudad (solo en slides no-GPS) */}
       {!isActiveGPS && activeSlide && (
         <Pressable
-          style={styles.removeBtn}
+          style={[styles.removeBtn, { top: insets.top + 10 }]}
+          accessibilityRole="button"
+          accessibilityLabel="Quitar ciudad guardada"
           onPress={() => {
             const city = savedCities[activeIndex - 1];
             if (!city) return;
@@ -458,7 +522,7 @@ export default function HomeScreen() {
             scrollRef.current?.scrollTo({ x: newIdx * SCREEN_WIDTH, animated: true });
           }}
         >
-          <Text style={styles.removeBtnText}>✕</Text>
+          <Ionicons name="trash-outline" size={17} color="#fecaca" />
         </Pressable>
       )}
 
@@ -492,7 +556,8 @@ export default function HomeScreen() {
 
       {/* Indicadores de puntos */}
       {allSlides.length > 1 && (
-        <View style={styles.dotsRow}>
+        <View style={[styles.dotsCapsuleWrap, { paddingBottom: Math.max(insets.bottom, 8) + 6 }]}>
+          <View style={styles.dotsCapsule}>
           {allSlides.map((_, i) => (
             <Pressable
               key={i}
@@ -503,6 +568,7 @@ export default function HomeScreen() {
               }}
             />
           ))}
+          </View>
         </View>
       )}
     </View>
@@ -515,78 +581,146 @@ const GLASS_BORDER = 'rgba(255,255,255,0.14)';
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#111316',
+    backgroundColor: SURFACE_DEEP,
+    overflow: 'hidden',
+  },
+  bgGlowTop: {
+    position: 'absolute',
+    top: -90,
+    left: -100,
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.26)',
+  },
+  bgGlowBottom: {
+    position: 'absolute',
+    bottom: -80,
+    right: -100,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.09)',
   },
   slideScroll: {
-    paddingTop: 60,
-    paddingBottom: 100,
     paddingHorizontal: 20,
-    gap: 16,
+    gap: 18,
   },
 
-  /* ── Botón eliminar ── */
   removeBtn: {
     position: 'absolute',
-    top: 52,
-    right: 20,
+    right: 18,
     zIndex: 10,
-    backgroundColor: 'rgba(255,100,100,0.2)',
+    backgroundColor: 'rgba(239,68,68,0.14)',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,100,100,0.35)',
-    width: 34,
-    height: 34,
+    borderColor: 'rgba(254,202,202,0.35)',
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  removeBtnText: {
-    color: '#ffb4ab',
-    fontSize: 14,
-    fontWeight: '600',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
   },
 
   /* ── Hero ── */
   heroCard: {
-    backgroundColor: 'rgba(2,87,129,0.35)',
+    backgroundColor: 'rgba(15,23,42,0.78)',
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    padding: 28,
+    borderColor: 'rgba(56,189,248,0.22)',
+    paddingVertical: 24,
+    paddingHorizontal: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.3,
+    shadowRadius: 24,
+    elevation: 10,
   },
-  locationLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    color: 'rgba(255,255,255,0.5)',
-    marginBottom: 6,
+  gpsIconOnly: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    paddingVertical: 2,
+    paddingRight: 8,
   },
   locationName: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 20,
+    color: '#f8fafc',
+    letterSpacing: -0.35,
+    marginBottom: 8,
+    lineHeight: 27,
+    maxWidth: '100%',
   },
-  heroRow: {
+  heroMainRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 12,
   },
-  heroLeft: { flex: 1 },
+  heroTempColumn: {
+    flexShrink: 0,
+    flexGrow: 0,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    minWidth: 108,
+    maxWidth: '58%',
+    paddingRight: 8,
+  },
+  tempRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexShrink: 0,
+  },
   temperature: {
-    fontSize: 80,
+    fontSize: 76,
     fontWeight: '800',
-    color: '#FFFFFF',
-    lineHeight: 88,
+    color: '#f8fafc',
+    letterSpacing: -4,
+    lineHeight: 80,
+    fontVariant: ['tabular-nums'],
+  },
+  degreeMark: {
+    fontSize: 28,
+    fontWeight: '600',
+    color: ACCENT,
+    marginTop: 10,
+    marginLeft: 2,
   },
   condition: {
-    fontSize: 18,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 4,
-    marginBottom: 16,
+    fontSize: 16,
+    color: 'rgba(148,163,184,0.95)',
+    marginTop: 0,
+    marginBottom: 12,
+    lineHeight: 22,
+    fontWeight: '500',
   },
-  heroEmoji: {
-    fontSize: 80,
-    marginLeft: 8,
+  heroEmojiWrap: {
+    flexShrink: 0,
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    backgroundColor: 'rgba(56,189,248,0.10)',
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroEmoji: { fontSize: 52 },
+
+  heroLoader: {
+    marginTop: 14,
+    alignSelf: 'flex-start',
+  },
+  updatedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
   },
   pillRow: {
     flexDirection: 'row',
@@ -594,103 +728,175 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   pill: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(56,189,248,0.08)',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: 'rgba(56,189,248,0.2)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
+    maxWidth: '100%',
   },
-  pillText: { fontSize: 13, color: '#FFFFFF' },
+  pillMuted: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: GLASS_BORDER,
+  },
+  pillIcon: {
+    marginRight: 6,
+  },
+  pillText: { fontSize: 13, fontWeight: '600', color: '#f8fafc' },
+  pillTextSecondary: {
+    flexShrink: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(241,245,249,0.88)',
+  },
   updatedAt: {
-    marginTop: 16,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(148,163,184,0.95)',
   },
   errorText: {
-    marginTop: 8,
+    marginTop: 10,
     fontSize: 13,
-    color: '#ffb4ab',
+    fontWeight: '500',
+    color: '#fecaca',
+    lineHeight: 19,
   },
 
-  /* ── Glass Card ── */
   glassCard: {
     backgroundColor: GLASS_BG,
-    borderRadius: 24,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
-    padding: 20,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  glassCardMuted: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
+    paddingHorizontal: 2,
   },
-  cardTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF' },
-  cardHeaderIcon: { fontSize: 20 },
+  cardHeaderTitles: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  cardTitleIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardEyebrow: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.15,
+    color: 'rgba(148,163,184,0.85)',
+    textTransform: 'uppercase',
+  },
+  cardTitle: { fontSize: 17, fontWeight: '700', color: '#f8fafc', marginTop: 3 },
+  cardHeaderAccent: {
+    width: 4,
+    height: 40,
+    borderRadius: 4,
+    backgroundColor: ACCENT,
+    opacity: 0.6,
+    marginRight: 2,
+  },
 
-  /* ── Hourly ── */
   hourRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
+    paddingVertical: 11,
     paddingHorizontal: 12,
+    marginHorizontal: -4,
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   hourRowActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderColor: 'rgba(56,189,248,0.28)',
   },
-  hourTime: { fontSize: 15, color: 'rgba(255,255,255,0.6)', width: 60 },
-  hourTimeActive: { color: '#FFFFFF', fontWeight: '600' },
+  hourTime: { fontSize: 14, color: 'rgba(148,163,184,0.95)', width: 54, fontWeight: '500' },
+  hourTimeActive: { color: '#f8fafc', fontWeight: '700' },
   hourIcon: { fontSize: 22, flex: 1, textAlign: 'center' },
   hourTemp: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    width: 44,
+    fontSize: 17,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    color: '#f8fafc',
+    width: 42,
     textAlign: 'right',
   },
 
-  /* ── Coordenadas ── */
   coordRow: { flexDirection: 'row', alignItems: 'center' },
   coordItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
   coordDivider: {
-    width: 1,
-    height: 40,
+    width: StyleSheet.hairlineWidth,
+    height: 44,
     backgroundColor: GLASS_BORDER,
-    marginHorizontal: 12,
+    marginHorizontal: 10,
   },
   coordLabel: {
     fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1,
-    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 0.8,
+    color: 'rgba(148,163,184,0.75)',
     marginBottom: 6,
+    textTransform: 'uppercase',
   },
-  coordValue: { fontSize: 16, fontWeight: '600', color: '#90cdfd' },
+  coordValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: ACCENT_SOFT,
+    fontVariant: ['tabular-nums'],
+  },
 
-  /* ── Dots ── */
-  dotsRow: {
+  dotsCapsuleWrap: {
+    alignItems: 'center',
+    paddingTop: 6,
+    backgroundColor: 'transparent',
+    zIndex: 5,
+  },
+  dotsCapsule: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
-    paddingBottom: 16,
-    paddingTop: 8,
-    backgroundColor: '#111316',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.88)',
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
   },
   dot: {
-    width: 7,
-    height: 7,
+    width: 8,
+    height: 8,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(148,163,184,0.35)',
   },
   dotActive: {
-    width: 20,
-    backgroundColor: '#90cdfd',
+    width: 22,
+    backgroundColor: ACCENT,
   },
 });
