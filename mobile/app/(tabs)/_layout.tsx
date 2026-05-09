@@ -1,25 +1,21 @@
-import { Tabs } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Tabs } from 'expo-router';
 import React from 'react';
+
+import LiquidGlassFloatingTabBar from '../../src/components/LiquidGlassFloatingTabBar';
 
 export default function TabLayout() {
   return (
     <Tabs
+      tabBar={(props) => <LiquidGlassFloatingTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: '#2A7A4B',
-        tabBarInactiveTintColor: '#6E7F77',
         headerShown: false,
+        tabBarShowLabel: true,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopWidth: 1,
-          borderTopColor: '#E8EBE9',
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '500',
+          position: 'absolute',
+          backgroundColor: 'transparent',
+          borderTopWidth: 0,
+          elevation: 0,
         },
       }}>
       <Tabs.Screen
@@ -37,6 +33,15 @@ export default function TabLayout() {
           title: 'Buscar',
           tabBarIcon: ({ color, size }) => (
             <MaterialIcons name="search" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="community"
+        options={{
+          title: 'Comunidad',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialIcons name="groups" size={size} color={color} />
           ),
         }}
       />
