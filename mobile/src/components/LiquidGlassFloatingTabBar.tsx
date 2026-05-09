@@ -47,7 +47,8 @@ export function LiquidGlassFloatingTabBar({
   const routeCount = state.routes.length;
   const [rowWidth, setRowWidth] = useState(0);
   const tabWidth = rowWidth > 0 ? rowWidth / routeCount : 0;
-  const bubbleWidth = Math.max(48, Math.min(tabWidth - 12, 96));
+  /** La burbuja abarca casi toda la pestaña para envolver textos largos como "Comunidad". */
+  const bubbleWidth = Math.max(52, tabWidth - 4);
 
   const translateX = useSharedValue(0);
   const stretch = useSharedValue(0);
@@ -139,7 +140,7 @@ export function LiquidGlassFloatingTabBar({
                 bubbleAnimatedStyle,
               ]}>
               <BlurView
-                intensity={48}
+                intensity={26}
                 tint="light"
                 style={StyleSheet.absoluteFill}
               />
@@ -304,23 +305,23 @@ const styles = StyleSheet.create({
   },
   activeBubbleTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
   },
   activeBubbleRim: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: BUBBLE_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.45)',
+    borderColor: 'rgba(255, 255, 255, 0.28)',
   },
-  /** Reflejo superior estilo "gota mojada" */
+  /** Reflejo superior estilo "gota mojada" más sutil */
   activeBubbleGlossTop: {
     position: 'absolute',
     top: 2,
-    left: 8,
-    right: 8,
-    height: BUBBLE_HEIGHT * 0.45,
+    left: 10,
+    right: 10,
+    height: BUBBLE_HEIGHT * 0.40,
     borderRadius: BUBBLE_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.10)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
   tabContent: {
     alignItems: 'center',

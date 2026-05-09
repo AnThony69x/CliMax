@@ -28,6 +28,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Reanimated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SURFACE_DEEP = '#0c1222';
@@ -138,6 +145,7 @@ export default function CommunityScreen() {
   const [mentionSuggestions, setMentionSuggestions] = useState<CommunityProfile[]>([]);
   const [mentionQuery, setMentionQuery] = useState('');
   const [activeMentionPostId, setActiveMentionPostId] = useState<string | null>(null);
+  const [lightboxUri, setLightboxUri] = useState<string | null>(null);
 
   const goToLogin = () => {
     router.push('/login?force=1');
@@ -1062,6 +1070,29 @@ export default function CommunityScreen() {
             <Text style={styles.title}>Comunidad</Text>
             <Text style={styles.subtitle}>Publicaciones y reportes con ubicación.</Text>
           </View>
+          {isLoggedIn && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Nueva publicación"
+              style={({ pressed }) => [
+                styles.headerNewBtn,
+                pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+              ]}
+              onPress={() => {
+                if (composerOpen) {
+                  cerrarComposer();
+                  return;
+                }
+                void abrirComposerNuevo();
+              }}
+            >
+              <Ionicons
+                name={composerOpen ? 'close' : 'add'}
+                size={26}
+                color="#0c1222"
+              />
+            </Pressable>
+          )}
         </View>
 
         {loading ? (
@@ -1285,7 +1316,15 @@ export default function CommunityScreen() {
                       </Pressable>
                     </View>
                   </View>
-                  {post.image_url ? <Image source={{ uri: post.image_url }} style={styles.postImage} /> : null}
+                  {post.image_url ? (
+                    <Pressable
+                      onPress={() => setLightboxUri(post.image_url ?? null)}
+                      accessibilityRole="imagebutton"
+                      accessibilityLabel="Ampliar imagen de la publicación"
+                    >
+                      <Image source={{ uri: post.image_url }} style={styles.postImage} />
+                    </Pressable>
+                  ) : null}
                   <Text style={styles.postCaption} numberOfLines={4} ellipsizeMode="tail">
                     {primaryComment || 'Sin pie de foto.'}
                   </Text>
@@ -1443,42 +1482,7 @@ export default function CommunityScreen() {
         )}
       </ScrollView>
 
-      {isLoggedIn && !loading && (
-        <Pressable
-          style={({ pressed }) => [
-            styles.fabOuter,
-            {
-              /** El layout de pestañas ya deja hueco inferior; no sumamos insets para no duplicar y elevar el FAB. */
-              bottom: 4,
-              right: 14,
-            },
-            pressed && styles.fabOuterPressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={composerOpen ? 'Cerrar editor de publicación' : 'Nueva publicación con foto'}
-          onPress={() => {
-            if (composerOpen) {
-              cerrarComposer();
-              return;
-            }
-            void abrirComposerNuevo();
-          }}
-        >
-          <View style={styles.fabInner}>
-            <Ionicons
-              name={composerOpen ? 'close' : 'cloud-upload-outline'}
-              size={26}
-              color="#f8fafc"
-              style={styles.fabMainIconOffset}
-            />
-          </View>
-          {!composerOpen ? (
-            <View style={styles.fabBadge} accessibilityElementsHidden>
-              <Ionicons name="camera-outline" size={11} color={ACCENT} />
-            </View>
-          ) : null}
-        </Pressable>
-      )}
+      {/* FAB removido: el botón "+" en el header (titleBlock) abre el composer. */}
 
       <Modal
         visible={isLoggedIn && filterModalOpen}
@@ -1727,7 +1731,144 @@ export default function CommunityScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <Modal
+        visible={Boolean(lightboxUri)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxUri(null)}
+      >
+        <View style={styles.lightboxBackdrop}>
+          {lightboxUri ? (
+            <ZoomableLightboxImage
+              uri={lightboxUri}
+              onRequestClose={() => setLightboxUri(null)}
+            />
+          ) : null}
+          <Pressable
+            style={styles.lightboxCloseBtn}
+            onPress={() => setLightboxUri(null)}
+            hitSlop={12}
+          >
+            <Ionicons name="close" size={26} color="#f8fafc" />
+          </Pressable>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
+  );
+}
+
+const AnimatedImage = Reanimated.createAnimatedComponent(Image);
+
+const MIN_SCALE = 1;
+const MAX_SCALE = 4;
+const DOUBLE_TAP_SCALE = 2.4;
+
+/**
+ * Imagen del lightbox con pinch-to-zoom, doble-tap para acercar/alejar y arrastre cuando está zoomed.
+ * Tap simple cierra el lightbox.
+ */
+function ZoomableLightboxImage({
+  uri,
+  onRequestClose,
+}: {
+  uri: string;
+  onRequestClose: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+  const focalX = useSharedValue(0);
+  const focalY = useSharedValue(0);
+
+  const resetZoom = () => {
+    'worklet';
+    scale.value = withTiming(1);
+    savedScale.value = 1;
+    translateX.value = withTiming(0);
+    translateY.value = withTiming(0);
+    savedTranslateX.value = 0;
+    savedTranslateY.value = 0;
+  };
+
+  const pinchGesture = Gesture.Pinch()
+    .onStart((e) => {
+      focalX.value = e.focalX;
+      focalY.value = e.focalY;
+    })
+    .onUpdate((e) => {
+      const next = savedScale.value * e.scale;
+      scale.value = Math.max(MIN_SCALE * 0.85, Math.min(next, MAX_SCALE));
+    })
+    .onEnd(() => {
+      if (scale.value < MIN_SCALE) {
+        resetZoom();
+      } else {
+        savedScale.value = scale.value;
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .averageTouches(true)
+    .minPointers(1)
+    .onUpdate((e) => {
+      if (scale.value <= 1.02) return;
+      translateX.value = savedTranslateX.value + e.translationX;
+      translateY.value = savedTranslateY.value + e.translationY;
+    })
+    .onEnd(() => {
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    });
+
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      if (scale.value > 1.05) {
+        resetZoom();
+      } else {
+        scale.value = withTiming(DOUBLE_TAP_SCALE);
+        savedScale.value = DOUBLE_TAP_SCALE;
+      }
+    });
+
+  const singleTapGesture = Gesture.Tap()
+    .numberOfTaps(1)
+    .onEnd(() => {
+      if (scale.value > 1.05) {
+        resetZoom();
+      } else {
+        runOnJS(onRequestClose)();
+      }
+    });
+
+  const composed = Gesture.Exclusive(
+    Gesture.Simultaneous(pinchGesture, panGesture),
+    doubleTapGesture,
+    singleTapGesture,
+  );
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <GestureDetector gesture={composed}>
+      <Reanimated.View style={styles.lightboxImageWrap}>
+        <AnimatedImage
+          source={{ uri }}
+          style={[styles.lightboxImage, animatedStyle]}
+          resizeMode="contain"
+        />
+      </Reanimated.View>
+    </GestureDetector>
   );
 }
 
@@ -1764,9 +1905,22 @@ const styles = StyleSheet.create({
   },
   titleBlock: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 14,
     marginBottom: 18,
+  },
+  headerNewBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: ACCENT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 8,
   },
   titleIconWrap: {
     width: 48,
@@ -2781,6 +2935,35 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 12,
+  },
+
+  /* ── Lightbox ── */
+  lightboxBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.94)',
+  },
+  lightboxImageWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxImage: {
+    width: '100%',
+    height: '100%',
+  },
+  lightboxCloseBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 5,
   },
 });
 

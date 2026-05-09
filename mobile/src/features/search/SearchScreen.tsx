@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated as RNAnimated,
+  Easing,
   Pressable,
   ScrollView,
   StatusBar,
@@ -11,6 +13,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Animated, {
+  useAnimatedStyle,
+  type SharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCities } from '../../core/cities/CitiesContext';
 import type { City } from '../../types';
@@ -21,9 +28,9 @@ const SURFACE_DEEP = '#0c1222';
 const ACCENT       = '#38bdf8';
 const ACCENT_SOFT  = '#7dd3fc';
 const DEBOUNCE_MS  = 350;
+const SWIPE_HINT_KEY = '@climax/search/swipe-hint-shown';
 
 export default function SearchScreen() {
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { addCity, hasCity, savedCities, removeCity } = useCities();
 
@@ -34,9 +41,14 @@ export default function SearchScreen() {
   const [suggestions, setSuggestions] = useState<City[]>([]);
   const [loadingSug, setLoadingSug]   = useState(false);
   const [focused, setFocused]         = useState(false);
+  const [justAdded, setJustAdded]     = useState<City | null>(null);
+  const [swipeHintCity, setSwipeHintCity] = useState<string | null>(null);
 
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const blurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const justAddedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hintAnim          = useRef(new RNAnimated.Value(0)).current;
 
   /* ── Autocompletado con debounce ── */
   useEffect(() => {
@@ -97,9 +109,31 @@ export default function SearchScreen() {
     }
   };
 
-  const handleSelectCity = (city: City) => {
+  const handleSelectCity = async (city: City) => {
+    const wasNew = !hasCity(city.id);
     addCity(city);
-    router.push('/(tabs)');
+
+    setQuery('');
+    setResults([]);
+    setSuggestions([]);
+    setSearched(false);
+    setFocused(false);
+
+    if (wasNew) {
+      setJustAdded(city);
+      if (justAddedTimerRef.current) clearTimeout(justAddedTimerRef.current);
+      justAddedTimerRef.current = setTimeout(() => setJustAdded(null), 2200);
+
+      try {
+        const shown = await AsyncStorage.getItem(SWIPE_HINT_KEY);
+        if (!shown) {
+          setSwipeHintCity(city.id);
+          await AsyncStorage.setItem(SWIPE_HINT_KEY, '1');
+          if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+          hintTimerRef.current = setTimeout(() => setSwipeHintCity(null), 4500);
+        }
+      } catch {}
+    }
   };
 
   const clearSearch = () => {
@@ -108,6 +142,48 @@ export default function SearchScreen() {
     setSuggestions([]);
     setSearched(false);
   };
+
+  const handleRemoveCity = (id: string) => {
+    removeCity(id);
+  };
+
+  /** Pulso de la flecha animada para guiar el gesto de swipe la primera vez. */
+  useEffect(() => {
+    if (!swipeHintCity) {
+      hintAnim.stopAnimation();
+      hintAnim.setValue(0);
+      return;
+    }
+    hintAnim.setValue(0);
+    const loop = RNAnimated.loop(
+      RNAnimated.sequence([
+        RNAnimated.timing(hintAnim, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        RNAnimated.timing(hintAnim, {
+          toValue: 0,
+          duration: 700,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+    };
+  }, [swipeHintCity, hintAnim]);
+
+  useEffect(
+    () => () => {
+      if (justAddedTimerRef.current) clearTimeout(justAddedTimerRef.current);
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    },
+    [],
+  );
 
   const handleFocus = () => {
     if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
@@ -274,6 +350,18 @@ export default function SearchScreen() {
             </View>
             <Text style={styles.sectionTitle}>Guardadas en inicio</Text>
 
+            {justAdded && (
+              <View style={styles.justAddedBanner}>
+                <View style={styles.justAddedIconWrap}>
+                  <Ionicons name="checkmark" size={16} color="#0c1222" />
+                </View>
+                <Text style={styles.justAddedText} numberOfLines={1}>
+                  <Text style={styles.justAddedName}>{justAdded.name}</Text>
+                  {' guardada en tus ciudades'}
+                </Text>
+              </View>
+            )}
+
             {savedCities.length === 0 ? (
               <View style={styles.stateBox}>
                 <Ionicons name="earth-outline" size={40} color="rgba(255,255,255,0.35)" />
@@ -283,34 +371,116 @@ export default function SearchScreen() {
               </View>
             ) : (
               <View style={styles.savedList}>
-                {savedCities.map((city) => (
-                  <View key={city.id} style={styles.savedRow}>
-                    <Pressable
-                      style={({ pressed }) => [styles.savedInfo, pressed && { opacity: 0.75 }]}
-                      onPress={() => handleSelectCity(city)}
-                    >
-                      <View style={styles.resultIconWrap}>
-                        <Ionicons name="heart" size={16} color={ACCENT} />
-                      </View>
-                      <View style={styles.savedText}>
-                        <Text style={styles.savedName}>{city.name}</Text>
-                        <Text style={styles.savedCountry}>{city.country}</Text>
-                      </View>
-                    </Pressable>
-                    <Pressable
-                      style={styles.removeBtn}
-                      onPress={() => removeCity(city.id)}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="close" size={14} color="#ffb4ab" />
-                    </Pressable>
-                  </View>
-                ))}
+                {savedCities.map((city) => {
+                  const showHint = swipeHintCity === city.id;
+                  return (
+                    <View key={city.id} style={styles.savedRowWrapper}>
+                      <ReanimatedSwipeable
+                        friction={1.6}
+                        rightThreshold={48}
+                        overshootRight={false}
+                        renderRightActions={(_progress, translation, methods) => (
+                          <SwipeDeleteAction
+                            translation={translation}
+                            onPress={() => {
+                              methods.close();
+                              handleRemoveCity(city.id);
+                            }}
+                          />
+                        )}
+                        containerStyle={styles.swipeableContainer}
+                      >
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.savedRow,
+                            pressed && { opacity: 0.85 },
+                          ]}
+                          onPress={() => handleSelectCity(city)}
+                        >
+                          <View style={styles.resultIconWrap}>
+                            <Ionicons name="heart" size={16} color={ACCENT} />
+                          </View>
+                          <View style={styles.savedText}>
+                            <Text style={styles.savedName}>{city.name}</Text>
+                            <Text style={styles.savedCountry}>{city.country}</Text>
+                          </View>
+                          <Ionicons
+                            name="chevron-back"
+                            size={14}
+                            color="rgba(255,255,255,0.25)"
+                            style={{ marginRight: 4 }}
+                          />
+                        </Pressable>
+                      </ReanimatedSwipeable>
+                      {showHint && (
+                        <RNAnimated.View
+                          pointerEvents="none"
+                          style={[
+                            styles.swipeHint,
+                            {
+                              opacity: hintAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.55, 1],
+                              }),
+                              transform: [
+                                {
+                                  translateX: hintAnim.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [0, -14],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        >
+                          <Ionicons name="arrow-back" size={12} color="#f8fafc" />
+                          <Text style={styles.swipeHintText}>
+                            Desliza para eliminar
+                          </Text>
+                        </RNAnimated.View>
+                      )}
+                    </View>
+                  );
+                })}
               </View>
             )}
           </View>
         )}
       </ScrollView>
+    </View>
+  );
+}
+
+/** Acción derecha del swipe: trash con escala animada según la distancia arrastrada. */
+function SwipeDeleteAction({
+  translation,
+  onPress,
+}: {
+  translation: SharedValue<number>;
+  onPress: () => void;
+}) {
+  const animatedStyle = useAnimatedStyle(() => {
+    const drag = Math.min(0, translation.value);
+    const scale = Math.max(0.6, Math.min(1, -drag / 80));
+    return {
+      transform: [{ scale }],
+      opacity: scale,
+    };
+  });
+
+  return (
+    <View style={styles.deleteActionWrap}>
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.deleteActionBtn,
+          pressed && { opacity: 0.85 },
+        ]}
+      >
+        <Animated.View style={[styles.deleteActionIcon, animatedStyle]}>
+          <Ionicons name="trash" size={20} color="#fff" />
+        </Animated.View>
+      </Pressable>
     </View>
   );
 }
@@ -560,28 +730,28 @@ const styles = StyleSheet.create({
 
   /* ── Saved cities ── */
   savedList: { gap: 10 },
+  savedRowWrapper: {
+    position: 'relative',
+  },
+  swipeableContainer: {
+    borderRadius: 18,
+    overflow: 'hidden',
+  },
   savedRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    backgroundColor: 'rgba(15,23,42,0.85)',
     borderRadius: 18,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
-    paddingRight: 10,
-    overflow: 'hidden',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 2,
-  },
-  savedInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
   },
   savedText: { flex: 1 },
   savedName: {
@@ -594,11 +764,79 @@ const styles = StyleSheet.create({
     color: 'rgba(148,163,184,0.88)',
     marginTop: 2,
   },
-  removeBtn: {
-    padding: 10,
-    borderRadius: 999,
-    backgroundColor: 'rgba(239,68,68,0.14)',
+
+  /* ── Banner de "ciudad guardada" ── */
+  justAddedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(56,189,248,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(254,202,202,0.35)',
+    borderColor: 'rgba(56,189,248,0.35)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  justAddedIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    backgroundColor: ACCENT_SOFT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  justAddedText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#e2e8f0',
+  },
+  justAddedName: {
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+
+  /* ── Tooltip "desliza para eliminar" ── */
+  swipeHint: {
+    position: 'absolute',
+    top: '50%',
+    right: 14,
+    transform: [{ translateY: -12 }],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(15,23,42,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  swipeHintText: {
+    color: '#f8fafc',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  /* ── Acción de borrar (al hacer swipe) ── */
+  deleteActionWrap: {
+    width: 84,
+    paddingLeft: 8,
+    justifyContent: 'center',
+  },
+  deleteActionBtn: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: 'rgba(239, 68, 68, 0.92)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  deleteActionIcon: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
