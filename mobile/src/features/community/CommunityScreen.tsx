@@ -63,8 +63,16 @@ type CommentTarget = {
   commentId: string;
   authorName: string;
 };
+type ReactionType = 'like' | 'apoya' | 'importante' | 'sorprende';
+type FeedSortMode = 'recent' | 'priority';
 
 const SEVERITY_OPTIONS: PostSeverity[] = ['informacion', 'alerta', 'grave'];
+const REACTION_OPTIONS: Array<{ key: ReactionType; label: string; icon: string }> = [
+  { key: 'like', label: 'Me encanta', icon: 'heart' },
+  { key: 'apoya', label: 'Apoya', icon: 'thumbs-up' },
+  { key: 'importante', label: 'Importante', icon: 'alert-circle' },
+  { key: 'sorprende', label: 'Sorprende', icon: 'sparkles' },
+];
 const AVATAR_FALLBACK_COLORS = [
   '#2563EB',
   '#7C3AED',
@@ -119,6 +127,16 @@ export default function CommunityScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [editingCommentTarget, setEditingCommentTarget] = useState<CommentTarget | null>(null);
   const [replyingCommentTarget, setReplyingCommentTarget] = useState<CommentTarget | null>(null);
+  const [activeSeverityFilter, setActiveSeverityFilter] = useState<PostSeverity | 'todas'>('todas');
+  const [feedSortMode, setFeedSortMode] = useState<FeedSortMode>('priority');
+  const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [likedByPost, setLikedByPost] = useState<Record<string, boolean>>({});
+  const [reactionByPost, setReactionByPost] = useState<Record<string, ReactionType>>({});
+  const [reactionCountByPost, setReactionCountByPost] = useState<Record<string, number>>({});
+  const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
+  const [mentionSuggestions, setMentionSuggestions] = useState<CommunityProfile[]>([]);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [activeMentionPostId, setActiveMentionPostId] = useState<string | null>(null);
 
   const goToLogin = () => {
     router.push('/login?force=1');
@@ -233,6 +251,26 @@ export default function CommunityScreen() {
   }, [locationStatus, locatePulse, dotsCycle]);
 
   useEffect(() => {
+    if (!mentionQuery || !activeMentionPostId) {
+      setMentionSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id,name,avatar_url')
+        .ilike('name', `${mentionQuery}%`)
+        .limit(8);
+      if (error) {
+        setMentionSuggestions([]);
+        return;
+      }
+      setMentionSuggestions((data as CommunityProfile[] | null) ?? []);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [mentionQuery, activeMentionPostId]);
+
+  useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
@@ -255,6 +293,114 @@ export default function CommunityScreen() {
     setTimeout(() => {
       scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(nodeHandle, 120, true);
     }, 120);
+  };
+
+  const getSeverityRank = (sev?: PostSeverity) => {
+    if (sev === 'grave') return 3;
+    if (sev === 'alerta') return 2;
+    return 1;
+  };
+
+  const visiblePosts = useMemo(() => {
+    const filtered = activeSeverityFilter === 'todas'
+      ? [...posts]
+      : posts.filter((post) => (post.severity ?? 'informacion') === activeSeverityFilter);
+
+    if (feedSortMode === 'recent') {
+      return filtered.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+
+    const now = Date.now();
+    const recentWindowMs = 1000 * 60 * 60 * 24;
+    return filtered.sort((a, b) => {
+      const at = new Date(a.created_at).getTime();
+      const bt = new Date(b.created_at).getTime();
+      const aRecent = now - at <= recentWindowMs;
+      const bRecent = now - bt <= recentWindowMs;
+      if (aRecent && bRecent) {
+        const sevDiff = getSeverityRank(b.severity) - getSeverityRank(a.severity);
+        if (sevDiff !== 0) return sevDiff;
+      }
+      return bt - at;
+    });
+  }, [posts, activeSeverityFilter, feedSortMode]);
+
+  const toggleLike = (postIdValue: string) => {
+    setLikedByPost((prev) => {
+      const nextLike = !prev[postIdValue];
+      setReactionCountByPost((counts) => ({
+        ...counts,
+        [postIdValue]: Math.max(0, (counts[postIdValue] ?? 0) + (nextLike ? 1 : -1)),
+      }));
+      if (nextLike) {
+        setReactionByPost((old) => ({ ...old, [postIdValue]: 'like' }));
+      }
+      return { ...prev, [postIdValue]: nextLike };
+    });
+  };
+
+  const setReaction = (postIdValue: string, reaction: ReactionType) => {
+    setReactionByPost((prev) => ({ ...prev, [postIdValue]: reaction }));
+    setLikedByPost((prev) => ({ ...prev, [postIdValue]: true }));
+    setReactionCountByPost((counts) => {
+      const current = counts[postIdValue] ?? 0;
+      return { ...counts, [postIdValue]: current > 0 ? current : 1 };
+    });
+    setReactionPickerPostId(null);
+  };
+
+  const onCommentDraftChange = (postIdValue: string, value: string) => {
+    setCommentDrafts((prev) => ({ ...prev, [postIdValue]: value }));
+    const match = value.match(/(?:^|\s)@([a-zA-Z0-9_]{1,30})$/);
+    if (!match) {
+      setActiveMentionPostId(null);
+      setMentionQuery('');
+      return;
+    }
+    setActiveMentionPostId(postIdValue);
+    setMentionQuery(match[1]);
+  };
+
+  const insertMention = (postIdValue: string, pickedName: string) => {
+    const current = commentDrafts[postIdValue] ?? '';
+    const next = current.replace(/(?:^|\s)@([a-zA-Z0-9_]{1,30})$/, (full) => {
+      const leadingSpace = full.startsWith(' ') ? ' ' : '';
+      return `${leadingSpace}@${pickedName} `;
+    });
+    setCommentDrafts((prev) => ({ ...prev, [postIdValue]: next }));
+    setActiveMentionPostId(null);
+    setMentionQuery('');
+    setMentionSuggestions([]);
+  };
+
+  const openPostMenu = (post: CommunityPost) => {
+    if (post.user_id !== userId) {
+      NativeAlert.alert('Opciones', 'Esta publicación no te pertenece.');
+      return;
+    }
+    NativeAlert.alert('Opciones de publicación', 'Selecciona una acción', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Editar', onPress: () => startEdit(post) },
+      { text: 'Eliminar', style: 'destructive', onPress: () => confirmDeletePost(post) },
+    ]);
+  };
+
+  const renderCommentWithMentions = (text: string) => {
+    const parts = text.split(/(@[a-zA-Z0-9_]+)/g);
+    return (
+      <Text style={styles.commentText}>
+        {parts.map((part, index) => {
+          const isMention = /^@[a-zA-Z0-9_]+$/.test(part);
+          return (
+            <Text key={`${part}-${index}`} style={isMention ? styles.commentMentionText : undefined}>
+              {part}
+            </Text>
+          );
+        })}
+      </Text>
+    );
   };
 
   const bootstrap = async () => {
@@ -495,6 +641,23 @@ export default function CommunityScreen() {
     setLocationMessage('');
   };
 
+  const abrirComposerNuevo = async () => {
+    setEditingId(null);
+    setImageUri(null);
+    setImageBase64(null);
+    setImageMimeType(null);
+    setSeverity('informacion');
+    setDraftComment('');
+    setLocationStatus('loading');
+    setLocationMessage('');
+    setComposerOpen(true);
+    await loadAddressFromApi();
+  };
+
+  const cerrarComposer = () => {
+    setComposerOpen(false);
+  };
+
   const savePost = async () => {
     if (!userId) return;
     if (!imageUri) {
@@ -722,6 +885,11 @@ export default function CommunityScreen() {
     }
 
     setCommentDrafts((prev) => ({ ...prev, [postId]: '' }));
+    if (activeMentionPostId === postId) {
+      setActiveMentionPostId(null);
+      setMentionQuery('');
+      setMentionSuggestions([]);
+    }
     if (isEditing) setEditingCommentTarget(null);
     if (replyTarget) setReplyingCommentTarget(null);
     await loadPosts();
@@ -896,8 +1064,21 @@ export default function CommunityScreen() {
         ) : isLoggedIn ? (
           <>
           <View style={styles.postsListOutside}>
-            <Text style={styles.feedSectionTitle}>Publicaciones recientes</Text>
-            {posts.length === 0 ? (
+            <View style={styles.feedSectionHeader}>
+              <View>
+                <Text style={styles.feedSectionTitle}>Publicaciones recientes</Text>
+                <Text style={styles.feedSectionSub}>
+                  {feedSortMode === 'priority' ? 'Prioridad grave/alerta + recencia' : 'Ordenadas por fecha reciente'}
+                </Text>
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.feedFilterBtn, pressed && { opacity: 0.82 }]}
+                onPress={() => setFilterModalOpen(true)}
+              >
+                <Ionicons name="filter-outline" size={18} color={ACCENT} />
+              </Pressable>
+            </View>
+            {visiblePosts.length === 0 ? (
               <View style={styles.feedSkeletonWrap}>
                 {[0, 1, 2].map((item) => (
                   <View key={item} style={styles.feedSkeletonCard}>
@@ -916,7 +1097,7 @@ export default function CommunityScreen() {
                 <Text style={styles.emptyPostsText}>Aun no hay publicaciones.</Text>
               </View>
             ) : (
-              posts.map((post) => {
+              visiblePosts.map((post) => {
                 const postComments = [...(commentsByPost[post.id] ?? [])].sort(
                   (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 );
@@ -985,7 +1166,7 @@ export default function CommunityScreen() {
                               </View>
                             ) : null}
                           </View>
-                          <Text style={styles.commentText}>{comment.content}</Text>
+                          {renderCommentWithMentions(comment.content)}
                           <Text style={styles.commentDate}>
                             {new Date(comment.created_at).toLocaleString('es-ES')}
                           </Text>
@@ -1025,6 +1206,21 @@ export default function CommunityScreen() {
                   );
                 };
 
+                const authorName = profilesById[post.user_id]?.name ?? (post.user_id === userId ? 'Tú' : 'Usuario');
+                const primaryComment = postComments.find((item) => item.user_id === post.user_id)?.content ?? '';
+                const totalComments = (commentsByPost[post.id] ?? []).length;
+                const latestCommentPreview = postComments.length > 0
+                  ? postComments[postComments.length - 1].content
+                  : 'Sin comentarios';
+                const myReaction = reactionByPost[post.id];
+                const currentReactionIcon = myReaction === 'apoya'
+                  ? 'thumbs-up'
+                  : myReaction === 'importante'
+                    ? 'alert-circle'
+                    : myReaction === 'sorprende'
+                      ? 'sparkles'
+                      : 'heart';
+
                 return (
                 <View key={post.id} style={styles.postCard}>
                   <View style={styles.feedHeader}>
@@ -1046,61 +1242,72 @@ export default function CommunityScreen() {
                       )}
                     </View>
                     <View style={styles.feedHeaderInfo}>
-                      <Text style={styles.feedUser}>
-                        {profilesById[post.user_id]?.name ?? (post.user_id === userId ? 'Tu' : 'Usuario')}
-                      </Text>
-                      <Text style={styles.feedUserMeta}>
-                        {post.user_id === userId ? 'Tu publicacion' : 'Reporte ciudadano'}
+                      <Text style={styles.feedUser}>{authorName}</Text>
+                      <Text style={styles.feedUserMeta} numberOfLines={1}>
+                        {post.content || 'Ubicación no disponible'}
                       </Text>
                     </View>
-                    <View
-                      style={[
-                        styles.feedBadge,
-                        {
-                          backgroundColor: severityMeta[post.severity ?? 'informacion'].bg,
-                          borderColor: severityMeta[post.severity ?? 'informacion'].border,
-                          shadowColor: severityMeta[post.severity ?? 'informacion'].glow,
-                        },
-                      ]}
-                    >
-                      <Text style={styles.feedBadgeIcon}>
-                        {severityMeta[post.severity ?? 'informacion'].icon}
-                      </Text>
+                    <View style={styles.feedHeaderRight}>
                       <View
                         style={[
-                          styles.feedBadgeDot,
-                          { backgroundColor: severityMeta[post.severity ?? 'informacion'].text },
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.feedBadgeText,
-                          { color: severityMeta[post.severity ?? 'informacion'].text },
+                          styles.feedBadge,
+                          {
+                            backgroundColor: severityMeta[post.severity ?? 'informacion'].bg,
+                            borderColor: severityMeta[post.severity ?? 'informacion'].border,
+                            shadowColor: severityMeta[post.severity ?? 'informacion'].glow,
+                          },
                         ]}
                       >
-                        {severityMeta[post.severity ?? 'informacion'].label}
-                      </Text>
+                        <Text style={styles.feedBadgeIcon}>
+                          {severityMeta[post.severity ?? 'informacion'].icon}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.feedBadgeText,
+                            { color: severityMeta[post.severity ?? 'informacion'].text },
+                          ]}
+                        >
+                          {severityMeta[post.severity ?? 'informacion'].label}
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={({ pressed }) => [styles.postMenuBtn, pressed && { opacity: 0.8 }]}
+                        onPress={() => openPostMenu(post)}
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={18} color="rgba(226,232,240,0.92)" />
+                      </Pressable>
                     </View>
                   </View>
                   {post.image_url ? <Image source={{ uri: post.image_url }} style={styles.postImage} /> : null}
-                  <Text style={styles.postLabel}>Ubicacion</Text>
-                  <Text style={styles.postText}>{post.content}</Text>
+                  <Text style={styles.postCaption} numberOfLines={4} ellipsizeMode="tail">
+                    {primaryComment || 'Sin pie de foto.'}
+                  </Text>
                   <Text style={styles.postDate}>
                     {new Date(post.created_at).toLocaleString('es-ES')}
                   </Text>
-                  {post.user_id === userId ? (
-                    <View style={styles.postActions}>
-                      <Pressable style={styles.smallBtn} onPress={() => startEdit(post)}>
-                        <Text style={styles.smallBtnText}>Editar</Text>
-                      </Pressable>
-                      <Pressable
-                        style={styles.smallDangerBtn}
-                        onPress={() => confirmDeletePost(post)}
-                      >
-                        <Text style={styles.smallBtnText}>Eliminar</Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
+                  <View style={styles.socialBar}>
+                    <Pressable
+                      onPress={() => toggleLike(post.id)}
+                      onLongPress={() => setReactionPickerPostId(post.id)}
+                      style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
+                    >
+                      <Ionicons
+                        name={currentReactionIcon as any}
+                        size={18}
+                        color={likedByPost[post.id] ? '#fb7185' : 'rgba(226,232,240,0.8)'}
+                      />
+                      <Text style={styles.socialActionText}>{reactionCountByPost[post.id] ?? 0}</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() =>
+                        setOpenCommentsByPost((prev) => ({ ...prev, [post.id]: !prev[post.id] }))
+                      }
+                      style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
+                    >
+                      <Ionicons name="chatbubble-outline" size={18} color="rgba(226,232,240,0.88)" />
+                      <Text style={styles.socialActionText}>{totalComments}</Text>
+                    </Pressable>
+                  </View>
 
                   <View style={styles.commentsWrap}>
                     <Pressable
@@ -1115,7 +1322,9 @@ export default function CommunityScreen() {
                         }))
                       }
                     >
-                      <Text style={styles.commentsTitle}>Comentarios</Text>
+                      <Text style={styles.commentsTitle} numberOfLines={1} ellipsizeMode="tail">
+                        {latestCommentPreview}
+                      </Text>
                       <View style={styles.commentsMeta}>
                         <Text style={styles.commentsCount}>
                           {(commentsByPost[post.id] ?? []).length}
@@ -1164,14 +1373,25 @@ export default function CommunityScreen() {
                             <TextInput
                               style={styles.commentInput}
                               value={commentDrafts[post.id] ?? ''}
-                              onChangeText={(value) =>
-                                setCommentDrafts((prev) => ({ ...prev, [post.id]: value }))
-                              }
+                              onChangeText={(value) => onCommentDraftChange(post.id, value)}
                               onFocus={(event) => keepFocusedInputVisible(event.target)}
                               placeholder="Escribe un comentario"
                               placeholderTextColor="rgba(255,255,255,0.45)"
                               multiline
                             />
+                            {activeMentionPostId === post.id && mentionSuggestions.length > 0 ? (
+                              <View style={styles.mentionBox}>
+                                {mentionSuggestions.map((person) => (
+                                  <Pressable
+                                    key={person.id}
+                                    style={({ pressed }) => [styles.mentionItem, pressed && styles.mentionItemPressed]}
+                                    onPress={() => insertMention(post.id, person.name ?? 'usuario')}
+                                  >
+                                    <Text style={styles.mentionItemText}>@{person.name ?? 'usuario'}</Text>
+                                  </Pressable>
+                                ))}
+                              </View>
+                            ) : null}
                             <Pressable style={styles.commentBtn} onPress={() => submitComment(post.id)}>
                               <Text style={styles.commentBtnText}>
                                 {editingCommentTarget?.postId === post.id ? 'Guardar' : 'Comentar'}
@@ -1230,8 +1450,11 @@ export default function CommunityScreen() {
           accessibilityRole="button"
           accessibilityLabel={composerOpen ? 'Cerrar editor de publicación' : 'Nueva publicación con foto'}
           onPress={() => {
-            if (composerOpen && !editingId) limpiarFormulario();
-            setComposerOpen((prev) => !prev);
+            if (composerOpen) {
+              cerrarComposer();
+              return;
+            }
+            void abrirComposerNuevo();
           }}
         >
           <View style={styles.fabInner}>
@@ -1251,140 +1474,222 @@ export default function CommunityScreen() {
       )}
 
       <Modal
+        visible={isLoggedIn && filterModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFilterModalOpen(false)}
+      >
+        <View style={styles.overlaySheet}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterModalOpen(false)} />
+          <View style={styles.filterCard}>
+            <Text style={styles.filterTitle}>Filtrar publicaciones</Text>
+            <View style={styles.filterRow}>
+              {(['todas', 'grave', 'alerta', 'informacion'] as const).map((item) => (
+                <Pressable
+                  key={item}
+                  style={({ pressed }) => [
+                    styles.filterPill,
+                    activeSeverityFilter === item && styles.filterPillActive,
+                    pressed && { opacity: 0.8 },
+                  ]}
+                  onPress={() => setActiveSeverityFilter(item)}
+                >
+                  <Text style={styles.filterPillText}>{item[0].toUpperCase() + item.slice(1)}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.filterSortRow}>
+              <Pressable
+                style={({ pressed }) => [styles.sortBtn, feedSortMode === 'priority' && styles.sortBtnActive, pressed && { opacity: 0.85 }]}
+                onPress={() => setFeedSortMode('priority')}
+              >
+                <Text style={styles.sortBtnText}>Prioridad</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.sortBtn, feedSortMode === 'recent' && styles.sortBtnActive, pressed && { opacity: 0.85 }]}
+                onPress={() => setFeedSortMode('recent')}
+              >
+                <Text style={styles.sortBtnText}>Recientes</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isLoggedIn && Boolean(reactionPickerPostId)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReactionPickerPostId(null)}
+      >
+        <View style={styles.overlaySheet}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setReactionPickerPostId(null)} />
+          <View style={styles.reactionCard}>
+            <Text style={styles.filterTitle}>Reaccionar</Text>
+            {REACTION_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt.key}
+                style={({ pressed }) => [styles.reactionItem, pressed && { opacity: 0.8 }]}
+                onPress={() => reactionPickerPostId && setReaction(reactionPickerPostId, opt.key)}
+              >
+                <Ionicons name={opt.icon as any} size={18} color={ACCENT} />
+                <Text style={styles.reactionItemText}>{opt.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={isLoggedIn && composerOpen}
         animationType="slide"
         transparent
-        onRequestClose={() => setComposerOpen(false)}
+        onRequestClose={cerrarComposer}
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingId ? 'Editar publicación' : 'Nueva publicación'}
-              </Text>
+              <View style={styles.modalTitleWrap}>
+                <Text style={styles.modalKicker}>Comunidad</Text>
+                <Text style={styles.modalTitle}>
+                  {editingId ? 'Editar publicación' : 'Nueva publicación'}
+                </Text>
+              </View>
               <Pressable
                 style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.75 }]}
-                onPress={() => setComposerOpen(false)}
+                onPress={cerrarComposer}
               >
                 <Ionicons name="close" size={20} color="#FFFFFF" />
               </Pressable>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScrollContent}>
-              <Text style={styles.stepLabel}>Paso 1: toma o selecciona una foto</Text>
-              {imageUri ? (
-                <Image source={{ uri: imageUri }} style={styles.previewImage} />
-              ) : (
-                <View style={styles.emptyPreview}>
-                  <Text style={styles.emptyPreviewText}>No hay imagen seleccionada</Text>
-                </View>
-              )}
-
-              <Pressable style={styles.cameraBtn} onPress={tomarFoto}>
-                <Text style={styles.actionBtnText}>Tomar Foto</Text>
-              </Pressable>
-              <Pressable style={styles.galleryBtn} onPress={seleccionarImagen}>
-                <Text style={styles.actionBtnText}>Seleccionar de Galeria</Text>
-              </Pressable>
-
-              <Text style={styles.stepLabel}>Paso 2: clasifica la publicación</Text>
-              <View style={styles.severityRow}>
-                {SEVERITY_OPTIONS.map((item) => {
-                  const meta = severityMeta[item];
-                  const selected = severity === item;
-                  return (
-                    <Pressable
-                      key={item}
-                      onPress={() => setSeverity(item)}
-                      style={({ pressed, hovered }) => [
-                        styles.severityChip,
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.stepLabel}>Ubicación de la publicación</Text>
+                <TextInput
+                  style={styles.input}
+                  value={content}
+                  onChangeText={setContent}
+                  placeholder="Ubicación detectada automáticamente"
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  multiline
+                  editable={false}
+                />
+                {locationStatus === 'loading' ? (
+                  <View style={styles.locationHintRow}>
+                    <Animated.View
+                      style={[
+                        styles.locationPulse,
                         {
-                          borderColor: meta.border,
-                          backgroundColor: meta.bg,
-                          shadowColor: meta.glow,
+                          transform: [
+                            {
+                              scale: locatePulse.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0.8, 1.15],
+                              }),
+                            },
+                          ],
+                          opacity: locatePulse.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.4, 1],
+                          }),
                         },
-                        selected && styles.severityChipActive,
-                        hovered && styles.severityChipHover,
-                        pressed && styles.severityChipPressed,
+                      ]}
+                    />
+                    <Text style={styles.locationHint}>Localizando</Text>
+                    <Animated.Text
+                      style={[
+                        styles.locationHint,
+                        {
+                          opacity: dotsCycle.interpolate({
+                            inputRange: [0, 1, 2, 3],
+                            outputRange: [0.3, 1, 1, 0.3],
+                          }),
+                        },
                       ]}
                     >
-                      <View style={styles.severityChipContent}>
-                        <Text style={[styles.severityChipText, { color: meta.text }]}>
-                          {meta.icon} {meta.label}
-                        </Text>
-                        {selected ? (
-                          <View
-                            style={[
-                              styles.severitySelectedDot,
-                              { backgroundColor: meta.text },
-                            ]}
-                          />
-                        ) : null}
-                      </View>
-                    </Pressable>
-                  );
-                })}
+                      ...
+                    </Animated.Text>
+                  </View>
+                ) : locationStatus === 'error' ? (
+                  <Text style={styles.locationHintError}>{locationMessage}</Text>
+                ) : null}
               </View>
 
-              <Text style={styles.label}>Ubicacion:</Text>
-              {locationStatus === 'loading' ? (
-                <View style={styles.locationHintRow}>
-                  <Animated.View
-                    style={[
-                      styles.locationPulse,
-                      {
-                        transform: [
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.stepLabel}>Clasificación</Text>
+                <View style={styles.severityRow}>
+                  {SEVERITY_OPTIONS.map((item) => {
+                    const meta = severityMeta[item];
+                    const selected = severity === item;
+                    return (
+                      <Pressable
+                        key={item}
+                        onPress={() => setSeverity(item)}
+                        style={({ pressed, hovered }) => [
+                          styles.severityChip,
                           {
-                            scale: locatePulse.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0.8, 1.15],
-                            }),
+                            borderColor: meta.border,
+                            backgroundColor: meta.bg,
+                            shadowColor: meta.glow,
                           },
-                        ],
-                        opacity: locatePulse.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.4, 1],
-                        }),
-                      },
-                    ]}
-                  />
-                  <Text style={styles.locationHint}>Localizando</Text>
-                  <Animated.Text
-                    style={[
-                      styles.locationHint,
-                      {
-                        opacity: dotsCycle.interpolate({
-                          inputRange: [0, 1, 2, 3],
-                          outputRange: [0.3, 1, 1, 0.3],
-                        }),
-                      },
-                    ]}
-                  >
-                    ...
-                  </Animated.Text>
+                          selected && styles.severityChipActive,
+                          hovered && styles.severityChipHover,
+                          pressed && styles.severityChipPressed,
+                        ]}
+                      >
+                        <View style={styles.severityChipContent}>
+                          <Text style={[styles.severityChipText, { color: meta.text }]}>
+                            {meta.icon} {meta.label}
+                          </Text>
+                          {selected ? (
+                            <View
+                              style={[
+                                styles.severitySelectedDot,
+                                { backgroundColor: meta.text },
+                              ]}
+                            />
+                          ) : null}
+                        </View>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-              ) : locationStatus === 'error' ? (
-                <Text style={styles.locationHintError}>{locationMessage}</Text>
-              ) : null}
-              <TextInput
-                style={styles.input}
-                value={content}
-                onChangeText={setContent}
-                placeholder="Ubicacion detectada automaticamente"
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                multiline
-                editable={false}
-              />
+              </View>
 
-              <Text style={styles.label}>Comentario (opcional):</Text>
-              <TextInput
-                style={styles.input}
-                value={draftComment}
-                onChangeText={setDraftComment}
-                placeholder="Agrega mas detalles"
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                multiline
-              />
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.stepLabel}>Foto</Text>
+                {imageUri ? (
+                  <Image source={{ uri: imageUri }} style={styles.previewImage} />
+                ) : (
+                  <View style={styles.emptyPreview}>
+                    <Text style={styles.emptyPreviewText}>No hay imagen seleccionada</Text>
+                  </View>
+                )}
+                <View style={styles.mediaBtnsRow}>
+                  <Pressable style={[styles.cameraBtn, styles.mediaBtnHalf]} onPress={tomarFoto}>
+                    <Text style={styles.actionBtnText}>Tomar foto</Text>
+                  </Pressable>
+                  <Pressable style={[styles.galleryBtn, styles.mediaBtnHalf]} onPress={seleccionarImagen}>
+                    <Text style={styles.actionBtnText}>Galería</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <View style={styles.modalSectionCard}>
+                <Text style={styles.stepLabel}>Pie de foto (opcional)</Text>
+                <TextInput
+                  style={[styles.input, styles.captionInput]}
+                  value={draftComment}
+                  onChangeText={setDraftComment}
+                  placeholder="Escribe el pie de foto"
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  multiline
+                  textAlignVertical="top"
+                />
+              </View>
+
               <View style={styles.crudActions}>
                 <Pressable
                   style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.85 }, saving && { opacity: 0.6 }]}
@@ -1534,23 +1839,25 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.58)',
   },
   cameraBtn: {
-    backgroundColor: '#1565c0',
+    backgroundColor: 'rgba(56,189,248,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.45)',
     paddingVertical: 13,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 10,
   },
   galleryBtn: {
-    backgroundColor: '#00897b',
+    backgroundColor: 'rgba(30,41,59,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
     paddingVertical: 13,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 8,
   },
   actionBtnText: {
-    color: '#FFFFFF',
+    color: '#e2e8f0',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 13,
   },
   severityRow: {
     flexDirection: 'row',
@@ -1599,35 +1906,43 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 96,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderColor: 'rgba(56,189,248,0.24)',
+    backgroundColor: 'rgba(2,6,18,0.48)',
     color: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     textAlignVertical: 'top',
   },
   crudActions: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
   saveBtn: {
-    backgroundColor: '#2A7A4B',
+    flex: 1,
+    backgroundColor: ACCENT,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   saveBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
+    color: '#082f49',
+    fontWeight: '800',
     fontSize: 13,
   },
   cancelBtn: {
-    backgroundColor: '#5f6b75',
+    flex: 1,
+    backgroundColor: 'rgba(100,116,139,0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
   },
   cancelBtnText: {
     color: '#FFFFFF',
@@ -1643,12 +1958,32 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginHorizontal: -4,
   },
+  feedSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   feedSectionTitle: {
     color: '#f1f5f9',
     fontSize: 17,
     fontWeight: '700',
-    marginBottom: 6,
     letterSpacing: -0.2,
+  },
+  feedSectionSub: {
+    color: 'rgba(148,163,184,0.86)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  feedFilterBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.36)',
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   feedSkeletonWrap: {
     gap: 12,
@@ -1724,6 +2059,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 6,
+    overflow: 'hidden',
   },
   feedHeader: {
     flexDirection: 'row',
@@ -1732,6 +2068,12 @@ const styles = StyleSheet.create({
   },
   feedHeaderInfo: {
     flex: 1,
+    minWidth: 0,
+  },
+  feedHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   avatarShell: {
     width: 30,
@@ -1777,14 +2119,28 @@ const styles = StyleSheet.create({
   feedBadgeIcon: {
     fontSize: 12,
   },
-  feedBadgeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
   feedBadgeText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  postMenuBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  postCaption: {
+    color: '#e2e8f0',
+    fontSize: 15,
+    lineHeight: 22,
+    fontWeight: '500',
+    marginTop: 2,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   postLabel: {
     color: 'rgba(255,255,255,0.6)',
@@ -1806,6 +2162,24 @@ const styles = StyleSheet.create({
   postDate: {
     color: 'rgba(255,255,255,0.48)',
     fontSize: 11,
+  },
+  socialBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 4,
+  },
+  socialActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  socialActionText: {
+    color: 'rgba(226,232,240,0.84)',
+    fontSize: 13,
+    fontWeight: '600',
   },
   postActions: {
     flexDirection: 'row',
@@ -1953,23 +2327,126 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(2,8,20,0.72)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     maxHeight: '88%',
-    backgroundColor: 'rgba(12,18,34,0.98)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: 'rgba(8,14,30,0.98)',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: 'rgba(56,189,248,0.26)',
     padding: 18,
-    gap: 10,
-    shadowColor: '#000',
+    gap: 12,
+    shadowColor: 'rgba(56,189,248,0.35)',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
+    elevation: 16,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.55)',
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  modalTitleWrap: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  modalKicker: {
+    color: 'rgba(125,211,252,0.95)',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+  },
+  overlaySheet: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,18,0.56)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  filterCard: {
+    backgroundColor: 'rgba(12,18,34,0.96)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+    padding: 16,
+    gap: 12,
+  },
+  filterTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.35)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  filterPillActive: {
+    backgroundColor: 'rgba(56,189,248,0.2)',
+  },
+  filterPillText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterSortRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sortBtn: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  sortBtnActive: {
+    borderColor: 'rgba(56,189,248,0.5)',
+    backgroundColor: 'rgba(56,189,248,0.16)',
+  },
+  sortBtnText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  reactionCard: {
+    backgroundColor: 'rgba(12,18,34,0.96)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+    padding: 14,
+    gap: 8,
+  },
+  reactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  reactionItemText: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1977,21 +2454,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
+    color: '#f8fafc',
+    fontSize: 19,
+    fontWeight: '800',
+    letterSpacing: -0.25,
   },
   modalCloseBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   modalScrollContent: {
+    gap: 12,
+    paddingBottom: 14,
+  },
+  modalSectionCard: {
+    backgroundColor: 'rgba(15,23,42,0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.24)',
+    borderRadius: 16,
+    padding: 13,
+    gap: 9,
+  },
+  mediaBtnsRow: {
+    flexDirection: 'row',
     gap: 10,
-    paddingBottom: 10,
+    marginTop: 4,
+  },
+  mediaBtnHalf: {
+    flex: 1,
+  },
+  captionInput: {
+    minHeight: 96,
+    maxHeight: 160,
   },
   locationHint: {
     color: 'rgba(144,205,253,0.9)',
@@ -2023,17 +2523,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
     paddingVertical: 6,
   },
   commentsTitle: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
+    flex: 1,
+    minWidth: 0,
+    maxWidth: '78%',
+    paddingRight: 4,
   },
   commentsMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexShrink: 0,
   },
   commentsCount: {
     color: '#FFFFFF',
@@ -2095,6 +2601,7 @@ const styles = StyleSheet.create({
   },
   commentBody: {
     flex: 1,
+    minWidth: 0,
     gap: 4,
   },
   replyRow: {
@@ -2150,6 +2657,9 @@ const styles = StyleSheet.create({
   commentText: {
     color: '#FFFFFF',
     fontSize: 13,
+    lineHeight: 18,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   commentDate: {
     color: 'rgba(255,255,255,0.45)',
@@ -2210,6 +2720,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     textAlignVertical: 'top',
+  },
+  mentionBox: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.22)',
+    backgroundColor: 'rgba(15,23,42,0.9)',
+    overflow: 'hidden',
+  },
+  mentionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  mentionItemPressed: {
+    backgroundColor: 'rgba(56,189,248,0.1)',
+  },
+  mentionItemText: {
+    color: '#bae6fd',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  commentMentionText: {
+    color: '#7dd3fc',
+    fontWeight: '700',
   },
   commentBtn: {
     alignSelf: 'flex-end',
