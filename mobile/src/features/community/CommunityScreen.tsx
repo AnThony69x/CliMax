@@ -102,6 +102,7 @@ export default function CommunityScreen() {
   const locatePulse = useRef(new Animated.Value(0)).current;
   const dotsCycle = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef<ScrollView | null>(null);
+  const composerScrollRef = useRef<ScrollView | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -292,6 +293,12 @@ export default function CommunityScreen() {
     if (!nodeHandle) return;
     setTimeout(() => {
       scrollViewRef.current?.scrollResponderScrollNativeHandleToKeyboard(nodeHandle, 120, true);
+    }, 120);
+  };
+
+  const keepComposerInputVisible = () => {
+    setTimeout(() => {
+      composerScrollRef.current?.scrollToEnd({ animated: true });
     }, 120);
   };
 
@@ -1547,6 +1554,11 @@ export default function CommunityScreen() {
         onRequestClose={cerrarComposer}
       >
         <View style={styles.modalBackdrop}>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardWrap}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 18 : 0}
+          >
           <View style={styles.modalCard}>
             <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
@@ -1564,7 +1576,12 @@ export default function CommunityScreen() {
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScrollContent}>
+            <ScrollView
+              ref={composerScrollRef}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.modalScrollContent}
+            >
               <View style={styles.modalSectionCard}>
                 <Text style={styles.stepLabel}>Ubicación de la publicación</Text>
                 <TextInput
@@ -1683,6 +1700,7 @@ export default function CommunityScreen() {
                   style={[styles.input, styles.captionInput]}
                   value={draftComment}
                   onChangeText={setDraftComment}
+                  onFocus={keepComposerInputVisible}
                   placeholder="Escribe el pie de foto"
                   placeholderTextColor="rgba(255,255,255,0.45)"
                   multiline
@@ -1706,6 +1724,7 @@ export default function CommunityScreen() {
               </View>
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -2328,6 +2347,10 @@ const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(2,8,20,0.72)',
+    justifyContent: 'flex-end',
+  },
+  modalKeyboardWrap: {
+    width: '100%',
     justifyContent: 'flex-end',
   },
   modalCard: {
