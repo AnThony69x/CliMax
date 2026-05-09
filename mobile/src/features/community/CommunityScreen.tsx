@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
@@ -88,6 +88,7 @@ const getAvatarFallbackColor = (id: string) => {
 
 export default function CommunityScreen() {
   const router = useRouter();
+  const { postId } = useLocalSearchParams<{ postId?: string }>();
   const insets = useSafeAreaInsets();
   const feedOffset = useRef(new Animated.Value(0)).current;
   const locatePulse = useRef(new Animated.Value(0)).current;
@@ -317,7 +318,18 @@ export default function CommunityScreen() {
       image_path: typeof row.image_path === 'string' ? row.image_path : null,
       severity: (row.severity as PostSeverity | null) ?? 'informacion',
     })) as CommunityPost[];
-    setPosts(normalized);
+    const requestedPostId = typeof postId === 'string' ? postId : undefined;
+    if (requestedPostId) {
+      const selected = normalized.find((post) => post.id === requestedPostId);
+      if (selected) {
+        const rest = normalized.filter((post) => post.id !== requestedPostId);
+        setPosts([selected, ...rest]);
+      } else {
+        setPosts(normalized);
+      }
+    } else {
+      setPosts(normalized);
+    }
     const comments = await loadCommentsForPosts(normalized.map((post) => post.id));
     await loadProfilesForPosts(normalized, comments);
   };
