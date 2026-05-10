@@ -100,7 +100,6 @@ export function LiquidGlassFloatingTabBar({
 
   return (
     <View
-      pointerEvents="box-none"
       style={[
         styles.anchor,
         {
@@ -109,7 +108,7 @@ export function LiquidGlassFloatingTabBar({
           paddingHorizontal: 18,
         },
       ]}>
-      <View pointerEvents="box-none" style={styles.shadowWrap}>
+      <View style={styles.shadowWrap}>
         <View style={styles.pill}>
           {/* Capa 1: blur real (equivale a backdrop-filter: blur+saturate) */}
           <BlurView
@@ -118,16 +117,15 @@ export function LiquidGlassFloatingTabBar({
             style={StyleSheet.absoluteFill}
           />
           {/* Capa 2: velo oscuro translúcido (rgba(0,0,0,~0.32)) */}
-          <View pointerEvents="none" style={styles.pillDarkVeil} />
+          <View style={styles.pillDarkVeil} />
           {/* Capa 3: brillo superior (simula gradient diagonal de la guía) */}
-          <View pointerEvents="none" style={styles.pillTopHighlight} />
+          <View style={styles.pillTopHighlight} />
           {/* Capa 4: borde luminoso interior fino (filo de cristal) */}
-          <View pointerEvents="none" style={styles.pillEdgeHighlight} />
+          <View style={styles.pillEdgeHighlight} />
 
           <View style={styles.tabsRow} onLayout={onRowLayout}>
             {/* Burbuja líquida que se desplaza entre pestañas */}
             <Animated.View
-              pointerEvents="none"
               style={[
                 styles.activeBubble,
                 {
@@ -237,10 +235,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     alignItems: 'center',
+    pointerEvents: 'box-none',
   },
   shadowWrap: {
     maxWidth: 520,
     width: '100%',
+    pointerEvents: 'box-none',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -250,6 +250,9 @@ const styles = StyleSheet.create({
       },
       android: {
         elevation: 18,
+      },
+      web: {
+        boxShadow: '0px 14px 26px rgba(0, 0, 0, 0.42)',
       },
       default: {},
     }),
@@ -265,6 +268,7 @@ const styles = StyleSheet.create({
   pillDarkVeil: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.32)',
+    pointerEvents: 'none',
   },
   /** Brillo sutil arriba para emular el gradient blanco translúcido */
   pillTopHighlight: {
@@ -276,12 +280,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
     borderTopLeftRadius: PILL_RADIUS,
     borderTopRightRadius: PILL_RADIUS,
+    pointerEvents: 'none',
   },
   pillEdgeHighlight: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: PILL_RADIUS,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.14)',
+    pointerEvents: 'none',
   },
   tabsRow: {
     flexDirection: 'row',
@@ -302,6 +308,7 @@ const styles = StyleSheet.create({
     left: 0,
     overflow: 'hidden',
     zIndex: 1,
+    pointerEvents: 'none',
   },
   activeBubbleTint: {
     ...StyleSheet.absoluteFillObject,

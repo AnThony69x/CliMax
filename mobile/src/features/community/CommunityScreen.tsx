@@ -105,6 +105,7 @@ export default function CommunityScreen() {
   const router = useRouter();
   const { postId } = useLocalSearchParams<{ postId?: string }>();
   const insets = useSafeAreaInsets();
+
   const feedOffset = useRef(new Animated.Value(0)).current;
   const locatePulse = useRef(new Animated.Value(0)).current;
   const dotsCycle = useRef(new Animated.Value(0)).current;
@@ -146,6 +147,8 @@ export default function CommunityScreen() {
   const [mentionQuery, setMentionQuery] = useState('');
   const [activeMentionPostId, setActiveMentionPostId] = useState<string | null>(null);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+
+  const guestLayout = !loading && !isLoggedIn;
 
   const goToLogin = () => {
     router.push('/login?force=1');
@@ -1028,6 +1031,40 @@ export default function CommunityScreen() {
     );
   };
 
+  const guestBottomPad = Math.max(insets.bottom, 12) + 14;
+
+  const titleSection = (
+    <View style={styles.titleBlock}>
+      <View style={styles.titleIconWrap}>
+        <Ionicons name="people-outline" size={22} color={ACCENT} />
+      </View>
+      <View style={styles.titleTextCol}>
+        <Text style={styles.eyebrow}>Ciudadanos</Text>
+        <Text style={styles.title}>Comunidad</Text>
+        <Text style={styles.subtitle}>Publicaciones y reportes con ubicación.</Text>
+      </View>
+      {isLoggedIn && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Nueva publicación"
+          style={({ pressed }) => [
+            styles.headerNewBtn,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+          ]}
+          onPress={() => {
+            if (composerOpen) {
+              cerrarComposer();
+              return;
+            }
+            void abrirComposerNuevo();
+          }}
+        >
+          <Ionicons name={composerOpen ? 'close' : 'add'} size={26} color="#0c1222" />
+        </Pressable>
+      )}
+    </View>
+  );
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -1035,71 +1072,79 @@ export default function CommunityScreen() {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 52}
     >
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.bgGlowTop} pointerEvents="none" />
-      <View style={styles.bgGlowBottom} pointerEvents="none" />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
 
-      <ScrollView
-        ref={scrollViewRef}
-        style={{ flex: 1 }}
-        alwaysBounceVertical
-        overScrollMode="always"
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.container,
-          {
-            paddingTop: insets.top + 14,
-            paddingBottom: Math.max(insets.bottom, 16) + 32 + (keyboardHeight > 0 ? keyboardHeight + 20 : 0),
-          },
-        ]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refreshFeed}
-            tintColor={ACCENT}
-            colors={[ACCENT]}
-            progressViewOffset={insets.top + 52}
-          />
-        }
-      >
-        <View style={styles.titleBlock}>
-          <View style={styles.titleIconWrap}>
-            <Ionicons name="people-outline" size={22} color={ACCENT} />
+      {guestLayout ? (
+        <View style={styles.guestRoot}>
+          <View
+            style={[
+              styles.guestInner,
+              {
+                paddingTop: insets.top + 14,
+                paddingBottom: guestBottomPad,
+              },
+            ]}
+          >
+            {titleSection}
+            <View style={[styles.skeletonWrap, styles.skeletonWrapGuest]}>
+              <Animated.View style={{ transform: [{ translateY: feedOffset }] }}>
+                {[...GHOST_ITEMS, ...GHOST_ITEMS].map((_, index) => (
+                  <View key={index} style={styles.skeletonCard}>
+                    <View style={styles.thumb} />
+                    <View style={styles.body}>
+                      <View style={styles.lineLg} />
+                      <View style={styles.lineMd} />
+                      <View style={styles.lineSm} />
+                    </View>
+                  </View>
+                ))}
+              </Animated.View>
+
+              <View style={styles.overlay}>
+                <Text style={styles.overlayText}>Inicia sesion para utilizar esta seccion</Text>
+                <Pressable
+                  style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.85 }]}
+                  onPress={goToLogin}
+                >
+                  <Text style={styles.loginBtnText}>Ir a login</Text>
+                </Pressable>
+              </View>
+            </View>
           </View>
-          <View style={styles.titleTextCol}>
-            <Text style={styles.eyebrow}>Ciudadanos</Text>
-            <Text style={styles.title}>Comunidad</Text>
-            <Text style={styles.subtitle}>Publicaciones y reportes con ubicación.</Text>
-          </View>
-          {isLoggedIn && (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Nueva publicación"
-              style={({ pressed }) => [
-                styles.headerNewBtn,
-                pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
-              ]}
-              onPress={() => {
-                if (composerOpen) {
-                  cerrarComposer();
-                  return;
-                }
-                void abrirComposerNuevo();
-              }}
-            >
-              <Ionicons
-                name={composerOpen ? 'close' : 'add'}
-                size={26}
-                color="#0c1222"
-              />
-            </Pressable>
-          )}
         </View>
+      ) : (
+        <ScrollView
+          ref={scrollViewRef}
+          style={{ flex: 1 }}
+          alwaysBounceVertical
+          overScrollMode="always"
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.container,
+            {
+              paddingTop: insets.top + 14,
+              paddingBottom:
+                Math.max(insets.bottom, 16) + 32 + (keyboardHeight > 0 ? keyboardHeight + 20 : 0),
+            },
+          ]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refreshFeed}
+              tintColor={ACCENT}
+              colors={[ACCENT]}
+              progressViewOffset={insets.top + 52}
+            />
+          }
+        >
+          {titleSection}
 
         {loading ? (
           <View style={styles.centerBox}>
             <ActivityIndicator size="large" color={ACCENT} />
           </View>
-        ) : isLoggedIn ? (
+        ) : (
           <>
           <View style={styles.postsListOutside}>
             <View style={styles.feedSectionHeader}>
@@ -1454,33 +1499,9 @@ export default function CommunityScreen() {
             )}
           </View>
           </>
-        ) : (
-          <View style={styles.skeletonWrap}>
-          <Animated.View style={{ transform: [{ translateY: feedOffset }] }}>
-            {[...GHOST_ITEMS, ...GHOST_ITEMS].map((_, index) => (
-              <View key={index} style={styles.skeletonCard}>
-                <View style={styles.thumb} />
-                <View style={styles.body}>
-                  <View style={styles.lineLg} />
-                  <View style={styles.lineMd} />
-                  <View style={styles.lineSm} />
-                </View>
-              </View>
-            ))}
-          </Animated.View>
-
-          <View style={styles.overlay}>
-            <Text style={styles.overlayText}>Inicia sesion para utilizar esta seccion</Text>
-            <Pressable
-              style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.85 }]}
-              onPress={goToLogin}
-            >
-              <Text style={styles.loginBtnText}>Ir a login</Text>
-            </Pressable>
-          </View>
-          </View>
         )}
       </ScrollView>
+      )}
 
       {/* FAB removido: el botón "+" en el header (titleBlock) abre el composer. */}
 
@@ -1887,6 +1908,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(2,87,129,0.24)',
     zIndex: 0,
+    pointerEvents: 'none',
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -1897,11 +1919,23 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(56,189,248,0.08)',
     zIndex: 0,
+    pointerEvents: 'none',
   },
   container: {
     flexGrow: 1,
     paddingHorizontal: 20,
     paddingBottom: 0,
+  },
+  /** Invitado: columna a pantalla completa sin ScrollView (sin deslizar). */
+  guestRoot: {
+    flex: 1,
+    minHeight: 0,
+  },
+  guestInner: {
+    flex: 1,
+    minHeight: 0,
+    flexDirection: 'column',
+    paddingHorizontal: 20,
   },
   titleBlock: {
     flexDirection: 'row',
@@ -2387,7 +2421,10 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 10,
     overflow: 'hidden',
-    minHeight: 650,
+  },
+  skeletonWrapGuest: {
+    flex: 1,
+    minHeight: 0,
   },
   skeletonCard: {
     flexDirection: 'row',

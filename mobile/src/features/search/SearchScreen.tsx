@@ -414,7 +414,6 @@ export default function SearchScreen() {
                       </ReanimatedSwipeable>
                       {showHint && (
                         <RNAnimated.View
-                          pointerEvents="none"
                           style={[
                             styles.swipeHint,
                             {
@@ -430,6 +429,7 @@ export default function SearchScreen() {
                                   }),
                                 },
                               ],
+                              pointerEvents: 'none',
                             },
                           ]}
                         >

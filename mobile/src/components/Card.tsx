@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { Pressable, StyleSheet, View, ViewStyle } from 'react-native';
+import { Pressable, Platform, StyleSheet, View, ViewStyle } from 'react-native';
 
 type CardProps = {
   children: ReactNode;
@@ -34,10 +34,20 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   elevated: {
-    shadowColor: '#0B1411',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      web: {
+        boxShadow: '0px 4px 18px rgba(11, 20, 17, 0.08)',
+      },
+      ios: {
+        shadowColor: '#0B1411',
+        shadowOpacity: 0.08,
+        shadowRadius: 18,
+      },
+      android: {
+        elevation: 3,
+      },
+      default: {},
+    }),
   },
   outlined: {
     borderWidth: 1,

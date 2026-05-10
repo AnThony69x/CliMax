@@ -609,7 +609,7 @@ export default function ProfileScreen() {
             tint="dark"
             style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
           />
-          <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, s.modalTint, { zIndex: 0 }]} />
+          <View style={[StyleSheet.absoluteFillObject, s.modalTint, { zIndex: 0 }]} />
           <Pressable
             accessibilityRole="button"
             style={[StyleSheet.absoluteFillObject, s.modalBackdropPressable]}
@@ -626,7 +626,6 @@ export default function ProfileScreen() {
                 paddingHorizontal: 20,
               },
             ]}
-            pointerEvents="box-none"
           >
             <View style={s.postsModalCard}>
               <View style={s.editPanelHeader}>
@@ -704,7 +703,6 @@ export default function ProfileScreen() {
 
           {/* Velado suave encima del blur para contraste */}
           <View
-            pointerEvents="none"
             style={[StyleSheet.absoluteFillObject, s.modalTint, { zIndex: 0 }]}
           />
 
@@ -724,7 +722,6 @@ export default function ProfileScreen() {
                 paddingHorizontal: 20,
               },
             ]}
-            pointerEvents="box-none"
           >
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -925,6 +922,7 @@ const s = StyleSheet.create({
   },
   modalTint: {
     backgroundColor: 'rgba(2,6,18,0.38)',
+    pointerEvents: 'none',
   },
   modalBackdropPressable: {
     zIndex: 1,
@@ -933,6 +931,7 @@ const s = StyleSheet.create({
     zIndex: 2,
     justifyContent: 'center',
     alignItems: 'stretch',
+    pointerEvents: 'box-none',
   },
   modalKav: {
     width: '100%',

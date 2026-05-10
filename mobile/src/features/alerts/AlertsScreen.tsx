@@ -395,8 +395,8 @@ export default function AlertsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.bgGlowTop} pointerEvents="none" />
-      <View style={styles.bgGlowBottom} pointerEvents="none" />
+      <View style={styles.bgGlowTop} />
+      <View style={styles.bgGlowBottom} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -516,6 +516,7 @@ const styles = StyleSheet.create({
     height: 320,
     borderRadius: 999,
     backgroundColor: 'rgba(2,87,129,0.24)',
+    pointerEvents: 'none',
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -525,6 +526,7 @@ const styles = StyleSheet.create({
     height: 290,
     borderRadius: 999,
     backgroundColor: 'rgba(251,146,60,0.06)',
+    pointerEvents: 'none',
   },
   loadingContainer: {
     flex: 1,
