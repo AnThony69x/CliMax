@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
 import { clearToken, saveToken } from '../../core/auth/authStorage';
 import { getSession, signInWithPassword, signUp } from '../../core/auth/supabaseClient';
 
@@ -258,7 +259,9 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      {/* Círculos de fondo para dar profundidad */}
+      <AuthWeatherBubbles />
+
+      {/* Velado muy suave (las burbujas llevan el protagonismo) */}
       <View style={styles.bgGlow1} />
       <View style={styles.bgGlow2} />
 
@@ -401,7 +404,7 @@ const styles = StyleSheet.create({
   /* ── Splash ── */
   splash: {
     flex: 1,
-    backgroundColor: '#070b18',
+    backgroundColor: '#000b18',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -417,7 +420,7 @@ const styles = StyleSheet.create({
   /* ── Pantalla principal ── */
   container: {
     flex: 1,
-    backgroundColor: '#070b18',
+    backgroundColor: '#000b18',
   },
 
   /* Destellos de fondo */
@@ -428,7 +431,9 @@ const styles = StyleSheet.create({
     width: 400,
     height: 400,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.28)',
+    backgroundColor: 'rgba(2,87,129,0.14)',
+    zIndex: 0,
+    pointerEvents: 'none',
   },
   bgGlow2: {
     position: 'absolute',
@@ -437,7 +442,9 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: 'rgba(56,189,248,0.07)',
+    zIndex: 0,
+    pointerEvents: 'none',
   },
 
   scroll: {
@@ -445,6 +452,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 56,
+    zIndex: 1,
   },
 
   /* Card */
