@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
+import { GaruaRainOverlay } from '../../components/GaruaRainOverlay';
 import { clearToken, saveToken } from '../../core/auth/authStorage';
 import { getSession, signInWithPassword, signUp } from '../../core/auth/supabaseClient';
 
@@ -265,6 +266,8 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
       <View style={styles.bgGlow1} />
       <View style={styles.bgGlow2} />
 
+      <GaruaRainOverlay />
+
       <ScrollView
         contentContainerStyle={styles.scroll}
         keyboardShouldPersistTaps="handled"
@@ -452,7 +455,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 56,
-    zIndex: 1,
+    zIndex: 2,
   },
 
   /* Card */
