@@ -407,11 +407,20 @@ export default function HomeScreen() {
     let isMounted = true;
 
     const readAndLoadLocation = async () => {
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      if (!isMounted) return;
-      await loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
+      try {
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!isMounted) return;
+        await loadGpsWeather(loc.coords.latitude, loc.coords.longitude);
+      } catch {
+        if (!isMounted) return;
+        updateGpsSlide({
+          status: 'error',
+          message:
+            'Ubicación no disponible. Activa el GPS y los servicios de ubicación, o revisa permisos.',
+        });
+      }
     };
 
     (async () => {
