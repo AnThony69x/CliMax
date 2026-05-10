@@ -23,6 +23,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decode } from 'base64-arraybuffer';
+import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
+import { GaruaRainOverlay } from '../../components/GaruaRainOverlay';
 import { clearToken } from '../../core/auth/authStorage';
 import { getSession, signOut, supabase } from '../../core/auth/supabaseClient';
 import type { User } from '../../types';
@@ -342,12 +344,15 @@ export default function ProfileScreen() {
   /* ═══════════════ GUEST ═══════════════ */
   if (!profile) {
     return (
-      <View style={s.container}>
+      <View style={s.guestScreen}>
         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <View style={s.glow1} />
-        <View style={s.glow2} />
+        <AuthWeatherBubbles />
+        <View style={s.guestGlow1} />
+        <View style={s.guestGlow2} />
+        <GaruaRainOverlay />
         <ScrollView
           showsVerticalScrollIndicator={false}
+          style={{ zIndex: 2 }}
           contentContainerStyle={[s.guestScroll, { paddingTop: insets.top + 20 }]}
         >
           <View style={s.guestIconWrap}>
@@ -853,6 +858,30 @@ const STAT_W = (SW - 40 - 10) / 2;
 
 const s = StyleSheet.create({
   container:       { flex: 1, backgroundColor: SURFACE, overflow: 'hidden' },
+  /** Invitado: mismo fondo que login + burbujas/garúa */
+  guestScreen:     { flex: 1, backgroundColor: '#000b18', overflow: 'hidden' },
+  guestGlow1: {
+    position: 'absolute',
+    top: -120,
+    left: -100,
+    width: 400,
+    height: 400,
+    borderRadius: 999,
+    backgroundColor: 'rgba(2,87,129,0.14)',
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
+  guestGlow2: {
+    position: 'absolute',
+    bottom: -80,
+    right: -80,
+    width: 300,
+    height: 300,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.07)',
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
   loadingContainer:{ flex: 1, backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
 
   glow1: { position: 'absolute', top: -100, left: -100, width: 340, height: 340, borderRadius: 999, backgroundColor: 'rgba(2,87,129,0.28)' },
@@ -1214,7 +1243,7 @@ const s = StyleSheet.create({
   logoutDivider:   { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8, marginHorizontal: 4 },
 
   /* ── Guest ── */
-  guestScroll:      { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40, gap: 28 },
+  guestScroll:      { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40, gap: 28, zIndex: 2 },
   guestIconWrap:    { alignItems: 'center' },
   guestTextWrap:    { alignItems: 'center', gap: 10 },
   guestTitle:       { fontSize: 26, fontWeight: '800', color: '#f1f5f9', letterSpacing: -0.4, textAlign: 'center' },
