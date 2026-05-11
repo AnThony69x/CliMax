@@ -1,5 +1,19 @@
-# CliMax — arranca backend Laravel (8000) y Expo (9000) en ventanas separadas.
-# Uso:  powershell -ExecutionPolicy Bypass -File .\run-dev.sp
+# CliMax - arranca backend Laravel + 2 instancias de Expo (Expo Go y Dev Client).
+#
+# Uso:
+#   .\run-dev.ps1                # LAN normal (escanear desde misma WiFi)
+#   .\run-dev.ps1 -Tunnel        # tunnel mode (funciona desde cualquier red, mas lento)
+#   .\run-dev.ps1 -SkipBackend   # no levanta Laravel (si ya esta corriendo)
+#
+# Ventanas que abre:
+#   1. Laravel    -> http://0.0.0.0:8000
+#   2. Expo Go    -> puerto 8082 (QR para Expo Go del App Store / Play Store)
+#   3. Dev Client -> puerto 8081 (QR para el APK CliMax instalado en tu phone)
+
+param(
+  [switch]$Tunnel,
+  [switch]$SkipBackend
+)
 
 $ErrorActionPreference = 'Stop'
 $Root = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -16,18 +30,56 @@ if (-not (Test-Path $mobileDir)) {
   exit 1
 }
 
-Write-Host 'Iniciando Laravel (0.0.0.0:8000)...'
-Start-Process powershell -WorkingDirectory $backendDir -ArgumentList @(
-  '-NoExit',
-  '-Command',
-  'php artisan serve --host=0.0.0.0 --port=8000'
-)
+function Stop-PortIfBusy {
+  param([int]$Port)
+  $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  if ($conn) {
+    $procId = $conn[0].OwningProcess
+    try {
+      $proc = Get-Process -Id $procId -ErrorAction Stop
+      Stop-Process -Id $procId -Force -ErrorAction Stop
+      Write-Host ("Puerto {0}: matado proceso {1} (PID {2})" -f $Port, $proc.ProcessName, $procId) -ForegroundColor DarkYellow
+    } catch {
+      Write-Host ("Puerto {0}: ocupado pero no se pudo liberar PID {1}" -f $Port, $procId) -ForegroundColor Red
+    }
+  }
+}
 
-Write-Host 'Iniciando Expo (puerto 9000)...'
+Write-Host 'Limpiando puertos 8000/8081/8082 si quedaron zombies...' -ForegroundColor DarkCyan
+$portsToFree = @(8081, 8082)
+if (-not $SkipBackend) { $portsToFree = @(8000) + $portsToFree }
+foreach ($p in $portsToFree) { Stop-PortIfBusy -Port $p }
+
+$tunnelFlag = if ($Tunnel) { ' --tunnel' } else { '' }
+
+if (-not $SkipBackend) {
+  Write-Host 'Iniciando Laravel (0.0.0.0:8000)...' -ForegroundColor Cyan
+  Start-Process powershell -WorkingDirectory $backendDir -ArgumentList @(
+    '-NoExit',
+    '-Command',
+    "`$Host.UI.RawUI.WindowTitle = 'CliMax - Laravel :8000'; php artisan serve --host=0.0.0.0 --port=8000"
+  )
+}
+
+Write-Host "Iniciando Expo Go (puerto 8082$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Green
 Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
   '-NoExit',
   '-Command',
-  'npx expo start --port=9000'
+  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Go :8082'; Write-Host 'Modo Expo Go: escanea este QR con la app Expo Go (Play Store / App Store)' -ForegroundColor Yellow; npx expo start --go --port 8082$tunnelFlag --clear"
 )
 
-Write-Host 'Listo: dos ventanas de PowerShell quedaron abiertas.'
+Write-Host "Iniciando Expo Dev Client (puerto 8081$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Magenta
+Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
+  '-NoExit',
+  '-Command',
+  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Dev Client :8081'; Write-Host 'Modo Dev Client: escanea este QR con el APK CliMax (development build)' -ForegroundColor Yellow; npx expo start --dev-client --port 8081$tunnelFlag --clear"
+)
+
+Write-Host ''
+Write-Host 'Listo: 3 ventanas abiertas.' -ForegroundColor White
+Write-Host '  - Laravel       :8000 (API)'
+Write-Host '  - Expo Go       :8082 (QR para Expo Go store app)'
+Write-Host '  - Dev Client    :8081 (QR para CliMax APK)'
+if ($Tunnel) {
+  Write-Host '  Modo tunnel ACTIVO: bundles enrutados por servidores Expo (mas lento, pero funciona en redes con isolation).' -ForegroundColor Yellow
+}
