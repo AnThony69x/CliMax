@@ -100,11 +100,37 @@ docker compose up --build
 
 Mobile queda publicado en http://localhost:9000
 
+## Push Notifications
+
+La app integra `expo-notifications` con Expo Push Service. Para habilitarlas en tu device de desarrollo:
+
+1. Inicializa EAS dentro del proyecto mobile (la primera vez):
+
+```bash
+cd mobile
+eas init
+```
+
+Esto rellena `extra.eas.projectId` en `app.json`. Sin ese projectId el cliente no puede pedir un `ExpoPushToken`.
+
+2. Build de desarrollo nativo (Expo Go **no** soporta push remoto en SDK 53+):
+
+```bash
+eas build --profile development --platform android
+```
+
+Instala el .apk resultante en tu dispositivo y abrelo en lugar de Expo Go.
+
+3. Ya en la app, al iniciar sesion el cliente solicita permisos, obtiene el `ExpoPushToken` y lo registra contra el backend (`POST /api/push-tokens`). Al cerrar sesion lo elimina (`DELETE /api/push-tokens/{token}`).
+
+> En Expo Go la integracion queda como no-op silencioso (`isExpoGo()` corta la inicializacion) para no romper el bundler. Necesitas un build nativo para probar push remoto.
+
 ## Estado
 
 - Base de Expo Router limpia
 - Arquitectura por features creada
 - Archivos externos de entorno y control listos
+- Push notifications con Expo + backend Laravel listas (Fase 3)
 
 ## Licencia
 

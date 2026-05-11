@@ -13,3 +13,14 @@ export { supabase, signInWithPassword, signUp, signOut, getSession, getAccessTok
 
 // API
 export { API_URL, fetchWeather, fetchAddress, saveLocation, getProfile, updateProfile } from './core/api/weatherApi';
+
+// Push notifications
+export { usePushNotifications } from './core/notifications/usePushNotifications';
+export {
+  registerForPushNotificationsAsync,
+  registerPushTokenWithBackend,
+  unregisterPushTokenWithBackend,
+  cachePushToken,
+  getCachedPushToken,
+  clearCachedPushToken,
+} from './core/notifications/expoPushService';

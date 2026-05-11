@@ -3,12 +3,15 @@
 namespace App\Interfaces\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\ResolvesSupabaseUser;
 use App\Models\WeatherLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class WeatherLogController extends Controller
 {
+    use ResolvesSupabaseUser;
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -40,34 +43,4 @@ class WeatherLogController extends Controller
         ], 201);
     }
 
-    /**
-     * Extrae el UUID del usuario de Supabase a partir del JWT bearer.
-     * Decodifica el payload sin verificar la firma (solo para asociar datos,
-     * la seguridad real la gestionan las rutas protegidas con supabase.auth).
-     */
-    private function resolveSupabaseUserId(Request $request): ?string
-    {
-        $token = $request->bearerToken();
-
-        if (! $token) {
-            return null;
-        }
-
-        $parts = explode('.', $token);
-
-        if (count($parts) !== 3) {
-            return null;
-        }
-
-        $payload = json_decode(
-            base64_decode(str_pad(strtr($parts[1], '-_', '+/'), strlen($parts[1]) % 4, '=')),
-            true
-        );
-
-        if (! is_array($payload) || ! isset($payload['sub']) || ! is_string($payload['sub'])) {
-            return null;
-        }
-
-        return $payload['sub'];
-    }
 }

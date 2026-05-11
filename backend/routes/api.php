@@ -4,6 +4,7 @@ use App\Interfaces\Controllers\ClimaController;
 use App\Interfaces\Controllers\IntelligentAlertController;
 use App\Interfaces\Controllers\MeController;
 use App\Interfaces\Controllers\ProfileController;
+use App\Interfaces\Controllers\PushTokenController;
 use App\Interfaces\Controllers\WeatherLogController;
 use Illuminate\Support\Facades\Route;
 
@@ -11,6 +12,10 @@ Route::middleware('supabase.auth')->group(function () {
     Route::get('/me', [MeController::class, 'show']);
     Route::get('/profile', [ProfileController::class, 'show']);
     Route::patch('/profile', [ProfileController::class, 'update']);
+
+    Route::post('/push-tokens', [PushTokenController::class, 'store']);
+    Route::delete('/push-tokens/{token}', [PushTokenController::class, 'destroy'])
+        ->where('token', '.*');
 });
 
 // Rutas de Alertas Inteligentes (con autenticación dual: Sanctum + Supabase)

@@ -40,6 +40,11 @@ coverage/
 *.key
 *.mobileprovision
 *.pem
+google-services.json
+GoogleService-Info.plist
+fcm-service-account*.json
+firebase/
+*-firebase-adminsdk-*.json
 
 # Metro
 .metro-health-check*

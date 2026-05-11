@@ -3,6 +3,7 @@
 namespace App\Interfaces\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Http\Traits\ResolvesSupabaseUser;
 use App\Models\IntelligentAlert;
 use App\Models\WeatherLog;
 use Illuminate\Http\JsonResponse;
@@ -10,6 +11,7 @@ use Illuminate\Http\Request;
 
 class IntelligentAlertController extends Controller
 {
+    use ResolvesSupabaseUser;
     /**
      * Obtener alertas inteligentes del usuario
      * GET /api/intelligent-alerts
@@ -191,38 +193,4 @@ class IntelligentAlertController extends Controller
         return response()->json(['data' => $summary]);
     }
 
-    /**
-     * Extrae el UUID del usuario de Supabase o Sanctum
-     */
-    private function resolveSupabaseUserId(Request $request): ?string
-    {
-        // Intentar primero con request()->user() (Sanctum)
-        if ($request->user()) {
-            return $request->user()->id;
-        }
-
-        // Fallback: decodificar JWT manualmente (Supabase)
-        $token = $request->bearerToken();
-
-        if (!$token) {
-            return null;
-        }
-
-        $parts = explode('.', $token);
-
-        if (count($parts) !== 3) {
-            return null;
-        }
-
-        $payload = json_decode(
-            base64_decode(str_pad(strtr($parts[1], '-_', '+/'), strlen($parts[1]) % 4, '=')),
-            true
-        );
-
-        if (!is_array($payload) || !isset($payload['sub']) || !is_string($payload['sub'])) {
-            return null;
-        }
-
-        return $payload['sub'];
-    }
 }

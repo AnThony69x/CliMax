@@ -5,15 +5,17 @@ namespace App\Console\Commands;
 use App\Models\User;
 use App\Models\IntelligentAlert;
 use App\Models\WeatherLog;
+use App\Services\ExpoPushService;
 use App\Services\GroqAnalyzerService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
 class ProcessIntelligentAlerts extends Command
 {
     protected $signature = 'alerts:process-intelligent {--user-id= : Procesar solo para usuario específico}';
     protected $description = 'Procesa logs climáticos y genera alertas inteligentes con Groq';
 
-    public function handle(): int
+    public function handle(ExpoPushService $expoPush): int
     {
         $this->info('🤖 Iniciando procesamiento de alertas inteligentes...');
 
@@ -21,7 +23,7 @@ class ProcessIntelligentAlerts extends Command
         $groqService = new GroqAnalyzerService();
 
         if ($userId) {
-            return $this->processUserAlerts($userId, $groqService);
+            return $this->processUserAlerts($userId, $groqService, $expoPush);
         }
 
         // Obtener usuarios activos (que tienen logs en últimas 48h)
@@ -43,7 +45,7 @@ class ProcessIntelligentAlerts extends Command
 
         foreach ($activeUsers as $uid) {
             try {
-                $result = $this->processUserAlerts($uid, $groqService);
+                $result = $this->processUserAlerts($uid, $groqService, $expoPush);
                 $processed++;
 
                 if ($result > 0) {
@@ -63,7 +65,7 @@ class ProcessIntelligentAlerts extends Command
     /**
      * Procesa alertas para un usuario específico
      */
-    private function processUserAlerts(string $userId, GroqAnalyzerService $groqService): int
+    private function processUserAlerts(string $userId, GroqAnalyzerService $groqService, ExpoPushService $expoPush): int
     {
         // Verificar si ya analizamos este usuario en la última hora
         $lastAlert = IntelligentAlert::where('user_id', $userId)
@@ -118,6 +120,39 @@ class ProcessIntelligentAlerts extends Command
         };
 
         $this->line("$emoji Usuario $userId: Alerta generada (Riesgo: {$analysis['risk_level']})");
+
+        if (in_array($analysis['risk_level'], ['high', 'severe'], true)) {
+            $title = $analysis['risk_level'] === 'severe'
+                ? 'Alerta climatica grave'
+                : 'Alerta climatica';
+            $body = Str::limit((string) $analysis['analysis_reason'], 140);
+
+            $sent = $expoPush->sendToUsers(
+                [$userId],
+                $title,
+                $body,
+                [
+                    'alertId' => (string) $alert->id,
+                    'riskLevel' => $analysis['risk_level'],
+                ],
+                'default',
+                bypassQuietHours: $analysis['risk_level'] === 'severe',
+                logMeta: [
+                    'kind' => 'intelligent_alert',
+                    'alert_id' => $alert->id,
+                ]
+            );
+
+            if ($sent > 0) {
+                $alert->update([
+                    'is_notified' => true,
+                    'notified_at' => now(),
+                ]);
+                $this->line("   Push enviado a $sent token(s).");
+            } else {
+                $this->line("   Sin tokens push o silenciado por quiet hours.");
+            }
+        }
 
         return 1;
     }

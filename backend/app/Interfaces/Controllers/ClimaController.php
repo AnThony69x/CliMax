@@ -3,40 +3,29 @@
 namespace App\Interfaces\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Services\WeatherFetcherService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 
 class ClimaController extends Controller
 {
-    public function getClima(Request $request): JsonResponse
+    public function getClima(Request $request, WeatherFetcherService $weather): JsonResponse
     {
         $validated = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
             'lon' => ['required', 'numeric', 'between:-180,180'],
         ]);
 
-        $baseUrl = config('services.weather.base_url', 'https://api.open-meteo.com/v1/forecast');
-        $verify = config('services.weather.verify', false);
+        $data = $weather->fetchRaw((float) $validated['lat'], (float) $validated['lon']);
 
-        $response = Http::withOptions([
-            'verify' => $verify,
-        ])->get($baseUrl, [
-            'latitude' => $validated['lat'],
-            'longitude' => $validated['lon'],
-            'current' => 'temperature_2m,weather_code,wind_speed_10m',
-            'daily' => 'temperature_2m_max,temperature_2m_min',
-            'forecast_days' => 1,
-            'timezone' => 'auto',
-        ]);
-
-        if (! $response->successful()) {
+        if ($data === null) {
             return response()->json([
                 'message' => 'No se pudo obtener el clima.',
             ], 502);
         }
 
-        return response()->json($response->json());
+        return response()->json($data);
     }
 
     public function searchCities(Request $request): JsonResponse

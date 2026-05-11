@@ -29,6 +29,13 @@ return [
         'model' => env('GROQ_MODEL', 'mixtral-8x7b-32768'),
     ],
 
+    'expo' => [
+        'access_token' => env('EXPO_ACCESS_TOKEN'),
+        'quiet_hours_start' => (int) env('PUSH_QUIET_HOURS_START', 22),
+        'quiet_hours_end' => (int) env('PUSH_QUIET_HOURS_END', 7),
+        'timezone' => env('PUSH_TIMEZONE', env('APP_TIMEZONE', 'America/Lima')),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

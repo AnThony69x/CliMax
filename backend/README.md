@@ -177,6 +177,82 @@ backend/
 └── composer.json
 ```
 
+## Push Notifications (Expo) — setup local
+
+### 1. Esquema en Supabase
+
+Las tablas `push_tokens` y `push_notifications_log` se crean con migraciones Laravel clasicas:
+
+```bash
+php artisan migrate
+```
+
+Esto aplica las migraciones `2026_05_10_180000_create_push_tokens_table.php` y `2026_05_10_181000_create_push_notifications_log_table.php`, que incluyen FK a `auth.users` (tolerante a permisos), enable RLS y crean las policies. Si tu usuario de DB no tiene privilegio sobre `auth.users` la migracion deja un `RAISE NOTICE` y sigue.
+
+### 2. Variables `.env`
+
+```env
+EXPO_ACCESS_TOKEN=             # opcional pero recomendado en prod
+PUSH_QUIET_HOURS_START=22      # no se manda push entre 22:00 y 07:00 hora local del usuario
+PUSH_QUIET_HOURS_END=7         # excepcion: severe (alerts) y storm (weather) ignoran la ventana
+PUSH_TIMEZONE=America/Lima     # timezone usado para evaluar quiet hours
+```
+
+### 3. Levantar el scheduler en local
+
+Para que los push se disparen automaticamente, **abre una terminal aparte** (con el server `php artisan serve` en otra) y deja corriendo:
+
+```bash
+php artisan schedule:work
+```
+
+Esto evalua todos los cron registrados en `App\Console\Kernel`:
+
+| Comando | Frecuencia |
+|---|---|
+| `alerts:process-intelligent` | cada 30 min |
+| `weather:monitor` | cada 15 min |
+| `push:check-receipts` | cada 30 min |
+| `push:cleanup-tokens` | semanal, lunes 03:00 |
+
+Verifica con `php artisan schedule:list` que no haya duplicados.
+
+### 4. Comandos manuales utiles
+
+```bash
+# Procesar alertas Groq y disparar push high/severe (puedes filtrar por usuario)
+php artisan alerts:process-intelligent --user-id=<uuid>
+
+# Detectar cambios bruscos del clima y disparar push proactivos
+php artisan weather:monitor --user-id=<uuid>
+
+# Consultar receipts asincronos de Expo y purgar tokens invalidos
+php artisan push:check-receipts
+
+# Borrar tokens sin actividad reciente
+php artisan push:cleanup-tokens --days=30
+```
+
+### 5. Test manual con tinker
+
+```bash
+php artisan tinker
+```
+
+```php
+app(App\Services\ExpoPushService::class)->sendToUsers(
+    ['<user-uuid>'],
+    'Hola desde tinker',
+    'Body de prueba',
+    ['debug' => true],
+    'default',
+    bypassQuietHours: true,
+    logMeta: ['kind' => 'manual']
+);
+```
+
+Despues revisa la fila en `push_notifications_log` con `status='sent'` y `ticket_ids` lleno.
+
 ## Testing
 
 Las pruebas fueron removidas temporalmente durante la fase de limpieza API-only.

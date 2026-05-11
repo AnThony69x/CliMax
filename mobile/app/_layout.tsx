@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 import { CitiesProvider } from '../src/core/cities/CitiesContext';
+import { usePushNotifications } from '../src/core/notifications/usePushNotifications';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -13,6 +14,8 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+  usePushNotifications();
+
   useEffect(() => {
     SplashScreen.hideAsync();
   }, []);
