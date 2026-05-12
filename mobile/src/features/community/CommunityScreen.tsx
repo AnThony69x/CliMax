@@ -129,6 +129,7 @@ export default function CommunityScreen() {
   const [severity, setSeverity] = useState<PostSeverity>('informacion');
   const [communityTableMissing, setCommunityTableMissing] = useState(false);
   const [commentsTableMissing, setCommentsTableMissing] = useState(false);
+  const [reactionsTableMissing, setReactionsTableMissing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [locationStatus, setLocationStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [locationMessage, setLocationMessage] = useState('');
@@ -143,10 +144,12 @@ export default function CommunityScreen() {
   const [reactionByPost, setReactionByPost] = useState<Record<string, ReactionType>>({});
   const [reactionCountByPost, setReactionCountByPost] = useState<Record<string, number>>({});
   const [reactionPickerPostId, setReactionPickerPostId] = useState<string | null>(null);
+  const [reactionSavingByPost, setReactionSavingByPost] = useState<Record<string, boolean>>({});
   const [mentionSuggestions, setMentionSuggestions] = useState<CommunityProfile[]>([]);
   const [mentionQuery, setMentionQuery] = useState('');
   const [activeMentionPostId, setActiveMentionPostId] = useState<string | null>(null);
   const [lightboxUri, setLightboxUri] = useState<string | null>(null);
+  const [commentSavingByPost, setCommentSavingByPost] = useState<Record<string, boolean>>({});
 
   const guestLayout = !loading && !isLoggedIn;
 
@@ -346,20 +349,65 @@ export default function CommunityScreen() {
   }, [posts, activeSeverityFilter, feedSortMode]);
 
   const toggleLike = (postIdValue: string) => {
-    setLikedByPost((prev) => {
-      const nextLike = !prev[postIdValue];
-      setReactionCountByPost((counts) => ({
-        ...counts,
-        [postIdValue]: Math.max(0, (counts[postIdValue] ?? 0) + (nextLike ? 1 : -1)),
-      }));
-      if (nextLike) {
-        setReactionByPost((old) => ({ ...old, [postIdValue]: 'like' }));
+    if (!userId) {
+      NativeAlert.alert('Reacciones', 'Inicia sesion para dar me gusta.');
+      return;
+    }
+    if (reactionsTableMissing) {
+      NativeAlert.alert('Reacciones', 'Falta crear la tabla community_reactions en Supabase.');
+      return;
+    }
+    if (reactionSavingByPost[postIdValue]) return;
+
+    const nextLike = !likedByPost[postIdValue];
+    setReactionSavingByPost((prev) => ({ ...prev, [postIdValue]: true }));
+    setLikedByPost((prev) => ({ ...prev, [postIdValue]: nextLike }));
+    setReactionByPost((prev) => ({ ...prev, [postIdValue]: nextLike ? 'like' : prev[postIdValue] }));
+    setReactionCountByPost((counts) => ({
+      ...counts,
+      [postIdValue]: Math.max(0, (counts[postIdValue] ?? 0) + (nextLike ? 1 : -1)),
+    }));
+
+    (async () => {
+      try {
+        if (nextLike) {
+          const { error } = await supabase
+            .from('community_reactions')
+            .upsert({
+              post_id: postIdValue,
+              user_id: userId,
+              reaction: 'like',
+            }, { onConflict: 'post_id,user_id' });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('community_reactions')
+            .delete()
+            .eq('post_id', postIdValue)
+            .eq('user_id', userId);
+          if (error) throw error;
+        }
+      } catch (error: any) {
+        console.warn('[Community][toggleLike] Error:', error?.message);
+        await loadReactionsForPosts([postIdValue]);
+      } finally {
+        setReactionSavingByPost((prev) => ({ ...prev, [postIdValue]: false }));
       }
-      return { ...prev, [postIdValue]: nextLike };
-    });
+    })();
   };
 
   const setReaction = (postIdValue: string, reaction: ReactionType) => {
+    if (!userId) {
+      NativeAlert.alert('Reacciones', 'Inicia sesion para reaccionar.');
+      return;
+    }
+    if (reactionsTableMissing) {
+      NativeAlert.alert('Reacciones', 'Falta crear la tabla community_reactions en Supabase.');
+      return;
+    }
+    if (reactionSavingByPost[postIdValue]) return;
+
+    setReactionSavingByPost((prev) => ({ ...prev, [postIdValue]: true }));
     setReactionByPost((prev) => ({ ...prev, [postIdValue]: reaction }));
     setLikedByPost((prev) => ({ ...prev, [postIdValue]: true }));
     setReactionCountByPost((counts) => {
@@ -367,6 +415,24 @@ export default function CommunityScreen() {
       return { ...counts, [postIdValue]: current > 0 ? current : 1 };
     });
     setReactionPickerPostId(null);
+
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from('community_reactions')
+          .upsert({
+            post_id: postIdValue,
+            user_id: userId,
+            reaction,
+          }, { onConflict: 'post_id,user_id' });
+        if (error) throw error;
+      } catch (error: any) {
+        console.warn('[Community][setReaction] Error:', error?.message);
+        await loadReactionsForPosts([postIdValue]);
+      } finally {
+        setReactionSavingByPost((prev) => ({ ...prev, [postIdValue]: false }));
+      }
+    })();
   };
 
   const onCommentDraftChange = (postIdValue: string, value: string) => {
@@ -496,6 +562,55 @@ export default function CommunityScreen() {
     }
     const comments = await loadCommentsForPosts(normalized.map((post) => post.id));
     await loadProfilesForPosts(normalized, comments);
+    await loadReactionsForPosts(normalized.map((post) => post.id));
+  };
+
+  const loadReactionsForPosts = async (postIds: string[]) => {
+    if (!userId || postIds.length === 0) {
+      setReactionCountByPost({});
+      setLikedByPost({});
+      setReactionByPost({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('community_reactions')
+      .select('post_id,user_id,reaction')
+      .in('post_id', postIds);
+
+    if (error) {
+      const missingTable =
+        error.code === 'PGRST205' ||
+        error.message?.includes("Could not find the table 'public.community_reactions'");
+      if (missingTable) {
+        setReactionsTableMissing(true);
+        console.warn('[Community][loadReactions] Tabla faltante: public.community_reactions');
+      } else {
+        console.warn('[Community][loadReactions] Error inesperado:', error.message);
+      }
+      setReactionCountByPost({});
+      setLikedByPost({});
+      setReactionByPost({});
+      return;
+    }
+
+    setReactionsTableMissing(false);
+    const counts: Record<string, number> = {};
+    const myLikes: Record<string, boolean> = {};
+    const myReactions: Record<string, ReactionType> = {};
+
+    (data ?? []).forEach((row: any) => {
+      const postIdValue = row.post_id as string;
+      counts[postIdValue] = (counts[postIdValue] ?? 0) + 1;
+      if (row.user_id === userId) {
+        myLikes[postIdValue] = true;
+        myReactions[postIdValue] = (row.reaction as ReactionType) ?? 'like';
+      }
+    });
+
+    setReactionCountByPost(counts);
+    setLikedByPost(myLikes);
+    setReactionByPost(myReactions);
   };
 
   const loadProfilesForPosts = async (
@@ -677,6 +792,7 @@ export default function CommunityScreen() {
   };
 
   const savePost = async () => {
+    if (saving) return;
     if (!userId) return;
     if (!imageUri) {
       NativeAlert.alert('Advertencia', 'Debes seleccionar o tomar una imagen.');
@@ -854,6 +970,7 @@ export default function CommunityScreen() {
     if (!userId) return;
     const draft = commentDrafts[postId]?.trim() ?? '';
     if (!draft) return;
+    if (commentSavingByPost[postId]) return;
     if (commentsTableMissing) {
       NativeAlert.alert('Comentarios', 'Falta crear la tabla community_comments en Supabase.');
       return;
@@ -863,38 +980,43 @@ export default function CommunityScreen() {
     const replyTarget = replyingCommentTarget?.postId === postId ? replyingCommentTarget : null;
     const contentToSave = replyTarget ? `@${replyTarget.authorName} ${draft}` : draft;
 
+    setCommentSavingByPost((prev) => ({ ...prev, [postId]: true }));
     let error: { message?: string } | null = null;
-    if (isEditing) {
-      const result = await supabase
-        .from('community_comments')
-        .update({ content: contentToSave })
-        .eq('id', editingCommentTarget.commentId)
-        .eq('user_id', userId);
-      error = result.error ?? null;
-    } else if (replyTarget) {
-      const withParent = await supabase.from('community_comments').insert({
-        post_id: postId,
-        user_id: userId,
-        content: contentToSave,
-        parent_comment_id: replyTarget.commentId,
-      });
-      if (withParent.error?.message?.includes('column')) {
-        const fallback = await supabase.from('community_comments').insert({
+    try {
+      if (isEditing) {
+        const result = await supabase
+          .from('community_comments')
+          .update({ content: contentToSave })
+          .eq('id', editingCommentTarget.commentId)
+          .eq('user_id', userId);
+        error = result.error ?? null;
+      } else if (replyTarget) {
+        const withParent = await supabase.from('community_comments').insert({
+          post_id: postId,
+          user_id: userId,
+          content: contentToSave,
+          parent_comment_id: replyTarget.commentId,
+        });
+        if (withParent.error?.message?.includes('column')) {
+          const fallback = await supabase.from('community_comments').insert({
+            post_id: postId,
+            user_id: userId,
+            content: contentToSave,
+          });
+          error = fallback.error ?? null;
+        } else {
+          error = withParent.error ?? null;
+        }
+      } else {
+        const result = await supabase.from('community_comments').insert({
           post_id: postId,
           user_id: userId,
           content: contentToSave,
         });
-        error = fallback.error ?? null;
-      } else {
-        error = withParent.error ?? null;
+        error = result.error ?? null;
       }
-    } else {
-      const result = await supabase.from('community_comments').insert({
-        post_id: postId,
-        user_id: userId,
-        content: contentToSave,
-      });
-      error = result.error ?? null;
+    } finally {
+      setCommentSavingByPost((prev) => ({ ...prev, [postId]: false }));
     }
 
     if (error) {
@@ -1370,9 +1492,11 @@ export default function CommunityScreen() {
                       <Image source={{ uri: post.image_url }} style={styles.postImage} />
                     </Pressable>
                   ) : null}
-                  <Text style={styles.postCaption} numberOfLines={4} ellipsizeMode="tail">
-                    {primaryComment || 'Sin pie de foto.'}
-                  </Text>
+                  {primaryComment ? (
+                    <Text style={styles.postCaption} numberOfLines={4} ellipsizeMode="tail">
+                      {primaryComment}
+                    </Text>
+                  ) : null}
                   <Text style={styles.postDate}>
                     {new Date(post.created_at).toLocaleString('es-ES')}
                   </Text>
@@ -1380,7 +1504,12 @@ export default function CommunityScreen() {
                     <Pressable
                       onPress={() => toggleLike(post.id)}
                       onLongPress={() => setReactionPickerPostId(post.id)}
-                      style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
+                      disabled={reactionSavingByPost[post.id]}
+                      style={({ pressed }) => [
+                        styles.socialActionBtn,
+                        pressed && { opacity: 0.8 },
+                        reactionSavingByPost[post.id] && { opacity: 0.6 },
+                      ]}
                     >
                       <Ionicons
                         name={currentReactionIcon as any}
@@ -1483,9 +1612,21 @@ export default function CommunityScreen() {
                                 ))}
                               </View>
                             ) : null}
-                            <Pressable style={styles.commentBtn} onPress={() => submitComment(post.id)}>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.commentBtn,
+                                pressed && { opacity: 0.85 },
+                                commentSavingByPost[post.id] && { opacity: 0.6 },
+                              ]}
+                              onPress={() => submitComment(post.id)}
+                              disabled={commentSavingByPost[post.id]}
+                            >
                               <Text style={styles.commentBtnText}>
-                                {editingCommentTarget?.postId === post.id ? 'Guardar' : 'Comentar'}
+                                {commentSavingByPost[post.id]
+                                  ? 'Enviando...'
+                                  : editingCommentTarget?.postId === post.id
+                                    ? 'Guardar'
+                                    : 'Comentar'}
                               </Text>
                             </Pressable>
                           </View>

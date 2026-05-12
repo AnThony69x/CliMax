@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as Location from 'expo-location';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
+  Easing,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
@@ -28,6 +31,26 @@ type WeatherState = {
   windSpeed: number;
   tempMax?: number | null;
   tempMin?: number | null;
+  hourlyTimes?: string[] | null;
+  hourlyTemps?: number[] | null;
+  hourlyRain?: number[] | null;
+  hourlyCodes?: number[] | null;
+  dailyTimes?: string[] | null;
+  dailyMin?: number[] | null;
+  dailyMax?: number[] | null;
+  dailyRain?: number[] | null;
+  dailyCodes?: number[] | null;
+  feelsLike?: number | null;
+  humidity?: number | null;
+  pressure?: number | null;
+  visibility?: number | null;
+  uvIndex?: number | null;
+  precipitationSum?: number | null;
+  precipitationProbability?: number | null;
+  windGusts?: number | null;
+  windDirection?: number | null;
+  sunrise?: string | null;
+  sunset?: string | null;
 };
 
 type SlideData = {
@@ -65,11 +88,15 @@ const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
   99: { label: 'Tormenta con granizo fuerte',  icon: '⛈️' },
 };
 
-const HOURLY_SLOTS = ['Ahora', '+1h', '+2h', '+3h', '+4h'];
-
-const SURFACE_DEEP = '#0c1222';
+const SURFACE_DEEP = '#0b1220';
+const SURFACE_DEEPER = '#060a14';
 const ACCENT = '#38bdf8';
 const ACCENT_SOFT = '#7dd3fc';
+const GLASS_BG = 'rgba(10,18,32,0.45)';
+const GLASS_BORDER = 'rgba(255,255,255,0.12)';
+
+const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
+const CLOUD_CODES = new Set([2, 3, 45, 48]);
 
 
 function weatherInfo(code: number | undefined) {
@@ -80,6 +107,63 @@ function weatherInfo(code: number | undefined) {
 function formatTempRounded(v: number | null | undefined) {
   if (v == null || Number.isNaN(v)) return '--';
   return `${Math.round(v)}`;
+}
+
+function formatVisibilityKm(v: number | null | undefined) {
+  if (v == null || Number.isNaN(v)) return '--';
+  return (v / 1000).toFixed(1);
+}
+
+function formatWindDirection(deg: number | null | undefined) {
+  if (deg == null || Number.isNaN(deg)) return '--';
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+  const index = Math.round((deg % 360) / 45) % 8;
+  return directions[index];
+}
+
+function buildSummary(weather: WeatherState | null) {
+  if (!weather) return 'Sin datos suficientes para el resumen.';
+  const info = weatherInfo(weather.weatherCode);
+  const temp = formatTempRounded(weather.temperature);
+  const rainChance = weather.precipitationProbability ?? null;
+  const rainText = rainChance != null ? `Prob. lluvia ${Math.round(rainChance)}%.` : '';
+  return `Cielo ${info.label.toLowerCase()} con ${temp}°. ${rainText}`.trim();
+}
+
+function moonPhaseLabel(date = new Date()) {
+  const knownNewMoon = new Date(Date.UTC(2000, 0, 6, 18, 14, 0));
+  const days = (date.getTime() - knownNewMoon.getTime()) / 86400000;
+  const synodicMonth = 29.53058867;
+  const phase = ((days % synodicMonth) + synodicMonth) % synodicMonth;
+  if (phase < 1.84566) return 'Nueva';
+  if (phase < 5.53699) return 'Creciente';
+  if (phase < 9.22831) return 'Cuarto creciente';
+  if (phase < 12.91963) return 'Gibosa creciente';
+  if (phase < 16.61096) return 'Llena';
+  if (phase < 20.30228) return 'Gibosa menguante';
+  if (phase < 23.99361) return 'Cuarto menguante';
+  if (phase < 27.68493) return 'Menguante';
+  return 'Nueva';
+}
+
+function moonPhaseData(date = new Date()) {
+  const knownNewMoon = new Date(Date.UTC(2000, 0, 6, 18, 14, 0));
+  const synodicMonth = 29.53058867;
+  const days = (date.getTime() - knownNewMoon.getTime()) / 86400000;
+  const phase = ((days % synodicMonth) + synodicMonth) % synodicMonth;
+  const illumination = Math.round(
+    (1 - Math.cos((2 * Math.PI * phase) / synodicMonth)) * 50
+  );
+  const daysToFull = Math.round(
+    (synodicMonth / 2 - phase + synodicMonth) % synodicMonth
+  );
+  const daysToNew = Math.round((synodicMonth - phase) % synodicMonth);
+  return {
+    label: moonPhaseLabel(date),
+    illumination,
+    daysToFull,
+    daysToNew,
+  };
 }
 
 /** Icono de “posición actual” (GPS): mira de puntería, sin pin de mapa. */
@@ -98,15 +182,54 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
   const data = await res.json();
   const current = data?.current;
   if (!current) throw new Error('Datos del clima incompletos');
-  const daily = data?.daily as Record<string, number[] | undefined> | undefined;
+  const hourly = data?.hourly as Record<string, number[] | string[] | undefined> | undefined;
+  const daily = data?.daily as Record<string, number[] | string[] | undefined> | undefined;
   const tempMaxRaw = daily?.temperature_2m_max?.[0];
   const tempMinRaw = daily?.temperature_2m_min?.[0];
+  const sunriseRaw = daily?.sunrise?.[0];
+  const sunsetRaw = daily?.sunset?.[0];
+  const uvMaxRaw = daily?.uv_index_max?.[0];
+  const precipitationSumRaw = daily?.precipitation_sum?.[0];
+  const precipitationProbRaw = daily?.precipitation_probability_max?.[0];
+  const gustsMaxRaw = daily?.wind_gusts_10m_max?.[0];
   return {
     temperature: current.temperature_2m,
     weatherCode: current.weather_code,
     windSpeed: current.wind_speed_10m,
     tempMax: typeof tempMaxRaw === 'number' ? tempMaxRaw : null,
     tempMin: typeof tempMinRaw === 'number' ? tempMinRaw : null,
+    hourlyTimes: Array.isArray(hourly?.time) ? (hourly?.time as string[]) : null,
+    hourlyTemps: Array.isArray(hourly?.temperature_2m) ? (hourly?.temperature_2m as number[]) : null,
+    hourlyRain: Array.isArray(hourly?.precipitation_probability)
+      ? (hourly?.precipitation_probability as number[])
+      : null,
+    hourlyCodes: Array.isArray(hourly?.weather_code) ? (hourly?.weather_code as number[]) : null,
+    dailyTimes: Array.isArray(daily?.time) ? (daily?.time as string[]) : null,
+    dailyMin: Array.isArray(daily?.temperature_2m_min) ? (daily?.temperature_2m_min as number[]) : null,
+    dailyMax: Array.isArray(daily?.temperature_2m_max) ? (daily?.temperature_2m_max as number[]) : null,
+    dailyRain: Array.isArray(daily?.precipitation_probability_max)
+      ? (daily?.precipitation_probability_max as number[])
+      : null,
+    dailyCodes: Array.isArray(daily?.weather_code) ? (daily?.weather_code as number[]) : null,
+    feelsLike: typeof current.apparent_temperature === 'number' ? current.apparent_temperature : null,
+    humidity: typeof current.relative_humidity_2m === 'number' ? current.relative_humidity_2m : null,
+    pressure: typeof current.pressure_msl === 'number' ? current.pressure_msl : null,
+    visibility: typeof current.visibility === 'number' ? current.visibility : null,
+    uvIndex: typeof current.uv_index === 'number'
+      ? current.uv_index
+      : typeof uvMaxRaw === 'number'
+        ? uvMaxRaw
+        : null,
+    precipitationSum: typeof precipitationSumRaw === 'number' ? precipitationSumRaw : null,
+    precipitationProbability: typeof precipitationProbRaw === 'number' ? precipitationProbRaw : null,
+    windGusts: typeof current.wind_gusts_10m === 'number'
+      ? current.wind_gusts_10m
+      : typeof gustsMaxRaw === 'number'
+        ? gustsMaxRaw
+        : null,
+    windDirection: typeof current.wind_direction_10m === 'number' ? current.wind_direction_10m : null,
+    sunrise: typeof sunriseRaw === 'string' ? sunriseRaw : null,
+    sunset: typeof sunsetRaw === 'string' ? sunsetRaw : null,
   };
 }
 
@@ -149,6 +272,211 @@ async function persistLocation(
   }
 }
 
+type HourlyItem = {
+  key: string;
+  label: string;
+  temp: number | null;
+  rainChance: number;
+  icon: string;
+  isNow?: boolean;
+};
+
+type WeeklyItem = {
+  key: string;
+  label: string;
+  min: number;
+  max: number;
+  rainChance: number;
+  icon: string;
+};
+
+function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | null {
+  if (!weather?.hourlyTimes || !weather.hourlyTemps || !weather.hourlyCodes) return null;
+  const now = new Date();
+  const items: HourlyItem[] = [];
+  for (let i = 0; i < weather.hourlyTimes.length; i += 1) {
+    const time = new Date(weather.hourlyTimes[i]);
+    if (time < now) continue;
+    const label = items.length === 0 ? 'Ahora' : `${time.getHours()}:00`;
+    const temp = weather.hourlyTemps[i] ?? null;
+    const rainChance = weather.hourlyRain?.[i] ?? 0;
+    const icon = weatherInfo(weather.hourlyCodes[i]).icon;
+    items.push({
+      key: `${label}-${i}`,
+      label,
+      temp: typeof temp === 'number' ? Math.round(temp) : null,
+      rainChance: typeof rainChance === 'number' ? Math.round(rainChance) : 0,
+      icon,
+      isNow: items.length === 1,
+    });
+    if (items.length >= 8) break;
+  }
+  return items.length ? items : null;
+}
+
+function buildWeeklyFromWeather(weather: WeatherState | null): WeeklyItem[] | null {
+  if (!weather?.dailyTimes || !weather.dailyMin || !weather.dailyMax) return null;
+  const days = weather.dailyTimes;
+  const items: WeeklyItem[] = [];
+  for (let i = 0; i < days.length && items.length < 8; i += 1) {
+    const date = new Date(days[i]);
+    const label = date
+      .toLocaleDateString('es-ES', { weekday: 'short' })
+      .replace('.', '')
+      .slice(0, 3)
+      .toUpperCase();
+    const min = weather.dailyMin[i] ?? null;
+    const max = weather.dailyMax[i] ?? null;
+    if (min == null || max == null) continue;
+    const rainChance = weather.dailyRain?.[i] ?? 0;
+    const icon = weatherInfo(weather.dailyCodes?.[i]).icon;
+    items.push({
+      key: `${label}-${i}`,
+      label,
+      min: Math.round(min),
+      max: Math.round(max),
+      rainChance: typeof rainChance === 'number' ? Math.round(rainChance) : 0,
+      icon,
+    });
+  }
+  return items.length ? items : null;
+}
+
+function buildHourlyForecast(baseTemp: number | null, code?: number): HourlyItem[] {
+  const now = new Date();
+  const icon = weatherInfo(code).icon;
+  return Array.from({ length: 8 }, (_, i) => {
+    const time = new Date(now.getTime() + i * 60 * 60 * 1000);
+    const hour = time.getHours();
+    const label = i === 0 ? 'Ahora' : `${hour}:00`;
+    const temp = baseTemp == null ? null : Math.round(baseTemp + Math.sin(i / 2) * 1.4 - i * 0.2);
+    const rainChance = Math.min(95, Math.max(10, Math.round(35 + Math.sin(i) * 20 + (RAIN_CODES.has(code ?? -1) ? 20 : 0))));
+    return {
+      key: `${label}-${i}`,
+      label,
+      temp,
+      rainChance,
+      icon,
+      isNow: i === 0,
+    };
+  });
+}
+
+function buildWeeklyForecast(
+  tempMin?: number | null,
+  tempMax?: number | null,
+  code?: number
+): WeeklyItem[] {
+  const baseMin = tempMin ?? (tempMax != null ? tempMax - 6 : 19);
+  const baseMax = tempMax ?? (tempMin != null ? tempMin + 7 : 26);
+  const icon = weatherInfo(code).icon;
+  const days = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom', 'Lun', 'Mar', 'Mie'];
+  return days.slice(0, 8).map((day, i) => {
+    const drift = Math.sin(i / 1.6) * 2;
+    const min = Math.round(baseMin + drift - 1);
+    const max = Math.round(baseMax + drift + 1);
+    return {
+      key: `${day}-${i}`,
+      label: day,
+      min,
+      max,
+      rainChance: Math.min(95, Math.max(15, Math.round(40 + Math.cos(i) * 18 + (RAIN_CODES.has(code ?? -1) ? 22 : 0)))),
+      icon,
+    };
+  });
+}
+
+const MapModule = (() => {
+  try {
+    return require('react-native-maps');
+  } catch {
+    return null;
+  }
+})();
+
+const MapView = MapModule?.default ?? null;
+const UrlTile = MapModule?.UrlTile ?? null;
+
+function GlassCard({
+  children,
+  style,
+  intensity = 26,
+}: {
+  children: React.ReactNode;
+  style?: any;
+  intensity?: number;
+}) {
+  return (
+    <BlurView intensity={intensity} tint="dark" style={[styles.glassCard, style]}>
+      <View style={styles.glassInner}>{children}</View>
+    </BlurView>
+  );
+}
+
+function RainLayer({ active }: { active: boolean }) {
+  const drops = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, i) => ({
+        id: i,
+        left: (5 + (i * 93) % 100) as number,
+        delay: (i % 6) * 220,
+        duration: 1400 + (i % 5) * 220,
+        height: 120 + (i % 4) * 60,
+      })),
+    []
+  );
+
+  const animValues = useMemo(() => drops.map(() => new Animated.Value(0)), [drops]);
+
+  useEffect(() => {
+    if (!active) return;
+    const loops = animValues.map((val, i) =>
+      Animated.loop(
+        Animated.timing(val, {
+          toValue: 1,
+          duration: drops[i].duration,
+          delay: drops[i].delay,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      )
+    );
+    loops.forEach((loop) => loop.start());
+    return () => loops.forEach((loop) => loop.stop());
+  }, [active, animValues, drops]);
+
+  if (!active) return null;
+
+  return (
+    <View style={styles.rainLayer} pointerEvents="none">
+      {drops.map((drop, i) => (
+        <Animated.View
+          key={drop.id}
+          style={[
+            styles.rainDrop,
+            {
+              left: `${drop.left}%` as `${number}%`,
+              height: drop.height,
+              transform: [
+                {
+                  translateY: animValues[i].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-80, 720],
+                  }),
+                },
+              ],
+              opacity: animValues[i].interpolate({
+                inputRange: [0, 0.2, 1],
+                outputRange: [0, 0.85, 0],
+              }),
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
 /* ─────────────────────────────────────────────
    WeatherSlide — una tarjeta del carrusel
 ───────────────────────────────────────────── */
@@ -165,140 +493,453 @@ function WeatherSlide({
   const info = weatherInfo(slide.weather?.weatherCode);
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const mapScale = useRef(new Animated.Value(0)).current;
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const hourly = useMemo(() => {
+    return (
+      buildHourlyFromWeather(slide.weather) ||
+      buildHourlyForecast(slide.weather?.temperature ?? null, slide.weather?.weatherCode)
+    );
+  }, [slide.weather]);
+  const weekly = useMemo(() => {
+    return (
+      buildWeeklyFromWeather(slide.weather) ||
+      buildWeeklyForecast(
+        slide.weather?.tempMin ?? null,
+        slide.weather?.tempMax ?? null,
+        slide.weather?.weatherCode
+      )
+    );
+  }, [slide.weather]);
+  const isRain = RAIN_CODES.has(slide.weather?.weatherCode ?? -1);
+  const isCloudy = CLOUD_CODES.has(slide.weather?.weatherCode ?? -1);
+  const moon = useMemo(() => moonPhaseData(), []);
+  const [mapLayer, setMapLayer] = useState<'temp' | 'uv'>('temp');
+  const owmKey = process.env.EXPO_PUBLIC_OWM_API_KEY;
+  const mapTileUrl = useMemo(() => {
+    if (!owmKey) return null;
+    const layer = mapLayer === 'uv' ? 'uvi' : 'temp_new';
+    return `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`;
+  }, [mapLayer, owmKey]);
+
+  useEffect(() => {
+    Animated.timing(mapScale, {
+      toValue: mapExpanded ? 1 : 0,
+      duration: 320,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [mapExpanded, mapScale]);
+
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [1, 0.85],
+    extrapolate: 'clamp',
+  });
+  const headerTranslate = scrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [0, -18],
+    extrapolate: 'clamp',
+  });
+  const cloudTranslate = scrollY.interpolate({
+    inputRange: [0, 300],
+    outputRange: [0, -40],
+    extrapolate: 'clamp',
+  });
+  const glowTranslate = scrollY.interpolate({
+    inputRange: [0, 300],
+    outputRange: [0, 24],
+    extrapolate: 'clamp',
+  });
 
   return (
-    <ScrollView
-      style={{ width: SCREEN_WIDTH }}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.slideScroll, { paddingTop: insets.top + 12, paddingBottom: bottomPad }]}
-      refreshControl={
-        isGPS ? (
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={ACCENT_SOFT}
-            colors={[ACCENT_SOFT]}
-          />
-        ) : undefined
-      }
-    >
-      {/* Hero: temperatura arriba (fija); el nombre largo ya no la empuja */}
-      <View style={styles.heroCard}>
-        {isGPS ? (
-          <View style={styles.gpsIconOnly}>
-            <Ionicons {...gpsLocationIconProps()} color={ACCENT} />
-          </View>
-        ) : null}
+    <View style={styles.slideRoot}>
+      <Animated.View
+        style={[
+          styles.dynamicBg,
+          {
+            backgroundColor: isRain ? '#060c18' : isCloudy ? '#0a1426' : '#0b1422',
+          },
+        ]}
+      />
+      <Animated.View style={[styles.atmosphereGlow, { transform: [{ translateY: glowTranslate }] }]} />
+      <Animated.View
+        style={[
+          styles.cloudLayer,
+          { opacity: isCloudy || isRain ? 1 : 0.4, transform: [{ translateY: cloudTranslate }] },
+        ]}
+      />
+      <RainLayer active={isRain} />
 
-        <View style={styles.heroMainRow}>
-          <View style={styles.heroTempColumn}>
-            <View style={styles.tempRow}>
-              <Text
-                style={styles.temperature}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.85}
-              >
-                {slide.weather != null ? Math.round(slide.weather.temperature) : '--'}
-              </Text>
-              <Text style={styles.degreeMark}>°</Text>
-            </View>
-          </View>
-          <View style={styles.heroEmojiWrap} accessibilityLabel={`Icono ${info.label}`}>
-            <Text style={styles.heroEmoji}>{info.icon}</Text>
-          </View>
-        </View>
-
-        <Text style={styles.locationName} numberOfLines={2} ellipsizeMode="tail">
-          {slide.cityName}
-        </Text>
-        <Text style={styles.condition}>{info.label}</Text>
-
-        <View style={styles.pillRow}>
-          <View style={styles.pill}>
-            <Ionicons name="speedometer-outline" size={15} color={ACCENT} style={styles.pillIcon} />
-            <Text style={styles.pillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
-          </View>
-          <View style={[styles.pill, styles.pillMuted]}>
-            <Ionicons name="trending-up-outline" size={15} color="#fda4af" style={styles.pillIcon} />
-            <Text style={styles.pillTextSecondary}>Máx {formatTempRounded(slide.weather?.tempMax)}°</Text>
-          </View>
-          <View style={[styles.pill, styles.pillMuted]}>
-            <Ionicons name="trending-down-outline" size={15} color={ACCENT_SOFT} style={styles.pillIcon} />
-            <Text style={styles.pillTextSecondary}>Mín {formatTempRounded(slide.weather?.tempMin)}°</Text>
-          </View>
-        </View>
-
-        {slide.status === 'loading' && !isGPS && (
-          <ActivityIndicator color={ACCENT_SOFT} style={styles.heroLoader} />
+      <Animated.ScrollView
+        style={{ width: SCREEN_WIDTH }}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.slideScroll, { paddingTop: insets.top + 18, paddingBottom: bottomPad }]}
+        refreshControl={
+          isGPS ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={ACCENT_SOFT}
+              colors={[ACCENT_SOFT]}
+            />
+          ) : undefined
+        }
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
         )}
-        {slide.updatedAt && (
-          <View style={styles.updatedRow}>
-            <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
-            <Text style={styles.updatedAt}>Actualizado · {slide.updatedAt}</Text>
+        scrollEventThrottle={16}
+      >
+        <Animated.View style={[styles.headerBlock, { opacity: headerOpacity, transform: [{ translateY: headerTranslate }] }]}
+        >
+          <View style={styles.headerRow}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerTime}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              {isGPS ? (
+                <View style={styles.headerLocationRow}>
+                  <Ionicons name="location" size={16} color={ACCENT_SOFT} />
+                  <Text style={styles.headerLocationLabel}>Ubicacion actual</Text>
+                </View>
+              ) : null}
+            </View>
+            {isGPS ? (
+              <View style={styles.headerGps}>
+                <Ionicons {...gpsLocationIconProps()} color={ACCENT} />
+              </View>
+            ) : null}
           </View>
-        )}
-        {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
-      </View>
 
-      {/* Pronóstico por hora (indicativo) */}
-      <View style={styles.glassCard}>
-        <View style={styles.cardHeader}>
-          <View style={styles.cardHeaderTitles}>
-            <View style={styles.cardTitleIconWrap}>
-              <Ionicons name="today-outline" size={18} color={ACCENT} />
+          <Text style={styles.cityName} numberOfLines={2}>
+            {slide.cityName}
+          </Text>
+          <View style={styles.tempCenterRow}>
+            <Text style={styles.temperatureHero}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
+            <Text style={styles.temperatureDegree}>°</Text>
+          </View>
+          <Text style={styles.conditionHero}>{info.label}</Text>
+
+          {slide.status === 'loading' && !isGPS && (
+            <ActivityIndicator color={ACCENT_SOFT} style={styles.heroLoader} />
+          )}
+          {slide.updatedAt ? (
+            <View style={styles.updatedRow}>
+              <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
+              <Text style={styles.updatedAt}>Actualizado · {slide.updatedAt}</Text>
             </View>
-            <View>
-              <Text style={styles.cardEyebrow}>Próximas horas</Text>
-              <Text style={styles.cardTitle}>Por hora</Text>
+          ) : null}
+        </Animated.View>
+
+        <GlassCard style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <Text style={styles.summaryTitle}>Resumen inteligente</Text>
+            <View style={styles.summaryChip}>
+              <Text style={styles.summaryChipText}>Premium</Text>
             </View>
           </View>
-          <View style={styles.cardHeaderAccent} />
-        </View>
-        {HOURLY_SLOTS.map((slot, i) => (
-          <View
-            key={slot}
-            style={[styles.hourRow, i === 0 && styles.hourRowActive]}
+          <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
+          <View style={styles.summaryFooter}>
+            <View style={styles.summaryPill}>
+              <Ionicons name="speedometer-outline" size={14} color={ACCENT} />
+              <Text style={styles.summaryPillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+            </View>
+            <View style={styles.summaryPillSoft}>
+              <Text style={styles.summaryPillTextSoft}>Max {formatTempRounded(slide.weather?.tempMax)}°</Text>
+            </View>
+            <View style={styles.summaryPillSoft}>
+              <Text style={styles.summaryPillTextSoft}>Min {formatTempRounded(slide.weather?.tempMin)}°</Text>
+            </View>
+          </View>
+        </GlassCard>
+
+        <GlassCard style={styles.hourlyCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionEyebrow}>Pronostico por horas</Text>
+            <Text style={styles.sectionTitle}>Por hora</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={120}
+            decelerationRate="fast"
           >
-            <Text style={[styles.hourTime, i === 0 && styles.hourTimeActive]}>{slot}</Text>
-            <Text style={styles.hourIcon}>{info.icon}</Text>
-            <Text style={styles.hourTemp}>
-              {slide.weather != null
-                ? `${Math.round(slide.weather.temperature + i * -0.5)}°`
-                : '--°'}
-            </Text>
-          </View>
-        ))}
-      </View>
+            {hourly.map((slot) => (
+              <View key={slot.key} style={[styles.hourCard, slot.isNow && styles.hourCardActive]}>
+                <Text style={[styles.hourLabel, slot.isNow && styles.hourLabelActive]}>{slot.label}</Text>
+                <Text style={styles.hourIcon}>{slot.icon}</Text>
+                <Text style={styles.hourTemp}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
+                <Text style={styles.hourRain}>{slot.rainChance}%</Text>
+              </View>
+            ))}
+          </ScrollView>
+        </GlassCard>
 
-      {/* Coordenadas */}
-      {slide.coords && (
-        <View style={[styles.glassCard, styles.glassCardMuted]}>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardHeaderTitles}>
-              <View style={styles.cardTitleIconWrap}>
-                <Ionicons name="map-outline" size={18} color={ACCENT} />
+        <GlassCard style={styles.weeklyCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionEyebrow}>Pronostico extendido</Text>
+            <Text style={styles.sectionTitle}>10 dias</Text>
+          </View>
+          {weekly.map((day) => (
+            <View key={day.key} style={styles.weekRow}>
+              <Text style={styles.weekDay}>{day.label}</Text>
+              <Text style={styles.weekIcon}>{day.icon}</Text>
+              <Text style={styles.weekRain}>{day.rainChance}%</Text>
+              <Text style={styles.weekTempMin}>{day.min}°</Text>
+              <View style={styles.weekRangeBar}>
+                <View style={styles.weekRangeFill} />
+                <View style={styles.weekRangeMarker} />
               </View>
+              <Text style={styles.weekTempMax}>{day.max}°</Text>
+            </View>
+          ))}
+        </GlassCard>
+
+        <Pressable onPress={() => setMapExpanded(true)}>
+          <GlassCard style={styles.mapCard}>
+            <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.cardEyebrow}>Referencia</Text>
-                <Text style={styles.cardTitle}>Coordenadas GPS</Text>
+                <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
+                <Text style={styles.sectionTitle}>Temperatura / UV</Text>
+              </View>
+              <Ionicons name="expand" size={18} color={ACCENT_SOFT} />
+            </View>
+            <View style={styles.mapLayerTabs}>
+              <Pressable
+                style={[styles.mapTab, mapLayer === 'temp' && styles.mapTabActive]}
+                onPress={() => setMapLayer('temp')}
+              >
+                <Text style={[styles.mapTabText, mapLayer === 'temp' && styles.mapTabTextActive]}>
+                  Temperatura
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.mapTab, mapLayer === 'uv' && styles.mapTabActive]}
+                onPress={() => setMapLayer('uv')}
+              >
+                <Text style={[styles.mapTabText, mapLayer === 'uv' && styles.mapTabTextActive]}>UV</Text>
+              </Pressable>
+            </View>
+            <View style={styles.mapPreview}>
+              {MapView && slide.coords ? (
+                <MapView
+                  style={StyleSheet.absoluteFillObject}
+                  initialRegion={{
+                    latitude: slide.coords.latitude,
+                    longitude: slide.coords.longitude,
+                    latitudeDelta: 0.12,
+                    longitudeDelta: 0.12,
+                  }}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  pitchEnabled={false}
+                  rotateEnabled={false}
+                >
+                  {UrlTile && mapTileUrl ? (
+                    <UrlTile
+                      urlTemplate={mapTileUrl}
+                      maximumZ={12}
+                      tileSize={256}
+                      zIndex={2}
+                      opacity={0.8}
+                    />
+                  ) : null}
+                </MapView>
+              ) : (
+                <View style={styles.mapFallback}>
+                  <Text style={styles.mapFallbackText}>Mapa de calor disponible</Text>
+                </View>
+              )}
+              <View style={styles.mapOverlay}>
+                <View style={styles.mapLegend}>
+                  <View style={[styles.mapDot, { backgroundColor: '#22d3ee' }]} />
+                  <View style={[styles.mapDot, { backgroundColor: '#f59e0b' }]} />
+                  <View style={[styles.mapDot, { backgroundColor: '#ef4444' }]} />
+                </View>
+              </View>
+              {!owmKey && (
+                <View style={styles.mapKeyNotice}>
+                  <Text style={styles.mapKeyText}>Falta EXPO_PUBLIC_OWM_API_KEY</Text>
+                </View>
+              )}
+            </View>
+          </GlassCard>
+        </Pressable>
+
+        <View style={styles.infoGrid}>
+          <GlassCard style={styles.infoCardWide}>
+            <View style={styles.moonHeader}>
+              <View>
+                <Text style={styles.infoTitle}>Luna</Text>
+                <Text style={styles.infoValue}>{moon.label}</Text>
+                <Text style={styles.infoHint}>{moon.illumination}% iluminada</Text>
+              </View>
+              <View style={styles.moonImageWrap}>
+                <View style={styles.moonVisual}>
+                  <View style={styles.moonSurface} />
+                  <View
+                    style={[
+                      styles.moonShadow,
+                      {
+                        transform: [
+                          {
+                            translateX: (0.5 - moon.illumination / 100) * 48,
+                          },
+                        ],
+                      },
+                    ]}
+                  />
+                  <View style={styles.moonHighlight} />
+                </View>
+              </View>
+            </View>
+            <View style={styles.moonMetaRow}>
+              <View style={styles.moonMetaItem}>
+                <Text style={styles.moonMetaLabel}>Prox. luna llena</Text>
+                <Text style={styles.moonMetaValue}>{moon.daysToFull} dias</Text>
+              </View>
+              <View style={styles.moonDivider} />
+              <View style={styles.moonMetaItem}>
+                <Text style={styles.moonMetaLabel}>Prox. luna nueva</Text>
+                <Text style={styles.moonMetaValue}>{moon.daysToNew} dias</Text>
+              </View>
+            </View>
+          </GlassCard>
+
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Sensacion termica</Text>
+            <Text style={styles.infoValue}>{formatTempRounded(slide.weather?.feelsLike)}°</Text>
+            <Text style={styles.infoHint}>Basado en humedad y viento.</Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Indice UV</Text>
+            <Text style={styles.infoValue}>{slide.weather?.uvIndex ?? '--'}</Text>
+            <View style={styles.uvBar}>
+              <View
+                style={[
+                  styles.uvBarFill,
+                  { width: `${Math.min(100, (slide.weather?.uvIndex ?? 0) * 10)}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.infoHint}>Proteccion recomendada.</Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Viento</Text>
+            <Text style={styles.infoValue}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+            <Text style={styles.infoHint}>
+              Rafagas {slide.weather?.windGusts ?? '--'} km/h · {formatWindDirection(slide.weather?.windDirection)}
+            </Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Precipitacion</Text>
+            <Text style={styles.infoValue}>{slide.weather?.precipitationSum ?? '--'} mm</Text>
+            <Text style={styles.infoHint}>Prob. max {slide.weather?.precipitationProbability ?? '--'}%.</Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Amanecer</Text>
+            <Text style={styles.infoValue}>
+              {slide.weather?.sunrise
+                ? new Date(slide.weather.sunrise).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '--'}
+            </Text>
+            <Text style={styles.infoHint}>
+              Atardecer {slide.weather?.sunset
+                ? new Date(slide.weather.sunset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '--'}
+            </Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Humedad</Text>
+            <Text style={styles.infoValue}>{slide.weather?.humidity ?? '--'}%</Text>
+            <Text style={styles.infoHint}>Nivel de humedad actual.</Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Visibilidad</Text>
+            <Text style={styles.infoValue}>{formatVisibilityKm(slide.weather?.visibility)} km</Text>
+            <Text style={styles.infoHint}>Condicion de horizonte.</Text>
+          </GlassCard>
+          <GlassCard style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Presion</Text>
+            <Text style={styles.infoValue}>{slide.weather?.pressure ?? '--'} hPa</Text>
+            <Text style={styles.infoHint}>Nivel atmosferico actual.</Text>
+          </GlassCard>
+        </View>
+
+        {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
+      </Animated.ScrollView>
+
+      {mapExpanded && (
+        <Animated.View
+          style={[
+            styles.mapOverlayFullscreen,
+            {
+              opacity: mapScale,
+              transform: [
+                {
+                  scale: mapScale.interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }),
+                },
+              ],
+            },
+          ]}
+        >
+          <View style={styles.mapFullscreenCard}>
+            {MapView && slide.coords ? (
+              <MapView
+                style={StyleSheet.absoluteFillObject}
+                initialRegion={{
+                  latitude: slide.coords.latitude,
+                  longitude: slide.coords.longitude,
+                  latitudeDelta: 0.08,
+                  longitudeDelta: 0.08,
+                }}
+              >
+                {UrlTile && mapTileUrl ? (
+                  <UrlTile
+                    urlTemplate={mapTileUrl}
+                    maximumZ={12}
+                    tileSize={256}
+                    zIndex={2}
+                    opacity={0.88}
+                  />
+                ) : null}
+              </MapView>
+            ) : (
+              <View style={styles.mapFallback}>
+                <Text style={styles.mapFallbackText}>Vista de calor completa</Text>
+              </View>
+            )}
+            <View style={styles.mapFullscreenOverlay}>
+              <View style={styles.mapTimeline}>
+                {['Ahora', '+1h', '+2h', '+3h'].map((slot) => (
+                  <View key={slot} style={styles.mapTimelineChip}>
+                    <Text style={styles.mapTimelineText}>{slot}</Text>
+                  </View>
+                ))}
+              </View>
+              <View style={styles.mapIntensityPanel}>
+                <Text style={styles.mapPanelTitle}>Intensidad</Text>
+                <View style={styles.mapPanelRow}>
+                  <View style={[styles.mapDot, { backgroundColor: '#22d3ee' }]} />
+                  <Text style={styles.mapPanelText}>Baja</Text>
+                </View>
+                <View style={styles.mapPanelRow}>
+                  <View style={[styles.mapDot, { backgroundColor: '#f59e0b' }]} />
+                  <Text style={styles.mapPanelText}>Media</Text>
+                </View>
+                <View style={styles.mapPanelRow}>
+                  <View style={[styles.mapDot, { backgroundColor: '#ef4444' }]} />
+                  <Text style={styles.mapPanelText}>Alta</Text>
+                </View>
               </View>
             </View>
           </View>
-          <View style={styles.coordRow}>
-            <View style={styles.coordItem}>
-              <Text style={styles.coordLabel}>LATITUD</Text>
-              <Text style={styles.coordValue}>{slide.coords.latitude.toFixed(6)}</Text>
-            </View>
-            <View style={styles.coordDivider} />
-            <View style={styles.coordItem}>
-              <Text style={styles.coordLabel}>LONGITUD</Text>
-              <Text style={styles.coordValue}>{slide.coords.longitude.toFixed(6)}</Text>
-            </View>
-          </View>
-        </View>
+          <Pressable style={styles.mapCloseBtn} onPress={() => setMapExpanded(false)}>
+            <Ionicons name="close" size={18} color="#e2e8f0" />
+          </Pressable>
+        </Animated.View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -584,32 +1225,70 @@ export default function HomeScreen() {
   );
 }
 
-const GLASS_BG = 'rgba(255,255,255,0.08)';
-const GLASS_BORDER = 'rgba(255,255,255,0.14)';
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SURFACE_DEEP,
+    backgroundColor: SURFACE_DEEPER,
     overflow: 'hidden',
   },
   bgGlowTop: {
     position: 'absolute',
-    top: -90,
-    left: -100,
-    width: 340,
-    height: 340,
+    top: -140,
+    left: -120,
+    width: 360,
+    height: 360,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.26)',
+    backgroundColor: 'rgba(15,116,158,0.35)',
   },
   bgGlowBottom: {
     position: 'absolute',
-    bottom: -80,
-    right: -100,
-    width: 320,
-    height: 320,
+    bottom: -140,
+    right: -120,
+    width: 360,
+    height: 360,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.09)',
+    backgroundColor: 'rgba(56,189,248,0.16)',
+  },
+  slideRoot: {
+    width: SCREEN_WIDTH,
+    flex: 1,
+    overflow: 'hidden',
+  },
+  dynamicBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: SURFACE_DEEP,
+  },
+  atmosphereGlow: {
+    position: 'absolute',
+    top: -80,
+    right: -120,
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+  },
+  cloudLayer: {
+    position: 'absolute',
+    top: 70,
+    left: -80,
+    width: 260,
+    height: 120,
+    borderRadius: 80,
+    backgroundColor: 'rgba(148,163,184,0.14)',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.3,
+    shadowRadius: 30,
+    shadowOffset: { width: 20, height: 12 },
+  },
+  rainLayer: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.8,
+  },
+  rainDrop: {
+    position: 'absolute',
+    width: 2,
+    backgroundColor: 'rgba(147,197,253,0.55)',
+    borderRadius: 999,
   },
   slideScroll: {
     paddingHorizontal: 20,
@@ -635,131 +1314,83 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 
-  /* ── Hero ── */
-  heroCard: {
-    backgroundColor: 'rgba(15,23,42,0.78)',
-    borderRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
-    paddingVertical: 24,
-    paddingHorizontal: 22,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.3,
-    shadowRadius: 24,
-    elevation: 10,
+  headerBlock: {
+    paddingHorizontal: 6,
+    marginBottom: 18,
   },
-  gpsIconOnly: {
-    alignSelf: 'flex-start',
-    marginBottom: 10,
-    paddingVertical: 2,
-    paddingRight: 8,
-  },
-  locationName: {
-    fontSize: 21,
-    fontWeight: '700',
-    color: '#f8fafc',
-    letterSpacing: -0.35,
-    marginBottom: 8,
-    lineHeight: 27,
-    maxWidth: '100%',
-  },
-  heroMainRow: {
+  headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  heroTempColumn: {
-    flexShrink: 0,
-    flexGrow: 0,
-    alignItems: 'flex-start',
-    justifyContent: 'flex-start',
-    minWidth: 108,
-    maxWidth: '58%',
-    paddingRight: 8,
+  headerLeft: {
+    gap: 8,
   },
-  tempRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flexShrink: 0,
-  },
-  temperature: {
-    fontSize: 76,
-    fontWeight: '800',
-    color: '#f8fafc',
-    letterSpacing: -4,
-    lineHeight: 80,
-    fontVariant: ['tabular-nums'],
-  },
-  degreeMark: {
-    fontSize: 28,
-    fontWeight: '600',
-    color: ACCENT,
-    marginTop: 10,
-    marginLeft: 2,
-  },
-  condition: {
+  headerTime: {
     fontSize: 16,
-    color: 'rgba(148,163,184,0.95)',
-    marginTop: 0,
-    marginBottom: 12,
-    lineHeight: 22,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: 'rgba(226,232,240,0.9)',
+    letterSpacing: -0.3,
   },
-  heroEmojiWrap: {
-    flexShrink: 0,
-    width: 100,
-    height: 100,
-    borderRadius: 28,
-    backgroundColor: 'rgba(56,189,248,0.10)',
+  headerGps: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: 'rgba(56,189,248,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.08)',
   },
-  heroEmoji: { fontSize: 52 },
-
-  heroLoader: {
+  headerLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  headerLocationLabel: {
+    fontSize: 13,
+    letterSpacing: 1.1,
+    color: 'rgba(125,211,252,0.9)',
+    fontWeight: '600',
+  },
+  cityName: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#f8fafc',
+    marginBottom: 6,
+  },
+  tempCenterRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  temperatureHero: {
+    fontSize: 96,
+    fontWeight: '300',
+    color: '#f8fafc',
+    letterSpacing: -4,
+    fontVariant: ['tabular-nums'],
+  },
+  temperatureDegree: {
+    fontSize: 30,
+    fontWeight: '400',
+    color: ACCENT,
     marginTop: 14,
-    alignSelf: 'flex-start',
+  },
+  conditionHero: {
+    fontSize: 18,
+    color: 'rgba(148,163,184,0.95)',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  heroLoader: {
+    marginTop: 12,
   },
   updatedRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 16,
-  },
-  pillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(56,189,248,0.08)',
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    maxWidth: '100%',
-  },
-  pillMuted: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderColor: GLASS_BORDER,
-  },
-  pillIcon: {
-    marginRight: 6,
-  },
-  pillText: { fontSize: 13, fontWeight: '600', color: '#f8fafc' },
-  pillTextSecondary: {
-    flexShrink: 1,
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(241,245,249,0.88)',
+    marginTop: 12,
   },
   updatedAt: {
     fontSize: 12,
@@ -767,120 +1398,477 @@ const styles = StyleSheet.create({
     color: 'rgba(148,163,184,0.95)',
   },
   errorText: {
-    marginTop: 10,
+    marginTop: 14,
     fontSize: 13,
     fontWeight: '500',
     color: '#fecaca',
     lineHeight: 19,
   },
-
   glassCard: {
-    backgroundColor: GLASS_BG,
-    borderRadius: 22,
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    overflow: 'hidden',
+    backgroundColor: GLASS_BG,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
+    shadowOpacity: 0.2,
+    shadowRadius: 18,
     elevation: 4,
+    overflow: 'hidden',
   },
-  glassCardMuted: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
+  glassInner: {
+    padding: 18,
   },
-  cardHeader: {
+  summaryCard: {
+    marginBottom: 12,
+  },
+  summaryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
-    paddingHorizontal: 2,
+    marginBottom: 10,
   },
-  cardHeaderTitles: {
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  summaryChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56,189,248,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.35)',
+  },
+  summaryChipText: {
+    fontSize: 11,
+    letterSpacing: 1.6,
+    color: ACCENT_SOFT,
+    fontWeight: '700',
+  },
+  summaryText: {
+    fontSize: 14,
+    color: 'rgba(226,232,240,0.88)',
+    lineHeight: 20,
+  },
+  summaryFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  summaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  cardTitleIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    gap: 6,
     backgroundColor: 'rgba(56,189,248,0.12)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  summaryPillText: {
+    fontSize: 12,
+    color: '#f8fafc',
+    fontWeight: '600',
+  },
+  summaryPillSoft: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+  },
+  summaryPillTextSoft: {
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.85)',
+    fontWeight: '500',
+  },
+  sectionHeader: {
+    marginBottom: 14,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sectionEyebrow: {
+    fontSize: 12,
+    color: 'rgba(148,163,184,0.85)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  hourlyCard: {
+    marginBottom: 12,
+  },
+  hourCard: {
+    width: 110,
+    marginRight: 10,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+  },
+  hourCardActive: {
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderColor: 'rgba(56,189,248,0.35)',
+  },
+  hourLabel: {
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.7)',
+  },
+  hourLabelActive: {
+    color: '#f8fafc',
+    fontWeight: '600',
+  },
+  hourIcon: {
+    fontSize: 24,
+    marginVertical: 8,
+  },
+  hourTemp: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#f8fafc',
+  },
+  hourRain: {
+    fontSize: 12,
+    color: 'rgba(125,211,252,0.9)',
+    marginTop: 4,
+  },
+  weeklyCard: {
+    marginBottom: 12,
+  },
+  weekRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  weekDay: {
+    width: 40,
+    fontSize: 14,
+    color: '#f8fafc',
+    fontWeight: '500',
+  },
+  weekIcon: {
+    width: 28,
+    textAlign: 'center',
+    fontSize: 18,
+  },
+  weekRain: {
+    width: 40,
+    fontSize: 12,
+    color: 'rgba(125,211,252,0.9)',
+    textAlign: 'center',
+  },
+  weekTempMin: {
+    width: 36,
+    fontSize: 13,
+    color: 'rgba(226,232,240,0.75)',
+    textAlign: 'right',
+  },
+  weekRangeBar: {
+    flex: 1,
+    height: 6,
+    marginHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.2)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  weekRangeFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(251,191,36,0.65)',
+  },
+  weekRangeMarker: {
+    position: 'absolute',
+    left: '45%',
+    width: 6,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#fff7ed',
+    top: -2,
+  },
+  weekTempMax: {
+    width: 36,
+    fontSize: 13,
+    color: '#f8fafc',
+  },
+  mapCard: {
+    marginBottom: 12,
+  },
+  mapPreview: {
+    height: 180,
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  mapFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.7)',
+  },
+  mapFallbackText: {
+    fontSize: 13,
+    color: 'rgba(226,232,240,0.8)',
+  },
+  mapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(9,13,24,0.15)',
+  },
+  mapLegend: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    flexDirection: 'row',
+    gap: 6,
+  },
+  mapDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  mapLayerTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  mapTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.2)',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15,23,42,0.55)',
+  },
+  mapTabActive: {
+    borderColor: 'rgba(56,189,248,0.5)',
+    backgroundColor: 'rgba(56,189,248,0.2)',
+  },
+  mapTabText: {
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.7)',
+    fontWeight: '600',
+  },
+  mapTabTextActive: {
+    color: '#f8fafc',
+  },
+  mapKeyNotice: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.45)',
+  },
+  mapKeyText: {
+    fontSize: 11,
+    color: '#fecaca',
+    fontWeight: '600',
+  },
+  infoGrid: {
+    gap: 12,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  infoCard: {
+    paddingVertical: 16,
+    width: '48%',
+  },
+  infoCardWide: {
+    width: '100%',
+    paddingVertical: 16,
+  },
+  infoTitle: {
+    fontSize: 13,
+    color: 'rgba(148,163,184,0.9)',
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    marginBottom: 6,
+  },
+  infoValue: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginBottom: 6,
+  },
+  infoHint: {
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.7)',
+    lineHeight: 17,
+  },
+  moonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  moonImageWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.3)',
+    backgroundColor: 'rgba(15,23,42,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  cardEyebrow: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.15,
-    color: 'rgba(148,163,184,0.85)',
-    textTransform: 'uppercase',
+  moonVisual: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    overflow: 'hidden',
   },
-  cardTitle: { fontSize: 17, fontWeight: '700', color: '#f8fafc', marginTop: 3 },
-  cardHeaderAccent: {
-    width: 4,
-    height: 40,
-    borderRadius: 4,
-    backgroundColor: ACCENT,
-    opacity: 0.6,
-    marginRight: 2,
+  moonSurface: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#e5e7eb',
+    shadowColor: '#f8fafc',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
-
-  hourRow: {
+  moonShadow: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    left: -2,
+    top: -2,
+    backgroundColor: 'rgba(15,23,42,0.9)',
+  },
+  moonHighlight: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    right: 10,
+    top: 12,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  moonMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+  },
+  moonMetaItem: {
+    flex: 1,
+  },
+  moonMetaLabel: {
+    fontSize: 12,
+    color: 'rgba(148,163,184,0.8)',
+  },
+  moonMetaValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#f8fafc',
+    marginTop: 4,
+  },
+  moonDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 38,
+    backgroundColor: 'rgba(148,163,184,0.3)',
+  },
+  uvBar: {
+    height: 6,
+    backgroundColor: 'rgba(148,163,184,0.2)',
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  uvBarFill: {
+    width: '55%',
+    height: '100%',
+    backgroundColor: '#fbbf24',
+  },
+  mapOverlayFullscreen: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(4,6,12,0.88)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  mapFullscreenCard: {
+    width: '100%',
+    height: '80%',
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  mapFullscreenOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    padding: 18,
     justifyContent: 'space-between',
-    paddingVertical: 11,
+  },
+  mapCloseBtn: {
+    position: 'absolute',
+    top: 32,
+    right: 32,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15,23,42,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.2)',
+  },
+  mapTimeline: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  mapTimelineChip: {
     paddingHorizontal: 12,
-    marginHorizontal: -4,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(15,23,42,0.75)',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+  },
+  mapTimelineText: {
+    color: '#e2e8f0',
+    fontSize: 12,
+  },
+  mapIntensityPanel: {
+    alignSelf: 'flex-end',
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    padding: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: 'rgba(148,163,184,0.2)',
+    gap: 6,
   },
-  hourRowActive: {
-    backgroundColor: 'rgba(56,189,248,0.08)',
-    borderColor: 'rgba(56,189,248,0.28)',
+  mapPanelTitle: {
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.8)',
+    marginBottom: 2,
   },
-  hourTime: { fontSize: 14, color: 'rgba(148,163,184,0.95)', width: 54, fontWeight: '500' },
-  hourTimeActive: { color: '#f8fafc', fontWeight: '700' },
-  hourIcon: { fontSize: 22, flex: 1, textAlign: 'center' },
-  hourTemp: {
-    fontSize: 17,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-    color: '#f8fafc',
-    width: 42,
-    textAlign: 'right',
+  mapPanelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-
-  coordRow: { flexDirection: 'row', alignItems: 'center' },
-  coordItem: { flex: 1, alignItems: 'center', paddingVertical: 8 },
-  coordDivider: {
-    width: StyleSheet.hairlineWidth,
-    height: 44,
-    backgroundColor: GLASS_BORDER,
-    marginHorizontal: 10,
+  mapPanelText: {
+    color: '#e2e8f0',
+    fontSize: 12,
   },
-  coordLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: 'rgba(148,163,184,0.75)',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  coordValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: ACCENT_SOFT,
-    fontVariant: ['tabular-nums'],
-  },
-
   dotsCapsuleWrap: {
     alignItems: 'center',
     paddingTop: 6,

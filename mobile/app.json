@@ -15,8 +15,10 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Necesitamos tu ubicación para mostrarte el clima de donde estás.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
-      }
+        },
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.anthony69x.climaxmobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -72,7 +74,8 @@
           "color": "#38bdf8",
           "defaultChannel": "default"
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
