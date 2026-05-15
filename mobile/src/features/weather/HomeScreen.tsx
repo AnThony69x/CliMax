@@ -94,6 +94,27 @@ const ACCENT = '#38bdf8';
 const ACCENT_SOFT = '#7dd3fc';
 const GLASS_BG = 'rgba(10,18,32,0.45)';
 const GLASS_BORDER = 'rgba(255,255,255,0.12)';
+const RAIN_LIGHT = '#3b82f6';
+const RAIN_MODERATE = '#8b5cf6';
+const RAIN_STRONG = '#d946ef';
+const RAIN_EXTREME = '#facc15';
+const TEMP_COOL = '#22d3ee';
+const TEMP_WARM = '#fbbf24';
+const TEMP_HOT = '#f97316';
+const TEMP_EXTREME = '#ef4444';
+const OSM_TILE_URL = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const WORLD_REGION = {
+  latitude: 0,
+  longitude: 0,
+  latitudeDelta: 170,
+  longitudeDelta: 360,
+};
+const ECUADOR_REGION = {
+  latitude: -1.83,
+  longitude: -78.18,
+  latitudeDelta: 140,
+  longitudeDelta: 360,
+};
 
 const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
 const CLOUD_CODES = new Set([2, 3, 45, 48]);
@@ -396,6 +417,7 @@ const MapModule = (() => {
 
 const MapView = MapModule?.default ?? null;
 const UrlTile = MapModule?.UrlTile ?? null;
+const Marker = MapModule?.Marker ?? null;
 
 function GlassCard({
   children,
@@ -495,7 +517,9 @@ function WeatherSlide({
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
   const mapScale = useRef(new Animated.Value(0)).current;
-  const [mapExpanded, setMapExpanded] = useState(false);
+  const [mapExpanded, setMapExpanded] = useState(true);
+  const mapRef = useRef<any>(null);
+  const [mapRegion, setMapRegion] = useState(WORLD_REGION);
   const hourly = useMemo(() => {
     return (
       buildHourlyFromWeather(slide.weather) ||
@@ -515,13 +539,98 @@ function WeatherSlide({
   const isRain = RAIN_CODES.has(slide.weather?.weatherCode ?? -1);
   const isCloudy = CLOUD_CODES.has(slide.weather?.weatherCode ?? -1);
   const moon = useMemo(() => moonPhaseData(), []);
-  const [mapLayer, setMapLayer] = useState<'temp' | 'uv'>('temp');
+  const [mapMode, setMapMode] = useState<'radar' | 'temp'>('radar');
+  const [radarFrames, setRadarFrames] = useState<string[]>([]);
+  const [radarIndex, setRadarIndex] = useState(0);
   const owmKey = process.env.EXPO_PUBLIC_OWM_API_KEY;
-  const mapTileUrl = useMemo(() => {
+  const tempTileUrl = useMemo(() => {
     if (!owmKey) return null;
-    const layer = mapLayer === 'uv' ? 'uvi' : 'temp_new';
-    return `https://tile.openweathermap.org/map/${layer}/{z}/{x}/{y}.png?appid=${owmKey}`;
-  }, [mapLayer, owmKey]);
+    return `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${owmKey}`;
+  }, [owmKey]);
+  const radarTileUrl = useMemo(() => {
+    const path = radarFrames[radarIndex];
+    if (!path) return null;
+    return `https://tilecache.rainviewer.com/v2/radar/${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  }, [radarFrames, radarIndex]);
+
+  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+  const buildZoomRegion = (region: typeof ECUADOR_REGION, factor: number) => {
+    const nextLat = clamp(region.latitudeDelta * factor, 0.6, 170);
+    const nextLon = clamp(region.longitudeDelta * factor, 1.2, 360);
+    return { ...region, latitudeDelta: nextLat, longitudeDelta: nextLon };
+  };
+
+  const focusOnLocation = async () => {
+    let coords = slide.coords;
+    if (!coords) {
+      try {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      } catch {
+        return;
+      }
+    }
+    const nextRegion = {
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      latitudeDelta: 4,
+      longitudeDelta: 6,
+    };
+    setMapRegion(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 420);
+  };
+
+  const zoomIn = () => {
+    const nextRegion = buildZoomRegion(mapRegion, 0.7);
+    setMapRegion(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 320);
+  };
+
+  const zoomOut = () => {
+    const nextRegion = buildZoomRegion(mapRegion, 1.35);
+    setMapRegion(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 320);
+  };
+
+  useEffect(() => {
+    let frameTimer: ReturnType<typeof setInterval> | null = null;
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let isMounted = true;
+
+    const loadRadarFrames = async () => {
+      try {
+        const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        if (!res.ok) return;
+        const data = await res.json();
+        const past = Array.isArray(data?.radar?.past) ? data.radar.past : [];
+        const nowcast = Array.isArray(data?.radar?.nowcast) ? data.radar.nowcast : [];
+        const frames = [...past, ...nowcast]
+          .map((frame: { path?: string }) => frame?.path)
+          .filter((path: string | undefined): path is string => typeof path === 'string');
+        if (!isMounted) return;
+        setRadarFrames(frames);
+        setRadarIndex((prev) => (frames.length ? prev % frames.length : 0));
+      } catch {
+        // non-critical
+      }
+    };
+
+    void loadRadarFrames();
+    refreshTimer = setInterval(() => {
+      void loadRadarFrames();
+    }, 5 * 60 * 1000);
+
+    frameTimer = setInterval(() => {
+      setRadarIndex((prev) => (radarFrames.length ? (prev + 1) % radarFrames.length : 0));
+    }, 750);
+
+    return () => {
+      isMounted = false;
+      if (frameTimer) clearInterval(frameTimer);
+      if (refreshTimer) clearInterval(refreshTimer);
+    };
+  }, [radarFrames.length]);
 
   useEffect(() => {
     Animated.timing(mapScale, {
@@ -700,48 +809,52 @@ function WeatherSlide({
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
-                <Text style={styles.sectionTitle}>Temperatura / UV</Text>
+                <Text style={styles.sectionTitle}>Radar de precipitacion</Text>
               </View>
               <Ionicons name="expand" size={18} color={ACCENT_SOFT} />
-            </View>
-            <View style={styles.mapLayerTabs}>
-              <Pressable
-                style={[styles.mapTab, mapLayer === 'temp' && styles.mapTabActive]}
-                onPress={() => setMapLayer('temp')}
-              >
-                <Text style={[styles.mapTabText, mapLayer === 'temp' && styles.mapTabTextActive]}>
-                  Temperatura
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.mapTab, mapLayer === 'uv' && styles.mapTabActive]}
-                onPress={() => setMapLayer('uv')}
-              >
-                <Text style={[styles.mapTabText, mapLayer === 'uv' && styles.mapTabTextActive]}>UV</Text>
-              </Pressable>
             </View>
             <View style={styles.mapPreview}>
               {MapView && slide.coords ? (
                 <MapView
                   style={StyleSheet.absoluteFillObject}
-                  initialRegion={{
-                    latitude: slide.coords.latitude,
-                    longitude: slide.coords.longitude,
-                    latitudeDelta: 0.12,
-                    longitudeDelta: 0.12,
-                  }}
+                  initialRegion={WORLD_REGION}
                   scrollEnabled={false}
                   zoomEnabled={false}
                   pitchEnabled={false}
                   rotateEnabled={false}
+                  mapType="none"
                 >
-                  {UrlTile && mapTileUrl ? (
+                  {UrlTile ? (
                     <UrlTile
-                      urlTemplate={mapTileUrl}
+                      urlTemplate={OSM_TILE_URL}
+                      maximumZ={19}
+                      tileSize={256}
+                      zIndex={1}
+                    />
+                  ) : null}
+                  {UrlTile && radarTileUrl && mapMode === 'radar' ? (
+                    <UrlTile
+                      urlTemplate={radarTileUrl}
                       maximumZ={12}
                       tileSize={256}
-                      zIndex={2}
-                      opacity={0.8}
+                      zIndex={3}
+                      opacity={0.95}
+                    />
+                  ) : null}
+                  {UrlTile && tempTileUrl && mapMode === 'temp' ? (
+                    <UrlTile
+                      urlTemplate={tempTileUrl}
+                      maximumZ={12}
+                      tileSize={256}
+                      zIndex={3}
+                      opacity={0.9}
+                    />
+                  ) : null}
+                  {Marker && slide.coords ? (
+                    <Marker
+                      coordinate={slide.coords}
+                      title={slide.cityName}
+                      pinColor="#38bdf8"
                     />
                   ) : null}
                 </MapView>
@@ -750,18 +863,67 @@ function WeatherSlide({
                   <Text style={styles.mapFallbackText}>Mapa de calor disponible</Text>
                 </View>
               )}
-              <View style={styles.mapOverlay}>
-                <View style={styles.mapLegend}>
-                  <View style={[styles.mapDot, { backgroundColor: '#22d3ee' }]} />
-                  <View style={[styles.mapDot, { backgroundColor: '#f59e0b' }]} />
-                  <View style={[styles.mapDot, { backgroundColor: '#ef4444' }]} />
+              <View style={styles.mapOverlay} pointerEvents="box-none">
+                <View style={styles.mapVignette} pointerEvents="none" />
+                <View style={styles.mapLegend} pointerEvents="auto">
+                  {mapMode === 'radar' ? (
+                    <>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: RAIN_EXTREME }]} />
+                        <Text style={styles.mapLegendText}>Extrema</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: RAIN_STRONG }]} />
+                        <Text style={styles.mapLegendText}>Fuerte</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: RAIN_MODERATE }]} />
+                        <Text style={styles.mapLegendText}>Moderada</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: RAIN_LIGHT }]} />
+                        <Text style={styles.mapLegendText}>Ligera</Text>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: TEMP_COOL }]} />
+                        <Text style={styles.mapLegendText}>Fresco</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: TEMP_WARM }]} />
+                        <Text style={styles.mapLegendText}>Templado</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: TEMP_HOT }]} />
+                        <Text style={styles.mapLegendText}>Caliente</Text>
+                      </View>
+                      <View style={styles.mapLegendItem}>
+                        <View style={[styles.mapDot, { backgroundColor: TEMP_EXTREME }]} />
+                        <Text style={styles.mapLegendText}>Extremo</Text>
+                      </View>
+                    </>
+                  )}
+                </View>
+                <View style={styles.mapFabColumn} pointerEvents="auto">
+                  <Pressable
+                    style={styles.mapFab}
+                    onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
+                  >
+                    <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
+                  </Pressable>
+                  <Pressable style={styles.mapFab}>
+                    <Ionicons name="locate-outline" size={18} color="#e2e8f0" />
+                  </Pressable>
+                  <Pressable style={styles.mapFab}>
+                    <Ionicons name="add" size={18} color="#e2e8f0" />
+                  </Pressable>
+                  <Pressable style={styles.mapFab}>
+                    <Ionicons name="remove" size={18} color="#e2e8f0" />
+                  </Pressable>
                 </View>
               </View>
-              {!owmKey && (
-                <View style={styles.mapKeyNotice}>
-                  <Text style={styles.mapKeyText}>Falta EXPO_PUBLIC_OWM_API_KEY</Text>
-                </View>
-              )}
             </View>
           </GlassCard>
         </Pressable>
@@ -887,20 +1049,47 @@ function WeatherSlide({
             {MapView && slide.coords ? (
               <MapView
                 style={StyleSheet.absoluteFillObject}
-                initialRegion={{
-                  latitude: slide.coords.latitude,
-                  longitude: slide.coords.longitude,
-                  latitudeDelta: 0.08,
-                  longitudeDelta: 0.08,
-                }}
+                initialRegion={WORLD_REGION}
+                mapType="none"
+                scrollEnabled
+                zoomEnabled
+                pitchEnabled
+                rotateEnabled
+                maxZoomLevel={12}
+                onRegionChangeComplete={setMapRegion}
+                ref={mapRef}
               >
-                {UrlTile && mapTileUrl ? (
+                {UrlTile ? (
                   <UrlTile
-                    urlTemplate={mapTileUrl}
+                    urlTemplate={OSM_TILE_URL}
+                    maximumZ={19}
+                    tileSize={256}
+                    zIndex={1}
+                  />
+                ) : null}
+                {UrlTile && radarTileUrl && mapMode === 'radar' ? (
+                  <UrlTile
+                    urlTemplate={radarTileUrl}
                     maximumZ={12}
                     tileSize={256}
-                    zIndex={2}
-                    opacity={0.88}
+                    zIndex={3}
+                    opacity={0.95}
+                  />
+                ) : null}
+                {UrlTile && tempTileUrl && mapMode === 'temp' ? (
+                  <UrlTile
+                    urlTemplate={tempTileUrl}
+                    maximumZ={12}
+                    tileSize={256}
+                    zIndex={3}
+                    opacity={0.9}
+                  />
+                ) : null}
+                {Marker && slide.coords ? (
+                  <Marker
+                    coordinate={slide.coords}
+                    title={slide.cityName}
+                    pinColor="#38bdf8"
                   />
                 ) : null}
               </MapView>
@@ -909,28 +1098,72 @@ function WeatherSlide({
                 <Text style={styles.mapFallbackText}>Vista de calor completa</Text>
               </View>
             )}
-            <View style={styles.mapFullscreenOverlay}>
-              <View style={styles.mapTimeline}>
+            <View style={styles.mapFullscreenOverlay} pointerEvents="box-none">
+              <View style={styles.mapVignette} pointerEvents="none" />
+              <View style={styles.mapLegendLeft} pointerEvents="auto">
+                <Text style={styles.mapLegendTitle}>
+                  {mapMode === 'radar' ? 'Precipitacion' : 'Temperatura'}
+                </Text>
+                <View style={styles.mapLegendRow}>
+                  <View style={styles.mapLegendBar}>
+                    {mapMode === 'radar' ? (
+                      <>
+                        <View style={[styles.mapLegendStop, { backgroundColor: RAIN_EXTREME }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: RAIN_STRONG }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: RAIN_MODERATE }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: RAIN_LIGHT }]} />
+                      </>
+                    ) : (
+                      <>
+                        <View style={[styles.mapLegendStop, { backgroundColor: TEMP_EXTREME }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: TEMP_HOT }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: TEMP_WARM }]} />
+                        <View style={[styles.mapLegendStop, { backgroundColor: TEMP_COOL }]} />
+                      </>
+                    )}
+                  </View>
+                  <View style={styles.mapLegendLabels}>
+                    {mapMode === 'radar' ? (
+                      <>
+                        <Text style={styles.mapLegendScale}>Extrema</Text>
+                        <Text style={styles.mapLegendScale}>Fuerte</Text>
+                        <Text style={styles.mapLegendScale}>Moderada</Text>
+                        <Text style={styles.mapLegendScale}>Ligera</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.mapLegendScale}>Extremo</Text>
+                        <Text style={styles.mapLegendScale}>Caliente</Text>
+                        <Text style={styles.mapLegendScale}>Templado</Text>
+                        <Text style={styles.mapLegendScale}>Fresco</Text>
+                      </>
+                    )}
+                  </View>
+                </View>
+              </View>
+              <View style={styles.mapTimeline} pointerEvents="auto">
                 {['Ahora', '+1h', '+2h', '+3h'].map((slot) => (
                   <View key={slot} style={styles.mapTimelineChip}>
                     <Text style={styles.mapTimelineText}>{slot}</Text>
                   </View>
                 ))}
               </View>
-              <View style={styles.mapIntensityPanel}>
-                <Text style={styles.mapPanelTitle}>Intensidad</Text>
-                <View style={styles.mapPanelRow}>
-                  <View style={[styles.mapDot, { backgroundColor: '#22d3ee' }]} />
-                  <Text style={styles.mapPanelText}>Baja</Text>
-                </View>
-                <View style={styles.mapPanelRow}>
-                  <View style={[styles.mapDot, { backgroundColor: '#f59e0b' }]} />
-                  <Text style={styles.mapPanelText}>Media</Text>
-                </View>
-                <View style={styles.mapPanelRow}>
-                  <View style={[styles.mapDot, { backgroundColor: '#ef4444' }]} />
-                  <Text style={styles.mapPanelText}>Alta</Text>
-                </View>
+              <View style={styles.mapFabColumnFullscreen} pointerEvents="auto">
+                <Pressable
+                  style={styles.mapFab}
+                  onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
+                >
+                  <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
+                </Pressable>
+                <Pressable style={styles.mapFab} onPress={focusOnLocation}>
+                  <Ionicons name="locate-outline" size={18} color="#e2e8f0" />
+                </Pressable>
+                <Pressable style={styles.mapFab} onPress={zoomIn}>
+                  <Ionicons name="add" size={18} color="#e2e8f0" />
+                </Pressable>
+                <Pressable style={styles.mapFab} onPress={zoomOut}>
+                  <Ionicons name="remove" size={18} color="#e2e8f0" />
+                </Pressable>
               </View>
             </View>
           </View>
@@ -1605,11 +1838,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   mapPreview: {
-    height: 180,
+    height: 320,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   mapFallback: {
     ...StyleSheet.absoluteFillObject,
@@ -1623,61 +1856,69 @@ const styles = StyleSheet.create({
   },
   mapOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(9,13,24,0.15)',
+    backgroundColor: 'rgba(16,24,38,0.04)',
+  },
+  mapVignette: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent',
+    borderRadius: 18,
+    shadowColor: '#0b1220',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
   },
   mapLegend: {
     position: 'absolute',
-    right: 12,
-    bottom: 12,
-    flexDirection: 'row',
+    left: 12,
+    top: 12,
+    flexDirection: 'column',
     gap: 6,
+    backgroundColor: 'rgba(10,14,24,0.65)',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
   },
   mapDot: {
     width: 8,
     height: 8,
     borderRadius: 999,
   },
-  mapLayerTabs: {
+  mapLegendItem: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  mapTab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.2)',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    gap: 6,
   },
-  mapTabActive: {
-    borderColor: 'rgba(56,189,248,0.5)',
-    backgroundColor: 'rgba(56,189,248,0.2)',
-  },
-  mapTabText: {
-    fontSize: 12,
-    color: 'rgba(226,232,240,0.7)',
-    fontWeight: '600',
-  },
-  mapTabTextActive: {
-    color: '#f8fafc',
-  },
-  mapKeyNotice: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: 'rgba(15,23,42,0.85)',
-    borderWidth: 1,
-    borderColor: 'rgba(248,113,113,0.45)',
-  },
-  mapKeyText: {
+  mapLegendText: {
+    color: '#e2e8f0',
     fontSize: 11,
-    color: '#fecaca',
     fontWeight: '600',
+  },
+  mapFabColumn: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    gap: 8,
+  },
+  mapFabColumnFullscreen: {
+    position: 'absolute',
+    right: 18,
+    top: 18,
+    gap: 10,
+  },
+  mapFab: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(36,42,52,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
   },
   infoGrid: {
     gap: 12,
@@ -1817,6 +2058,48 @@ const styles = StyleSheet.create({
     padding: 18,
     justifyContent: 'space-between',
   },
+  mapLegendLeft: {
+    position: 'absolute',
+    left: 18,
+    top: 18,
+    backgroundColor: 'rgba(40,46,56,0.92)',
+    borderRadius: 18,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    width: 160,
+  },
+  mapLegendTitle: {
+    color: '#f1f5f9',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  mapLegendRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  mapLegendBar: {
+    width: 10,
+    height: 140,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(15,23,42,0.35)',
+  },
+  mapLegendStop: {
+    flex: 1,
+    borderRadius: 6,
+  },
+  mapLegendLabels: {
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  mapLegendScale: {
+    color: 'rgba(226,232,240,0.85)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
   mapCloseBtn: {
     position: 'absolute',
     top: 32,
@@ -1854,20 +2137,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.2)',
     gap: 6,
-  },
-  mapPanelTitle: {
-    fontSize: 12,
-    color: 'rgba(226,232,240,0.8)',
-    marginBottom: 2,
-  },
-  mapPanelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  mapPanelText: {
-    color: '#e2e8f0',
-    fontSize: 12,
   },
   dotsCapsuleWrap: {
     alignItems: 'center',
