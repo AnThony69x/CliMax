@@ -1,5 +1,4 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BlurView } from 'expo-blur';
 import React, { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -19,10 +18,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-/**
- * Acentos basados en la referencia liquid-glass + paleta CliMax.
- * Mantén el azul del mockup o cambia a `#7CD9A4` para usar el verde de la marca.
- */
+import { LiquidGlassSurface } from './liquid-glass/LiquidGlassSurface';
+
 const ACTIVE_ACCENT = '#5AC8FA';
 const INACTIVE = 'rgba(255, 255, 255, 0.85)';
 
@@ -32,11 +29,12 @@ const BUBBLE_RADIUS = 23;
 const ROW_HORIZONTAL_PADDING = 6;
 const ROW_VERTICAL_PADDING = 8;
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 /**
- * Tab bar flotante "liquid glass" con:
- *  - Pastilla con BlurView + tinte oscuro translúcido + borde luminoso (transparencia tipo guía).
- *  - Burbuja única absoluta que se desliza entre pestañas con spring (efecto gota).
- *  - Squash & stretch (scaleX↑ / scaleY↓) durante la transición → sensación líquida.
+ * Tab bar flotante con efecto liquid glass (referencia liquid-glass-button):
+ * superficie con blur + filtro SVG en web + biseles inset,
+ * burbuja activa deslizante con squash & stretch.
  */
 export function LiquidGlassFloatingTabBar({
   state,
@@ -47,7 +45,6 @@ export function LiquidGlassFloatingTabBar({
   const routeCount = state.routes.length;
   const [rowWidth, setRowWidth] = useState(0);
   const tabWidth = rowWidth > 0 ? rowWidth / routeCount : 0;
-  /** La burbuja abarca casi toda la pestaña para envolver textos largos como "Comunidad". */
   const bubbleWidth = Math.max(52, tabWidth - 4);
 
   const translateX = useSharedValue(0);
@@ -109,25 +106,17 @@ export function LiquidGlassFloatingTabBar({
         },
       ]}>
       <View style={styles.shadowWrap}>
-        <View style={styles.pill}>
-          {/* Capa 1: blur real (equivale a backdrop-filter: blur+saturate) */}
-          <BlurView
-            intensity={92}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-          />
-          {/* Capa 2: velo oscuro translúcido (rgba(0,0,0,~0.32)) */}
-          <View style={styles.pillDarkVeil} />
-          {/* Capa 3: brillo superior (simula gradient diagonal de la guía) */}
-          <View style={styles.pillTopHighlight} />
-          {/* Capa 4: borde luminoso interior fino (filo de cristal) */}
-          <View style={styles.pillEdgeHighlight} />
-
+        <LiquidGlassSurface
+          borderRadius={PILL_RADIUS}
+          blurIntensity={92}
+          blurTint="dark"
+          darkVeilOpacity={0.28}
+          variant="bar"
+          style={styles.pill}>
           <View style={styles.tabsRow} onLayout={onRowLayout}>
-            {/* Burbuja líquida que se desplaza entre pestañas */}
             <Animated.View
               style={[
-                styles.activeBubble,
+                styles.activeBubbleWrap,
                 {
                   width: bubbleWidth,
                   height: BUBBLE_HEIGHT,
@@ -137,14 +126,15 @@ export function LiquidGlassFloatingTabBar({
                 },
                 bubbleAnimatedStyle,
               ]}>
-              <BlurView
-                intensity={26}
-                tint="light"
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.activeBubbleTint} />
-              <View style={styles.activeBubbleRim} />
-              <View style={styles.activeBubbleGlossTop} />
+              <LiquidGlassSurface
+                borderRadius={BUBBLE_RADIUS}
+                blurIntensity={36}
+                blurTint="light"
+                darkVeilOpacity={0.06}
+                variant="bubble"
+                style={styles.activeBubbleFill}>
+                <View style={styles.activeBubbleGlossTop} />
+              </LiquidGlassSurface>
             </Animated.View>
 
             {state.routes.map((route, index) => {
@@ -185,17 +175,13 @@ export function LiquidGlassFloatingTabBar({
                   });
                 } else if (typeof options.tabBarLabel === 'string') {
                   labelNode = (
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.label, { color }]}>
+                    <Text numberOfLines={1} style={[styles.label, { color }]}>
                       {options.tabBarLabel}
                     </Text>
                   );
                 } else {
                   labelNode = (
-                    <Text
-                      numberOfLines={1}
-                      style={[styles.label, { color }]}>
+                    <Text numberOfLines={1} style={[styles.label, { color }]}>
                       {titleText}
                     </Text>
                   );
@@ -203,13 +189,11 @@ export function LiquidGlassFloatingTabBar({
               }
 
               return (
-                <Pressable
+                <TabPressable
                   key={route.key}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: isFocused }}
+                  isFocused={isFocused}
                   onPress={onPress}
-                  onLongPress={onLongPress}
-                  style={styles.tabHit}>
+                  onLongPress={onLongPress}>
                   <View style={styles.tabContent}>
                     {options.tabBarIcon?.({
                       focused: isFocused,
@@ -218,13 +202,48 @@ export function LiquidGlassFloatingTabBar({
                     })}
                     {labelNode}
                   </View>
-                </Pressable>
+                </TabPressable>
               );
             })}
           </View>
-        </View>
+        </LiquidGlassSurface>
       </View>
     </View>
+  );
+}
+
+function TabPressable({
+  children,
+  isFocused,
+  onPress,
+  onLongPress,
+}: {
+  children: ReactNode;
+  isFocused: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isFocused }}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={() => {
+        scale.value = withTiming(1.05, { duration: 150 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 14, stiffness: 200 });
+      }}
+      style={[styles.tabHit, animatedStyle]}>
+      {children}
+    </AnimatedPressable>
   );
 }
 
@@ -258,36 +277,9 @@ const styles = StyleSheet.create({
     }),
   },
   pill: {
-    borderRadius: PILL_RADIUS,
     minHeight: 62,
-    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth * 2,
     borderColor: 'rgba(255, 255, 255, 0.22)',
-  },
-  /** Velo oscuro: rgba(0,0,0,0.32) ~ acerca a la doc DARK preset */
-  pillDarkVeil: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.32)',
-    pointerEvents: 'none',
-  },
-  /** Brillo sutil arriba para emular el gradient blanco translúcido */
-  pillTopHighlight: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    height: '55%',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderTopLeftRadius: PILL_RADIUS,
-    borderTopRightRadius: PILL_RADIUS,
-    pointerEvents: 'none',
-  },
-  pillEdgeHighlight: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: PILL_RADIUS,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    pointerEvents: 'none',
   },
   tabsRow: {
     flexDirection: 'row',
@@ -303,32 +295,26 @@ const styles = StyleSheet.create({
     minHeight: 46,
     zIndex: 2,
   },
-  activeBubble: {
+  activeBubbleWrap: {
     position: 'absolute',
     left: 0,
-    overflow: 'hidden',
     zIndex: 1,
     pointerEvents: 'none',
+    overflow: 'hidden',
   },
-  activeBubbleTint: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+  activeBubbleFill: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
-  activeBubbleRim: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: BUBBLE_RADIUS,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
-  },
-  /** Reflejo superior estilo "gota mojada" más sutil */
   activeBubbleGlossTop: {
     position: 'absolute',
     top: 2,
     left: 10,
     right: 10,
-    height: BUBBLE_HEIGHT * 0.40,
+    height: BUBBLE_HEIGHT * 0.4,
     borderRadius: BUBBLE_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabContent: {
     alignItems: 'center',

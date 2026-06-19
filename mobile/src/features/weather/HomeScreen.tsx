@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
 import type { City } from '../../types';
+import { MapView, Marker, UrlTile } from './MapKit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -406,18 +407,6 @@ function buildWeeklyForecast(
     };
   });
 }
-
-const MapModule = (() => {
-  try {
-    return require('react-native-maps');
-  } catch {
-    return null;
-  }
-})();
-
-const MapView = MapModule?.default ?? null;
-const UrlTile = MapModule?.UrlTile ?? null;
-const Marker = MapModule?.Marker ?? null;
 
 function GlassCard({
   children,

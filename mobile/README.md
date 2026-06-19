@@ -135,3 +135,9 @@ Instala el .apk resultante en tu dispositivo y abrelo en lugar de Expo Go.
 ## Licencia
 
 MIT
+
+
+
+## iniciar proyecto
+- Backend: php artisan serve --host=0.0.0.0 --port=8000
+- Mobile: npm run start
