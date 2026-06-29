@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
+import { premiumColors, premiumRadii } from '../theme/premium';
 
 type InputProps = TextInputProps & {
   label?: string;
@@ -19,7 +20,7 @@ export function Input({ label, error, style, ...props }: InputProps) {
           error && styles.inputError,
           style,
         ]}
-        placeholderTextColor="#9CA39F"
+        placeholderTextColor="rgba(148,163,184,0.68)"
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         {...props}
@@ -35,27 +36,29 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 12,
-    color: '#52655A',
-    fontWeight: '500',
+    color: premiumColors.inkSubtle,
+    fontWeight: '700',
+    letterSpacing: 0.35,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#D6DED9',
-    borderRadius: 12,
+    borderColor: premiumColors.glassBorder,
+    borderRadius: premiumRadii.md,
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#0B1411',
-    backgroundColor: '#FBFDFB',
+    color: premiumColors.ink,
+    backgroundColor: premiumColors.glass,
   },
   inputFocused: {
-    borderColor: '#2A7A4B',
+    borderColor: premiumColors.glassBorderStrong,
+    backgroundColor: premiumColors.glassStrong,
   },
   inputError: {
-    borderColor: '#A33A3A',
+    borderColor: 'rgba(251,113,133,0.72)',
   },
   error: {
     fontSize: 12,
-    color: '#A33A3A',
+    color: premiumColors.danger,
   },
 });

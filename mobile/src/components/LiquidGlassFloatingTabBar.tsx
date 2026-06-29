@@ -1,36 +1,42 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   LayoutChangeEvent,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
+  interpolateColor,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { premiumColors, premiumShadow } from '../theme/premium';
 
 /**
  * Acentos basados en la referencia liquid-glass + paleta CliMax.
  * Mantén el azul del mockup o cambia a `#7CD9A4` para usar el verde de la marca.
  */
-const ACTIVE_ACCENT = '#5AC8FA';
-const INACTIVE = 'rgba(255, 255, 255, 0.85)';
+const ACTIVE_ACCENT = premiumColors.accentSoft;
+const INACTIVE = 'rgba(241, 245, 249, 0.9)';
 
 const PILL_RADIUS = 34;
-const BUBBLE_HEIGHT = 46;
-const BUBBLE_RADIUS = 23;
-const ROW_HORIZONTAL_PADDING = 6;
+const BUBBLE_HEIGHT = 42;
+const BUBBLE_RADIUS = 21;
+const ROW_HORIZONTAL_PADDING = 8;
 const ROW_VERTICAL_PADDING = 8;
+const SWIPE_DISTANCE = 42;
+const SWIPE_VELOCITY = 420;
 
 /**
  * Tab bar flotante "liquid glass" con:
@@ -43,23 +49,49 @@ export function LiquidGlassFloatingTabBar({
   descriptors,
   navigation,
   insets,
-}: BottomTabBarProps) {
-  const routeCount = state.routes.length;
+  visibleRouteNames,
+}: BottomTabBarProps & { visibleRouteNames?: string[] }) {
+  const visibleRouteNameSet = visibleRouteNames ? new Set(visibleRouteNames) : null;
+  const visibleRoutes = state.routes
+    .map((route, originalIndex) => ({ route, originalIndex }))
+    .filter(({ route }) => {
+      if (visibleRouteNameSet) {
+        return visibleRouteNameSet.has(route.name);
+      }
+      const options = descriptors[route.key]?.options as any;
+      return options.href !== null;
+    });
+  const routeCount = Math.max(visibleRoutes.length, 1);
+  const dockMaxWidth = routeCount <= 4 ? 390 : 520;
+  const activeVisibleIndex = Math.max(
+    0,
+    visibleRoutes.findIndex(({ originalIndex }) => originalIndex === state.index),
+  );
   const [rowWidth, setRowWidth] = useState(0);
   const tabWidth = rowWidth > 0 ? rowWidth / routeCount : 0;
   /** La burbuja abarca casi toda la pestaña para envolver textos largos como "Comunidad". */
-  const bubbleWidth = Math.max(52, tabWidth - 4);
+  const bubbleWidth = Math.max(48, tabWidth - 8);
+  const compactLabels = routeCount > 5;
 
   const translateX = useSharedValue(0);
   const stretch = useSharedValue(0);
   const isReady = useSharedValue(0);
+  const ambient = useSharedValue(0);
+  const dragIndex = useSharedValue(activeVisibleIndex);
+
+  useEffect(() => {
+    ambient.value = withTiming(1, {
+      duration: 580,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [ambient]);
 
   useEffect(() => {
     if (tabWidth <= 0) return;
 
     const targetX =
       ROW_HORIZONTAL_PADDING +
-      state.index * tabWidth +
+      activeVisibleIndex * tabWidth +
       (tabWidth - bubbleWidth) / 2;
 
     if (isReady.value === 0) {
@@ -79,7 +111,7 @@ export function LiquidGlassFloatingTabBar({
       withTiming(1, { duration: 180, easing: Easing.out(Easing.quad) }),
       withTiming(0, { duration: 320, easing: Easing.inOut(Easing.quad) }),
     );
-  }, [state.index, tabWidth, bubbleWidth, translateX, stretch, isReady]);
+  }, [activeVisibleIndex, tabWidth, bubbleWidth, translateX, stretch, isReady]);
 
   const bubbleAnimatedStyle = useAnimatedStyle(() => {
     const s = stretch.value;
@@ -93,10 +125,78 @@ export function LiquidGlassFloatingTabBar({
     };
   });
 
+  const pillAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: ambient.value,
+    transform: [{ translateY: (1 - ambient.value) * 8 }],
+    borderColor: interpolateColor(
+      ambient.value,
+      [0, 1],
+      ['rgba(255,255,255,0.08)', 'rgba(125,211,252,0.24)'],
+    ),
+  }));
+
   const onRowLayout = (e: LayoutChangeEvent) => {
     const w = e.nativeEvent.layout.width - ROW_HORIZONTAL_PADDING * 2;
     if (w !== rowWidth) setRowWidth(w);
   };
+
+  const navigateToIndex = (nextIndex: number) => {
+    if (nextIndex < 0 || nextIndex >= visibleRoutes.length || nextIndex === activeVisibleIndex) {
+      return;
+    }
+
+    const route = visibleRoutes[nextIndex].route;
+    const event = navigation.emit({
+      type: 'tabPress',
+      target: route.key,
+      canPreventDefault: true,
+    });
+
+    if (!event.defaultPrevented) {
+      void Haptics.selectionAsync().catch(() => {});
+      navigation.navigate(route.name, route.params);
+    }
+  };
+
+  const handleSwipeEnd = (translationX: number, velocityX: number) => {
+    const hasSwipeIntent =
+      Math.abs(translationX) >= SWIPE_DISTANCE || Math.abs(velocityX) >= SWIPE_VELOCITY;
+
+    if (!hasSwipeIntent) return;
+
+    const direction = translationX < 0 ? 1 : -1;
+    navigateToIndex(activeVisibleIndex + direction);
+  };
+
+  const handleDragPosition = (x: number) => {
+    if (tabWidth <= 0) return;
+    const nextIndex = Math.max(
+      0,
+      Math.min(visibleRoutes.length - 1, Math.floor((x - ROW_HORIZONTAL_PADDING) / tabWidth)),
+    );
+    navigateToIndex(nextIndex);
+  };
+
+  const swipeGesture = Gesture.Pan()
+    .activeOffsetX([-18, 18])
+    .failOffsetY([-18, 18])
+    .onBegin(() => {
+      dragIndex.value = activeVisibleIndex;
+    })
+    .onUpdate((event) => {
+      if (tabWidth <= 0) return;
+      const nextIndex = Math.max(
+        0,
+        Math.min(routeCount - 1, Math.floor((event.x - ROW_HORIZONTAL_PADDING) / tabWidth)),
+      );
+      if (nextIndex !== dragIndex.value) {
+        dragIndex.value = nextIndex;
+        runOnJS(handleDragPosition)(event.x);
+      }
+    })
+    .onEnd((event) => {
+      runOnJS(handleSwipeEnd)(event.translationX, event.velocityX);
+    });
 
   return (
     <View
@@ -108,8 +208,9 @@ export function LiquidGlassFloatingTabBar({
           paddingHorizontal: 18,
         },
       ]}>
-      <View style={styles.shadowWrap}>
-        <View style={styles.pill}>
+      <View style={[styles.shadowWrap, { maxWidth: dockMaxWidth }]}>
+        <GestureDetector gesture={swipeGesture}>
+          <Animated.View style={[styles.pill, pillAnimatedStyle]}>
           {/* Capa 1: blur real (equivale a backdrop-filter: blur+saturate) */}
           <BlurView
             intensity={92}
@@ -147,9 +248,9 @@ export function LiquidGlassFloatingTabBar({
               <View style={styles.activeBubbleGlossTop} />
             </Animated.View>
 
-            {state.routes.map((route, index) => {
+            {visibleRoutes.map(({ route, originalIndex }) => {
               const { options } = descriptors[route.key];
-              const isFocused = state.index === index;
+              const isFocused = state.index === originalIndex;
               const color = isFocused ? ACTIVE_ACCENT : INACTIVE;
 
               const titleText =
@@ -163,7 +264,8 @@ export function LiquidGlassFloatingTabBar({
                 });
 
                 if (!isFocused && !event.defaultPrevented) {
-                  navigation.navigate(route.name);
+                  void Haptics.selectionAsync().catch(() => {});
+                  navigation.navigate(route.name, route.params);
                 }
               };
 
@@ -187,7 +289,7 @@ export function LiquidGlassFloatingTabBar({
                   labelNode = (
                     <Text
                       numberOfLines={1}
-                      style={[styles.label, { color }]}>
+                      style={[styles.label, compactLabels && styles.labelCompact, { color }]}>
                       {options.tabBarLabel}
                     </Text>
                   );
@@ -195,7 +297,7 @@ export function LiquidGlassFloatingTabBar({
                   labelNode = (
                     <Text
                       numberOfLines={1}
-                      style={[styles.label, { color }]}>
+                      style={[styles.label, compactLabels && styles.labelCompact, { color }]}>
                       {titleText}
                     </Text>
                   );
@@ -214,7 +316,7 @@ export function LiquidGlassFloatingTabBar({
                     {options.tabBarIcon?.({
                       focused: isFocused,
                       color,
-                      size: 22,
+                      size: isFocused ? 25 : 23,
                     })}
                     {labelNode}
                   </View>
@@ -222,7 +324,8 @@ export function LiquidGlassFloatingTabBar({
               );
             })}
           </View>
-        </View>
+          </Animated.View>
+        </GestureDetector>
       </View>
     </View>
   );
@@ -236,38 +339,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     pointerEvents: 'box-none',
+    zIndex: 100,
+    elevation: 30,
   },
   shadowWrap: {
-    maxWidth: 520,
     width: '100%',
+    alignItems: 'center',
     pointerEvents: 'box-none',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 14 },
-        shadowOpacity: 0.42,
-        shadowRadius: 26,
-      },
-      android: {
-        elevation: 18,
-      },
-      web: {
-        boxShadow: '0px 14px 26px rgba(0, 0, 0, 0.42)',
-      },
-      default: {},
-    }),
+    ...premiumShadow('strong'),
   },
   pill: {
+    width: '100%',
     borderRadius: PILL_RADIUS,
-    minHeight: 62,
+    minHeight: 64,
     overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.42)',
+    backgroundColor: 'rgba(8,13,28,0.94)',
   },
   /** Velo oscuro: rgba(0,0,0,0.32) ~ acerca a la doc DARK preset */
   pillDarkVeil: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.32)',
+    backgroundColor: 'rgba(2, 6, 18, 0.58)',
     pointerEvents: 'none',
   },
   /** Brillo sutil arriba para emular el gradient blanco translúcido */
@@ -277,7 +370,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: '55%',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: 'rgba(255, 255, 255, 0.045)',
     borderTopLeftRadius: PILL_RADIUS,
     borderTopRightRadius: PILL_RADIUS,
     pointerEvents: 'none',
@@ -286,7 +379,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: PILL_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     pointerEvents: 'none',
   },
   tabsRow: {
@@ -294,13 +387,13 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     paddingHorizontal: ROW_HORIZONTAL_PADDING,
     paddingVertical: ROW_VERTICAL_PADDING,
-    minHeight: 62,
+    minHeight: 64,
   },
   tabHit: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 46,
+    minHeight: 48,
     zIndex: 2,
   },
   activeBubble: {
@@ -312,13 +405,13 @@ const styles = StyleSheet.create({
   },
   activeBubbleTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    backgroundColor: 'rgba(125,211,252,0.105)',
   },
   activeBubbleRim: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: BUBBLE_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.28)',
+    borderColor: 'rgba(186,230,253,0.34)',
   },
   /** Reflejo superior estilo "gota mojada" más sutil */
   activeBubbleGlossTop: {
@@ -328,7 +421,7 @@ const styles = StyleSheet.create({
     right: 10,
     height: BUBBLE_HEIGHT * 0.40,
     borderRadius: BUBBLE_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.055)',
   },
   tabContent: {
     alignItems: 'center',
@@ -336,10 +429,17 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   label: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 11.5,
+    fontWeight: '900',
     marginTop: 2,
-    letterSpacing: 0.15,
+    letterSpacing: 0,
+    textShadowColor: 'rgba(0,0,0,0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  labelCompact: {
+    fontSize: 10.5,
+    maxWidth: 66,
   },
 });
 

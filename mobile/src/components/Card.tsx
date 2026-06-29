@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
-import { Pressable, Platform, StyleSheet, View, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, View, ViewStyle } from 'react-native';
+import { premiumColors, premiumRadii, premiumShadow } from '../theme/premium';
 
 type CardProps = {
   children: ReactNode;
@@ -29,31 +30,23 @@ export function Card({ children, style, onPress, variant = 'default' }: CardProp
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: premiumColors.surfaceElevated,
+    borderRadius: premiumRadii.xl,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+    padding: 18,
+    overflow: 'hidden',
   },
   elevated: {
-    ...Platform.select<ViewStyle>({
-      web: {
-        boxShadow: '0px 4px 18px rgba(11, 20, 17, 0.08)',
-      },
-      ios: {
-        shadowColor: '#0B1411',
-        shadowOpacity: 0.08,
-        shadowRadius: 18,
-      },
-      android: {
-        elevation: 3,
-      },
-      default: {},
-    }),
+    ...premiumShadow('medium'),
   },
   outlined: {
     borderWidth: 1,
-    borderColor: '#D6DED9',
+    borderColor: premiumColors.glassBorderStrong,
+    backgroundColor: premiumColors.glass,
   },
   pressed: {
-    opacity: 0.85,
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
   },
 });

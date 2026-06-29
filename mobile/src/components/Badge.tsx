@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { premiumColors, premiumRadii } from '../theme/premium';
 
 type BadgeProps = {
   children: ReactNode;
@@ -20,9 +21,10 @@ export function Badge({ children, variant = 'default', size = 'medium', style }:
 
 const styles = StyleSheet.create({
   badge: {
-    borderRadius: 10,
+    borderRadius: premiumRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
   small: {
     paddingHorizontal: 6,
@@ -33,19 +35,24 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   default: {
-    backgroundColor: '#E8EBE9',
+    backgroundColor: premiumColors.glass,
+    borderColor: premiumColors.glassBorder,
   },
   success: {
-    backgroundColor: '#E5F4EC',
+    backgroundColor: 'rgba(52,211,153,0.12)',
+    borderColor: 'rgba(52,211,153,0.35)',
   },
   warning: {
-    backgroundColor: '#FFF4E5',
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderColor: 'rgba(251,191,36,0.38)',
   },
   error: {
-    backgroundColor: '#FDEAEA',
+    backgroundColor: 'rgba(251,113,133,0.12)',
+    borderColor: 'rgba(251,113,133,0.38)',
   },
   info: {
-    backgroundColor: '#E5F4FF',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderColor: premiumColors.glassBorderStrong,
   },
   text: {
     fontSize: 11,
@@ -53,18 +60,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   defaultText: {
-    color: '#52655A',
+    color: premiumColors.inkMuted,
   },
   successText: {
-    color: '#2A7A4B',
+    color: premiumColors.success,
   },
   warningText: {
-    color: '#B87506',
+    color: premiumColors.warning,
   },
   errorText: {
-    color: '#A33A3A',
+    color: premiumColors.danger,
   },
   infoText: {
-    color: '#0066CC',
+    color: premiumColors.accentSoft,
   },
 });

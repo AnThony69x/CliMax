@@ -1,11 +1,15 @@
 import { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, TextStyle, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, type TextStyle, ViewStyle } from 'react-native';
+import { premiumColors, premiumRadii, premiumShadow } from '../theme/premium';
+
+type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost';
+type ButtonSize = 'small' | 'medium' | 'large';
 
 type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
-  size?: 'small' | 'medium' | 'large';
+  variant?: ButtonVariant;
+  size?: ButtonSize;
   disabled?: boolean;
   loading?: boolean;
   icon?: ReactNode;
@@ -22,6 +26,8 @@ export function Button({
   icon,
   style,
 }: ButtonProps) {
+  const variantTextStyle = styles[`${variant}Text` as `${ButtonVariant}Text`] as TextStyle;
+
   return (
     <Pressable
       style={({ pressed }) => [
@@ -36,13 +42,13 @@ export function Button({
       disabled={disabled || loading}
     >
       {loading ? (
-        <Text style={[styles.text, styles[`${variant}Text` as keyof typeof styles]]}>
+        <Text style={[styles.text, variantTextStyle]}>
           Cargando...
         </Text>
       ) : (
         <>
           {icon}
-          <Text style={[styles.text, styles[`${variant}Text` as keyof typeof styles]]}>
+          <Text style={[styles.text, variantTextStyle]}>
             {title}
           </Text>
         </>
@@ -56,22 +62,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    borderRadius: premiumRadii.lg,
     gap: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
   primary: {
-    backgroundColor: '#2A7A4B',
+    backgroundColor: premiumColors.accent,
+    borderColor: 'rgba(255,255,255,0.28)',
+    ...premiumShadow('soft'),
   },
   secondary: {
-    backgroundColor: '#52655A',
+    backgroundColor: premiumColors.glassStrong,
+    borderColor: premiumColors.glassBorder,
   },
   outline: {
     backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#2A7A4B',
+    borderColor: premiumColors.glassBorderStrong,
   },
   ghost: {
     backgroundColor: 'transparent',
+    borderColor: 'transparent',
   },
   small: {
     paddingVertical: 8,
@@ -89,22 +100,24 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   pressed: {
-    opacity: 0.85,
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
   },
   text: {
     fontSize: 15,
     fontWeight: '600',
   },
   primaryText: {
-    color: '#FFFFFF',
+    color: premiumColors.accentDeep,
+    fontWeight: '800',
   },
   secondaryText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
   },
   outlineText: {
-    color: '#2A7A4B',
+    color: premiumColors.accentSoft,
   },
   ghostText: {
-    color: '#2A7A4B',
+    color: premiumColors.accentSoft,
   },
 });
