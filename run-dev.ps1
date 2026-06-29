@@ -20,6 +20,7 @@ $Root = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvoca
 
 $backendDir = Join-Path $Root 'backend'
 $mobileDir  = Join-Path $Root 'mobile'
+$mobileTempDir = Join-Path $mobileDir '.tmp'
 
 if (-not (Test-Path $backendDir)) {
   Write-Error "No se encuentra la carpeta backend: $backendDir"
@@ -45,12 +46,30 @@ function Stop-PortIfBusy {
   }
 }
 
+function Get-LanIPv4Address {
+  $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.IPAddress -notlike '169.254.*' -and
+      $_.IPAddress -ne '127.0.0.1' -and
+      $_.PrefixOrigin -ne 'WellKnown'
+    } |
+    Sort-Object -Property InterfaceMetric, SkipAsSource |
+    Select-Object -First 1 -ExpandProperty IPAddress
+
+  if ($ip) { return $ip }
+
+  return 'localhost'
+}
+
 Write-Host 'Limpiando puertos 8000/8081/8082 si quedaron zombies...' -ForegroundColor DarkCyan
 $portsToFree = @(8081, 8082)
 if (-not $SkipBackend) { $portsToFree = @(8000) + $portsToFree }
 foreach ($p in $portsToFree) { Stop-PortIfBusy -Port $p }
 
 $tunnelFlag = if ($Tunnel) { ' --tunnel' } else { '' }
+$lanIp = Get-LanIPv4Address
+$apiUrl = "http://$lanIp:8000/api"
+$expoEnvPrefix = "`$expoTemp = '$mobileTempDir'; New-Item -ItemType Directory -Force -Path `$expoTemp | Out-Null; `$env:TEMP = `$expoTemp; `$env:TMP = `$expoTemp; `$env:EXPO_PUBLIC_API_URL = '$apiUrl';"
 
 if (-not $SkipBackend) {
   Write-Host 'Iniciando Laravel (0.0.0.0:8000)...' -ForegroundColor Cyan
@@ -65,19 +84,20 @@ Write-Host "Iniciando Expo Go (puerto 8082$(if ($Tunnel) { ' + tunnel' } else { 
 Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
   '-NoExit',
   '-Command',
-  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Go :8082'; Write-Host 'Modo Expo Go: escanea este QR con la app Expo Go (Play Store / App Store)' -ForegroundColor Yellow; npx expo start --go --port 8082$tunnelFlag --clear"
+  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Go :8082'; $expoEnvPrefix Write-Host 'Modo Expo Go: escanea este QR con la app Expo Go (Play Store / App Store)' -ForegroundColor Yellow; npx expo start --go --port 8082$tunnelFlag --clear"
 )
 
 Write-Host "Iniciando Expo Dev Client (puerto 8081$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Magenta
 Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
   '-NoExit',
   '-Command',
-  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Dev Client :8081'; Write-Host 'Modo Dev Client: escanea este QR con el APK CliMax (development build)' -ForegroundColor Yellow; npx expo start --dev-client --port 8081$tunnelFlag --clear"
+  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Dev Client :8081'; $expoEnvPrefix Write-Host 'Modo Dev Client: escanea este QR con el APK CliMax (development build)' -ForegroundColor Yellow; npx expo start --dev-client --port 8081$tunnelFlag --clear"
 )
 
 Write-Host ''
 Write-Host 'Listo: 3 ventanas abiertas.' -ForegroundColor White
 Write-Host '  - Laravel       :8000 (API)'
+Write-Host "  - Mobile API URL: $apiUrl"
 Write-Host '  - Expo Go       :8082 (QR para Expo Go store app)'
 Write-Host '  - Dev Client    :8081 (QR para CliMax APK)'
 if ($Tunnel) {

@@ -48,6 +48,7 @@ firebase/
 
 # Metro
 .metro-health-check*
+.tmp/
 
 # generated native folders
 /ios
