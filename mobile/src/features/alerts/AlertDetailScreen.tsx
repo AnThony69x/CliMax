@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { API_URL } from '../../core/api/weatherApi';
 import type { Alert } from '../../types';
 
 export default function AlertDetailScreen() {
@@ -15,9 +16,7 @@ export default function AlertDetailScreen() {
 
   const loadAlert = async () => {
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) return;
-      const response = await fetch(`${apiUrl}/alerts/${id}`);
+      const response = await fetch(`${API_URL}/alerts/${id}`);
       if (response.ok) {
         const data = await response.json();
         setAlert(data.data);
@@ -32,9 +31,7 @@ export default function AlertDetailScreen() {
   const markAsRead = async () => {
     if (!alert || alert.is_read) return;
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) return;
-      await fetch(`${apiUrl}/alerts/${id}/read`, { method: 'PATCH' });
+      await fetch(`${API_URL}/alerts/${id}/read`, { method: 'PATCH' });
       setAlert({ ...alert, is_read: true });
     } catch (error) {
       console.warn('Error marking as read:', error);

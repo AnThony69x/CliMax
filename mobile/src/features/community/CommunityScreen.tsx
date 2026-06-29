@@ -1,13 +1,29 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getSession, supabase } from '../../core/auth/supabaseClient';
+import { useAccess } from '../../core/access/AccessContext';
+import { getAccessToken, getSession, supabase } from '../../core/auth/supabaseClient';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { Buffer } from 'buffer';
-import { fetchAddress } from '../../core/api/weatherApi';
+import {
+  createCommunityComment,
+  createCommunityPost,
+  deleteCommunityComment,
+  deleteCommunityPost,
+  fetchAddress,
+  fetchCommunityFeed,
+  reportCommunityContent,
+  updateCommunityComment,
+  updateCommunityPost,
+} from '../../core/api/weatherApi';
+import { getToken } from '../../core/auth/authStorage';
+import {
+  applyLocationPrecision,
+  useAccountPreferences,
+} from '../../core/preferences/accountPreferences';
 import {
   ActivityIndicator,
   Alert as NativeAlert,
@@ -36,9 +52,10 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { premiumColors, premiumShadow } from '../../theme/premium';
 
-const SURFACE_DEEP = '#0c1222';
-const ACCENT       = '#38bdf8';
+const SURFACE_DEEP = premiumColors.surface;
+const ACCENT       = premiumColors.accent;
 
 const GHOST_ITEMS = Array.from({ length: 6 });
 const COMMUNITY_BUCKET_IDS = ['community-alerts', 'COMMUNITY-ALERTS'] as const;
@@ -51,6 +68,8 @@ type CommunityPost = {
   image_url?: string | null;
   image_path?: string | null;
   severity?: PostSeverity;
+  moderation_status?: 'pending_review' | 'published' | 'hidden' | 'flagged' | 'removed' | 'rejected';
+  moderation_reason?: string | null;
 };
 type CommunityProfile = {
   id: string;
@@ -64,6 +83,8 @@ type CommunityComment = {
   content: string;
   created_at: string;
   parent_comment_id?: string | null;
+  moderation_status?: 'pending_review' | 'published' | 'hidden' | 'flagged' | 'removed' | 'rejected';
+  moderation_reason?: string | null;
 };
 type CommentTarget = {
   postId: string;
@@ -71,7 +92,16 @@ type CommentTarget = {
   authorName: string;
 };
 type ReactionType = 'like' | 'apoya' | 'importante' | 'sorprende';
-type FeedSortMode = 'recent' | 'priority';
+type CommunityNotification = {
+  id: string;
+  postId?: string;
+  type: 'critical' | 'comment' | 'reaction';
+  title: string;
+  message: string;
+  createdAt: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: string;
+};
 
 const SEVERITY_OPTIONS: PostSeverity[] = ['informacion', 'alerta', 'grave'];
 const REACTION_OPTIONS: Array<{ key: ReactionType; label: string; icon: string }> = [
@@ -91,6 +121,15 @@ const AVATAR_FALLBACK_COLORS = [
   '#6D28D9',
 ] as const;
 
+const MODERATION_LABELS: Record<NonNullable<CommunityPost['moderation_status']>, string> = {
+  pending_review: 'En revision',
+  published: 'Publicado',
+  flagged: 'Marcado',
+  hidden: 'Oculto',
+  removed: 'Removido',
+  rejected: 'Rechazado',
+};
+
 const getAvatarFallbackColor = (id: string) => {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {
@@ -105,6 +144,9 @@ export default function CommunityScreen() {
   const router = useRouter();
   const { postId } = useLocalSearchParams<{ postId?: string }>();
   const insets = useSafeAreaInsets();
+  const accountPreferences = useAccountPreferences();
+  const { hasEntitlement } = useAccess();
+  const communityAllowed = hasEntitlement('community.basic');
 
   const feedOffset = useRef(new Animated.Value(0)).current;
   const locatePulse = useRef(new Animated.Value(0)).current;
@@ -138,8 +180,10 @@ export default function CommunityScreen() {
   const [editingCommentTarget, setEditingCommentTarget] = useState<CommentTarget | null>(null);
   const [replyingCommentTarget, setReplyingCommentTarget] = useState<CommentTarget | null>(null);
   const [activeSeverityFilter, setActiveSeverityFilter] = useState<PostSeverity | 'todas'>('todas');
-  const [feedSortMode, setFeedSortMode] = useState<FeedSortMode>('priority');
+  const [showOnlyMyPosts, setShowOnlyMyPosts] = useState(false);
   const [filterModalOpen, setFilterModalOpen] = useState(false);
+  const [notificationTrayOpen, setNotificationTrayOpen] = useState(false);
+  const [notificationSeenAt, setNotificationSeenAt] = useState(0);
   const [likedByPost, setLikedByPost] = useState<Record<string, boolean>>({});
   const [reactionByPost, setReactionByPost] = useState<Record<string, ReactionType>>({});
   const [reactionCountByPost, setReactionCountByPost] = useState<Record<string, number>>({});
@@ -152,18 +196,26 @@ export default function CommunityScreen() {
   const [commentSavingByPost, setCommentSavingByPost] = useState<Record<string, boolean>>({});
 
   const guestLayout = !loading && !isLoggedIn;
+  const planBlockedLayout = !guestLayout && !communityAllowed;
 
   const goToLogin = () => {
     router.push('/login?force=1');
   };
 
-  useEffect(() => {
-    void bootstrap();
-  }, []);
+  const goToSubscriptions = () => {
+    router.push('/(tabs)/subscriptions' as any);
+  };
+
+  const getCommunityToken = async () => {
+    const sessionToken = await getAccessToken();
+    if (sessionToken) return sessionToken;
+    return getToken();
+  };
 
   /** Al volver a esta pestaña, el scroll vuelve arriba (publicaciones más recientes primero). */
   useFocusEffect(
     useCallback(() => {
+      void bootstrap();
       const tick = requestAnimationFrame(() => {
         scrollViewRef.current?.scrollTo({ x: 0, y: 0, animated: false });
       });
@@ -172,7 +224,7 @@ export default function CommunityScreen() {
   );
 
   useEffect(() => {
-    if (!isLoggedIn || !userId) return;
+    if (!isLoggedIn || !userId || !communityAllowed) return;
 
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const queueRefresh = () => {
@@ -200,7 +252,7 @@ export default function CommunityScreen() {
       if (refreshTimer) clearTimeout(refreshTimer);
       void supabase.removeChannel(channel);
     };
-  }, [isLoggedIn, userId]);
+  }, [communityAllowed, isLoggedIn, userId]);
 
   useEffect(() => {
     if (isLoggedIn) return;
@@ -316,37 +368,113 @@ export default function CommunityScreen() {
     }, 120);
   };
 
-  const getSeverityRank = (sev?: PostSeverity) => {
-    if (sev === 'grave') return 3;
-    if (sev === 'alerta') return 2;
-    return 1;
+  const visiblePosts = useMemo(() => {
+    const ownershipFiltered = showOnlyMyPosts && userId
+      ? posts.filter((post) => post.user_id === userId)
+      : [...posts];
+    const filtered = activeSeverityFilter === 'todas'
+      ? ownershipFiltered
+      : ownershipFiltered.filter((post) => (post.severity ?? 'informacion') === activeSeverityFilter);
+
+    return filtered.sort((a, b) => {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [posts, activeSeverityFilter, showOnlyMyPosts, userId]);
+
+  const formatNotificationTime = (value: string) => {
+    const diff = Date.now() - new Date(value).getTime();
+    const minutes = Math.max(1, Math.floor(diff / 60000));
+    if (minutes < 60) return `Hace ${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `Hace ${hours} h`;
+    const days = Math.floor(hours / 24);
+    return `Hace ${days} d`;
   };
 
-  const visiblePosts = useMemo(() => {
-    const filtered = activeSeverityFilter === 'todas'
-      ? [...posts]
-      : posts.filter((post) => (post.severity ?? 'informacion') === activeSeverityFilter);
+  const communityNotifications = useMemo<CommunityNotification[]>(() => {
+    const items: CommunityNotification[] = [];
 
-    if (feedSortMode === 'recent') {
-      return filtered.sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-    }
-
-    const now = Date.now();
-    const recentWindowMs = 1000 * 60 * 60 * 24;
-    return filtered.sort((a, b) => {
-      const at = new Date(a.created_at).getTime();
-      const bt = new Date(b.created_at).getTime();
-      const aRecent = now - at <= recentWindowMs;
-      const bRecent = now - bt <= recentWindowMs;
-      if (aRecent && bRecent) {
-        const sevDiff = getSeverityRank(b.severity) - getSeverityRank(a.severity);
-        if (sevDiff !== 0) return sevDiff;
+    posts.forEach((post) => {
+      const severity = post.severity ?? 'informacion';
+      if (severity !== 'informacion') {
+        items.push({
+          id: `post-${post.id}-${severity}`,
+          postId: post.id,
+          type: 'critical',
+          title: severity === 'grave' ? 'Reporte grave cercano' : 'Nueva alerta comunitaria',
+          message: post.content || 'Una publicacion requiere atencion de la comunidad.',
+          createdAt: post.created_at,
+          icon: severity === 'grave' ? 'warning' : 'alert-circle-outline',
+          accent: severity === 'grave' ? '#f87171' : '#fbbf24',
+        });
       }
-      return bt - at;
+
+      if (post.user_id === userId) {
+        const reactionCount = reactionCountByPost[post.id] ?? 0;
+        if (reactionCount > 0) {
+          items.push({
+            id: `reaction-${post.id}`,
+            postId: post.id,
+            type: 'reaction',
+            title: 'Tu publicacion tiene actividad',
+            message: `${reactionCount} ${reactionCount === 1 ? 'persona reacciono' : 'personas reaccionaron'} a tu reporte.`,
+            createdAt: post.created_at,
+            icon: 'heart-outline',
+            accent: '#fb7185',
+          });
+        }
+      }
+
+      if (!accountPreferences.communityMentions) return;
+      const comments = commentsByPost[post.id] ?? [];
+      comments.forEach((comment) => {
+        const isOwnComment = comment.user_id === userId;
+        const isOnOwnPost = post.user_id === userId && !isOwnComment;
+        const mentionsUser =
+          !isOwnComment &&
+          userId != null &&
+          comment.content.toLowerCase().includes('@');
+
+        if (!isOnOwnPost && !mentionsUser) return;
+        items.push({
+          id: `comment-${comment.id}`,
+          postId: post.id,
+          type: 'comment',
+          title: isOnOwnPost ? 'Nuevo comentario en tu publicacion' : 'Te mencionaron en comunidad',
+          message: comment.content,
+          createdAt: comment.created_at,
+          icon: isOnOwnPost ? 'chatbubble-ellipses-outline' : 'at-outline',
+          accent: '#38bdf8',
+        });
+      });
     });
-  }, [posts, activeSeverityFilter, feedSortMode]);
+
+    return items
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 24);
+  }, [
+    accountPreferences.communityMentions,
+    commentsByPost,
+    posts,
+    reactionCountByPost,
+    userId,
+  ]);
+
+  const unreadNotifications = communityNotifications.filter(
+    (item) => new Date(item.createdAt).getTime() > notificationSeenAt
+  ).length;
+
+  const openNotificationTray = () => {
+    setNotificationTrayOpen(true);
+    setNotificationSeenAt(Date.now());
+  };
+
+  const openNotificationTarget = (item: CommunityNotification) => {
+    setNotificationTrayOpen(false);
+    if (item.postId) {
+      setOpenCommentsByPost((prev) => ({ ...prev, [item.postId as string]: true }));
+    }
+  };
 
   const toggleLike = (postIdValue: string) => {
     if (!userId) {
@@ -459,7 +587,35 @@ export default function CommunityScreen() {
     setMentionSuggestions([]);
   };
 
+  const reportContent = async (targetType: 'post' | 'comment', targetId: string) => {
+    try {
+      const token = await getCommunityToken();
+      if (!token) {
+        NativeAlert.alert('Sesion', 'Inicia sesion nuevamente.');
+        return;
+      }
+      await reportCommunityContent(
+        {
+          target_type: targetType,
+          target_id: targetId,
+          reason: 'usuario_reporta_contenido',
+        },
+        token
+      );
+      NativeAlert.alert('Reporte enviado', 'Admin y operadores revisaran este contenido.');
+    } catch (error: any) {
+      NativeAlert.alert('No se pudo reportar', error?.message ?? 'Intenta nuevamente.');
+    }
+  };
+
   const openPostMenu = (post: CommunityPost) => {
+    if (post.user_id !== userId) {
+      NativeAlert.alert('Opciones', 'Selecciona una accion', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Reportar', onPress: () => reportContent('post', post.id) },
+      ]);
+      return;
+    }
     if (post.user_id !== userId) {
       NativeAlert.alert('Opciones', 'Esta publicación no te pertenece.');
       return;
@@ -487,16 +643,32 @@ export default function CommunityScreen() {
     );
   };
 
+  const getCommunityName = (id: string, fallback = 'Usuario') => {
+    return profilesById[id]?.name ?? fallback;
+  };
+  const getCommunityAvatar = (id: string) => {
+    return profilesById[id]?.avatar_url ?? null;
+  };
+
   const bootstrap = async () => {
     try {
       const session = await getSession();
       const uid = (session?.user?.id as string | undefined) ?? null;
       setIsLoggedIn(Boolean(uid));
       setUserId(uid);
-      if (uid) await loadPosts();
+      if (uid) {
+        await loadPosts(uid);
+      } else {
+        setPosts([]);
+        setCommentsByPost({});
+        setLikedByPost({});
+        setReactionByPost({});
+        setReactionCountByPost({});
+      }
     } catch {
       setIsLoggedIn(false);
       setUserId(null);
+      setPosts([]);
     } finally {
       setLoading(false);
     }
@@ -510,7 +682,7 @@ export default function CommunityScreen() {
       setIsLoggedIn(Boolean(uid));
       setUserId(uid);
       if (uid) {
-        await loadPosts();
+        await loadPosts(uid);
       } else {
         setPosts([]);
       }
@@ -519,27 +691,24 @@ export default function CommunityScreen() {
     }
   };
 
-  const loadPosts = async () => {
-    const { data, error } = await supabase
-      .from('community_posts')
-      .select('*')
-      .order('created_at', { ascending: false });
+  const loadPosts = async (viewerId = userId) => {
+    if (!communityAllowed) {
+      setPosts([]);
+      setCommentsByPost({});
+      return;
+    }
 
-    if (error) {
-      const missingTable =
-        error.code === 'PGRST205' ||
-        error.message?.includes("Could not find the table 'public.community_posts'");
-      if (missingTable) {
-        setCommunityTableMissing(true);
-        console.warn('[Community][loadPosts] Tabla faltante: public.community_posts');
-      } else {
-        console.warn('[Community][loadPosts] Error inesperado:', error.message);
-      }
+    const token = await getCommunityToken();
+    if (!token) {
       setPosts([]);
       return;
     }
+
+    const payload = await fetchCommunityFeed(token);
     setCommunityTableMissing(false);
-    const normalized = (data ?? []).map((row: any) => ({
+    setCommentsTableMissing(false);
+    const rows = payload.data?.posts ?? [];
+    const normalized = rows.map((row: any) => ({
       id: row.id,
       user_id: row.user_id,
       content: row.content,
@@ -547,7 +716,11 @@ export default function CommunityScreen() {
       image_url: typeof row.image_url === 'string' ? row.image_url : null,
       image_path: typeof row.image_path === 'string' ? row.image_path : null,
       severity: (row.severity as PostSeverity | null) ?? 'informacion',
+      moderation_status: row.moderation_status ?? 'pending_review',
+      moderation_reason: typeof row.moderation_reason === 'string' ? row.moderation_reason : null,
     })) as CommunityPost[];
+    const comments = normalizeComments(payload.data?.comments ?? []);
+    setCommentsByPost(groupCommentsByPost(comments));
     const requestedPostId = typeof postId === 'string' ? postId : undefined;
     if (requestedPostId) {
       const selected = normalized.find((post) => post.id === requestedPostId);
@@ -560,13 +733,12 @@ export default function CommunityScreen() {
     } else {
       setPosts(normalized);
     }
-    const comments = await loadCommentsForPosts(normalized.map((post) => post.id));
     await loadProfilesForPosts(normalized, comments);
-    await loadReactionsForPosts(normalized.map((post) => post.id));
+    await loadReactionsForPosts(normalized.map((post) => post.id), viewerId);
   };
 
-  const loadReactionsForPosts = async (postIds: string[]) => {
-    if (!userId || postIds.length === 0) {
+  const loadReactionsForPosts = async (postIds: string[], viewerId = userId) => {
+    if (!viewerId || postIds.length === 0) {
       setReactionCountByPost({});
       setLikedByPost({});
       setReactionByPost({});
@@ -602,7 +774,7 @@ export default function CommunityScreen() {
     (data ?? []).forEach((row: any) => {
       const postIdValue = row.post_id as string;
       counts[postIdValue] = (counts[postIdValue] ?? 0) + 1;
-      if (row.user_id === userId) {
+      if (row.user_id === viewerId) {
         myLikes[postIdValue] = true;
         myReactions[postIdValue] = (row.reaction as ReactionType) ?? 'like';
       }
@@ -644,49 +816,22 @@ export default function CommunityScreen() {
     setProfilesById((prev) => ({ ...prev, ...next }));
   };
 
-  const loadCommentsForPosts = async (postIds: string[]) => {
-    if (postIds.length === 0) {
-      setCommentsByPost({});
-      return [] as CommunityComment[];
-    }
+  const normalizeComments = (rows: any[]) => rows.map((row: any) => ({
+    id: row.id,
+    post_id: row.post_id,
+    user_id: row.user_id,
+    content: row.content,
+    created_at: row.created_at,
+    parent_comment_id: typeof row.parent_comment_id === 'string' ? row.parent_comment_id : null,
+    moderation_status: row.moderation_status ?? 'pending_review',
+    moderation_reason: typeof row.moderation_reason === 'string' ? row.moderation_reason : null,
+  })) as CommunityComment[];
 
-    const { data, error } = await supabase
-      .from('community_comments')
-      .select('*')
-      .in('post_id', postIds)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      const missingTable =
-        error.code === 'PGRST205' ||
-        error.message?.includes("Could not find the table 'public.community_comments'");
-      if (missingTable) {
-        setCommentsTableMissing(true);
-        console.warn('[Community][loadComments] Tabla faltante: public.community_comments');
-      } else {
-        console.warn('[Community][loadComments] Error inesperado:', error.message);
-      }
-      setCommentsByPost({});
-      return [] as CommunityComment[];
-    }
-
-    setCommentsTableMissing(false);
-    const grouped = (data ?? []).reduce((acc: Record<string, CommunityComment[]>, row: any) => {
-      const key = row.post_id as string;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push({
-        id: row.id,
-        post_id: row.post_id,
-        user_id: row.user_id,
-        content: row.content,
-        created_at: row.created_at,
-        parent_comment_id: typeof row.parent_comment_id === 'string' ? row.parent_comment_id : null,
-      });
-      return acc;
-    }, {});
-    setCommentsByPost(grouped);
-    return Object.values(grouped).flat();
-  };
+  const groupCommentsByPost = (comments: CommunityComment[]) => comments.reduce((acc: Record<string, CommunityComment[]>, comment) => {
+    if (!acc[comment.post_id]) acc[comment.post_id] = [];
+    acc[comment.post_id].push(comment);
+    return acc;
+  }, {});
 
   const loadAddressFromApi = async () => {
     setLocationStatus('loading');
@@ -701,11 +846,18 @@ export default function CommunityScreen() {
       const coords = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      const data = await fetchAddress(coords.coords.latitude, coords.coords.longitude);
+      const safeCoords = applyLocationPrecision(
+        coords.coords.latitude,
+        coords.coords.longitude,
+        accountPreferences.preciseLocation,
+      );
+      const data = await fetchAddress(safeCoords.latitude, safeCoords.longitude);
       const address = data?.display_name ?? null;
       const normalized = address
         ? address.split(',').slice(0, 3).join(',').trim()
-        : `${coords.coords.latitude.toFixed(4)}, ${coords.coords.longitude.toFixed(4)}`;
+        : accountPreferences.preciseLocation
+          ? `${safeCoords.latitude.toFixed(4)}, ${safeCoords.longitude.toFixed(4)}`
+          : `${safeCoords.latitude.toFixed(2)}, ${safeCoords.longitude.toFixed(2)} aprox.`;
       setContent(normalized);
       setLocationStatus('ready');
     } catch {
@@ -845,88 +997,42 @@ export default function CommunityScreen() {
       }
 
       if (editingId) {
-        let { error } = await supabase
-          .from('community_posts')
-          .update({
+        const token = await getCommunityToken();
+        if (!token) throw new Error('Sesion no disponible.');
+        if (!imageUrlToSave) throw new Error('La imagen es requerida.');
+        await updateCommunityPost(
+          editingId,
+          {
             content: normalizedLocation,
             image_url: imageUrlToSave,
             image_path: imagePathToSave,
             severity,
-          })
-          .eq('id', editingId)
-          .eq('user_id', userId);
-        if (error && error.message?.includes('column')) {
-          ({ error } = await supabase
-            .from('community_posts')
-            .update({ content: normalizedLocation })
-            .eq('id', editingId)
-            .eq('user_id', userId));
-        }
-        if (error) throw error;
+            image_mime_type: imageMimeType,
+          },
+          token
+        );
         console.log('[Community][savePost] Update DB OK', { id: editingId });
       } else {
-        let insertedId: string | undefined;
-        let insertError: { message?: string } | null = null;
-
-        const { data: inserted, error } = await supabase
-          .from('community_posts')
-          .insert({
-          user_id: userId,
-          content: normalizedLocation,
-          image_url: imageUrlToSave,
-          image_path: imagePathToSave,
-            severity,
-          })
-          .select('id')
-          .single();
-        if (error && error.message?.includes('column')) {
-          const fallback = await supabase
-            .from('community_posts')
-            .insert({
-            user_id: userId,
+        const token = await getCommunityToken();
+        if (!token) throw new Error('Sesion no disponible.');
+        if (!imageUrlToSave) throw new Error('La imagen es requerida.');
+        await createCommunityPost(
+          {
             content: normalizedLocation,
-            })
-            .select('id')
-            .single();
-          insertError = fallback.error ?? null;
-          insertedId = (fallback.data as { id?: string } | null)?.id;
-        } else {
-          insertError = error ?? null;
-          insertedId = (inserted as { id?: string } | null)?.id;
-        }
-        if (insertError) throw insertError;
-
-        if (!insertedId) {
-          const latest = await supabase
-            .from('community_posts')
-            .select('id')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-          insertedId = (latest.data as { id?: string } | null)?.id;
-        }
-
-        if (draftComment.trim() && !commentsTableMissing && insertedId) {
-          const { error: commentError } = await supabase.from('community_comments').insert({
-            post_id: insertedId,
-            user_id: userId,
-            content: draftComment.trim(),
-          });
-          if (commentError) {
-            NativeAlert.alert(
-              'Comentario no guardado',
-              commentError.message ?? 'No se pudo guardar el comentario inicial.'
-            );
-          }
-        } else if (draftComment.trim() && !commentsTableMissing && !insertedId) {
-          console.warn('[Community][savePost] No se pudo resolver el id del post para comentar.');
-        }
+            image_url: imageUrlToSave,
+            image_path: imagePathToSave,
+            severity,
+            image_mime_type: imageMimeType,
+            initial_comment: draftComment.trim() || null,
+          },
+          token
+        );
         console.log('[Community][savePost] Insert DB OK');
       }
       limpiarFormulario();
       setComposerOpen(false);
       await loadPosts();
+      NativeAlert.alert('En revision', 'Tu contenido fue enviado y aparecera cuando admin u operador lo apruebe.');
       console.log('[Community][savePost] Finalizado OK');
     } catch (error: any) {
       console.error('[Community][savePost] ERROR', {
@@ -983,38 +1089,20 @@ export default function CommunityScreen() {
     setCommentSavingByPost((prev) => ({ ...prev, [postId]: true }));
     let error: { message?: string } | null = null;
     try {
+      const token = await getCommunityToken();
+      if (!token) throw new Error('Sesion no disponible.');
       if (isEditing) {
-        const result = await supabase
-          .from('community_comments')
-          .update({ content: contentToSave })
-          .eq('id', editingCommentTarget.commentId)
-          .eq('user_id', userId);
-        error = result.error ?? null;
+        await updateCommunityComment(postId, editingCommentTarget.commentId, { content: contentToSave }, token);
       } else if (replyTarget) {
-        const withParent = await supabase.from('community_comments').insert({
-          post_id: postId,
-          user_id: userId,
+        await createCommunityComment(postId, {
           content: contentToSave,
           parent_comment_id: replyTarget.commentId,
-        });
-        if (withParent.error?.message?.includes('column')) {
-          const fallback = await supabase.from('community_comments').insert({
-            post_id: postId,
-            user_id: userId,
-            content: contentToSave,
-          });
-          error = fallback.error ?? null;
-        } else {
-          error = withParent.error ?? null;
-        }
+        }, token);
       } else {
-        const result = await supabase.from('community_comments').insert({
-          post_id: postId,
-          user_id: userId,
-          content: contentToSave,
-        });
-        error = result.error ?? null;
+        await createCommunityComment(postId, { content: contentToSave }, token);
       }
+    } catch (caught: any) {
+      error = { message: caught?.message ?? 'Intenta nuevamente.' };
     } finally {
       setCommentSavingByPost((prev) => ({ ...prev, [postId]: false }));
     }
@@ -1033,17 +1121,18 @@ export default function CommunityScreen() {
     if (isEditing) setEditingCommentTarget(null);
     if (replyTarget) setReplyingCommentTarget(null);
     await loadPosts();
+    NativeAlert.alert('Comentario en revision', 'Tu comentario aparecera cuando sea aprobado.');
   };
 
   const startReplyToComment = (postId: string, comment: CommunityComment) => {
-    const authorName = profilesById[comment.user_id]?.name ?? 'Usuario';
+    const authorName = getCommunityName(comment.user_id);
     setReplyingCommentTarget({ postId, commentId: comment.id, authorName });
     setEditingCommentTarget(null);
     setOpenCommentsByPost((prev) => ({ ...prev, [postId]: true }));
   };
 
   const startEditComment = (postId: string, comment: CommunityComment) => {
-    const authorName = profilesById[comment.user_id]?.name ?? 'Usuario';
+    const authorName = getCommunityName(comment.user_id);
     setEditingCommentTarget({ postId, commentId: comment.id, authorName });
     setReplyingCommentTarget(null);
     setCommentDrafts((prev) => ({ ...prev, [postId]: comment.content }));
@@ -1058,25 +1147,25 @@ export default function CommunityScreen() {
         text: 'Eliminar',
         style: 'destructive',
         onPress: async () => {
-          const { error } = await supabase
-            .from('community_comments')
-            .delete()
-            .eq('id', commentId)
-            .eq('user_id', userId);
+          try {
+            const token = await getCommunityToken();
+            if (!token) {
+              NativeAlert.alert('Sesion', 'Inicia sesion nuevamente.');
+              return;
+            }
+            await deleteCommunityComment(postId, commentId, token);
 
-          if (error) {
-            NativeAlert.alert('No se pudo eliminar', error.message ?? 'Intenta nuevamente.');
-            return;
+            if (editingCommentTarget?.commentId === commentId) {
+              setEditingCommentTarget(null);
+              setCommentDrafts((prev) => ({ ...prev, [postId]: '' }));
+            }
+            if (replyingCommentTarget?.commentId === commentId) {
+              setReplyingCommentTarget(null);
+            }
+            await loadPosts();
+          } catch (error: any) {
+            NativeAlert.alert('No se pudo eliminar', error?.message ?? 'Intenta nuevamente.');
           }
-
-          if (editingCommentTarget?.commentId === commentId) {
-            setEditingCommentTarget(null);
-            setCommentDrafts((prev) => ({ ...prev, [postId]: '' }));
-          }
-          if (replyingCommentTarget?.commentId === commentId) {
-            setReplyingCommentTarget(null);
-          }
-          await loadPosts();
         },
       },
     ]);
@@ -1115,12 +1204,9 @@ export default function CommunityScreen() {
   const deletePost = async (id: string) => {
     if (!userId) return;
     try {
-      const { error } = await supabase
-        .from('community_posts')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', userId);
-      if (error) throw error;
+      const token = await getCommunityToken();
+      if (!token) throw new Error('Sesion no disponible.');
+      await deleteCommunityPost(id, token);
       if (evidenceHasPath(posts, id)) {
         const path = posts.find((post) => post.id === id)?.image_path;
         if (path) {
@@ -1166,6 +1252,25 @@ export default function CommunityScreen() {
         <Text style={styles.subtitle}>Publicaciones y reportes con ubicación.</Text>
       </View>
       {isLoggedIn && (
+        <View style={styles.headerActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Abrir bandeja de notificaciones"
+          style={({ pressed }) => [
+            styles.headerNotifyBtn,
+            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+          ]}
+          onPress={openNotificationTray}
+        >
+          <Ionicons name="notifications-outline" size={21} color={ACCENT} />
+          {unreadNotifications > 0 ? (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {unreadNotifications > 9 ? '9+' : unreadNotifications}
+              </Text>
+            </View>
+          ) : null}
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Nueva publicación"
@@ -1183,6 +1288,7 @@ export default function CommunityScreen() {
         >
           <Ionicons name={composerOpen ? 'close' : 'add'} size={26} color="#0c1222" />
         </Pressable>
+        </View>
       )}
     </View>
   );
@@ -1197,7 +1303,7 @@ export default function CommunityScreen() {
       <View style={styles.bgGlowTop} />
       <View style={styles.bgGlowBottom} />
 
-      {guestLayout ? (
+      {guestLayout || planBlockedLayout ? (
         <View style={styles.guestRoot}>
           <View
             style={[
@@ -1224,12 +1330,16 @@ export default function CommunityScreen() {
               </Animated.View>
 
               <View style={styles.overlay}>
-                <Text style={styles.overlayText}>Inicia sesion para utilizar esta seccion</Text>
+                <Text style={styles.overlayText}>
+                  {guestLayout
+                    ? 'Inicia sesion para utilizar esta seccion'
+                    : 'Tu plan actual no incluye comunidad.'}
+                </Text>
                 <Pressable
                   style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.85 }]}
-                  onPress={goToLogin}
+                  onPress={guestLayout ? goToLogin : goToSubscriptions}
                 >
-                  <Text style={styles.loginBtnText}>Ir a login</Text>
+                  <Text style={styles.loginBtnText}>{guestLayout ? 'Ir a login' : 'Ver planes'}</Text>
                 </Pressable>
               </View>
             </View>
@@ -1273,15 +1383,36 @@ export default function CommunityScreen() {
               <View>
                 <Text style={styles.feedSectionTitle}>Publicaciones recientes</Text>
                 <Text style={styles.feedSectionSub}>
-                  {feedSortMode === 'priority' ? 'Prioridad grave/alerta + recencia' : 'Ordenadas por fecha reciente'}
+                  {showOnlyMyPosts
+                    ? 'Mostrando solo tus publicaciones'
+                    : 'Ordenadas por fecha reciente'}
                 </Text>
               </View>
-              <Pressable
-                style={({ pressed }) => [styles.feedFilterBtn, pressed && { opacity: 0.82 }]}
-                onPress={() => setFilterModalOpen(true)}
-              >
-                <Ionicons name="filter-outline" size={18} color={ACCENT} />
-              </Pressable>
+              <View style={styles.feedActions}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.myPostsBtn,
+                    showOnlyMyPosts && styles.myPostsBtnActive,
+                    pressed && { opacity: 0.82 },
+                  ]}
+                  onPress={() => setShowOnlyMyPosts((prev) => !prev)}
+                >
+                  <Ionicons
+                    name={showOnlyMyPosts ? 'person' : 'person-outline'}
+                    size={16}
+                    color={showOnlyMyPosts ? '#0c1222' : ACCENT}
+                  />
+                  <Text style={[styles.myPostsBtnText, showOnlyMyPosts && styles.myPostsBtnTextActive]}>
+                    Mis
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.feedFilterBtn, pressed && { opacity: 0.82 }]}
+                  onPress={() => setFilterModalOpen(true)}
+                >
+                  <Ionicons name="filter-outline" size={18} color={ACCENT} />
+                </Pressable>
+              </View>
             </View>
             {visiblePosts.length === 0 ? (
               <View style={styles.feedSkeletonWrap}>
@@ -1299,7 +1430,9 @@ export default function CommunityScreen() {
                     <View style={styles.feedSkeletonLineXs} />
                   </View>
                 ))}
-                <Text style={styles.emptyPostsText}>Aun no hay publicaciones.</Text>
+                <Text style={styles.emptyPostsText}>
+                  {showOnlyMyPosts ? 'Aun no tienes publicaciones.' : 'Aun no hay publicaciones.'}
+                </Text>
               </View>
             ) : (
               visiblePosts.map((post) => {
@@ -1345,9 +1478,9 @@ export default function CommunityScreen() {
                           isReply && styles.replyRow,
                         ]}
                       >
-                        {profilesById[comment.user_id]?.avatar_url ? (
+                        {getCommunityAvatar(comment.user_id) ? (
                           <Image
-                            source={{ uri: profilesById[comment.user_id].avatar_url as string }}
+                            source={{ uri: getCommunityAvatar(comment.user_id) as string }}
                             style={isReply ? styles.replyAvatar : styles.commentAvatar}
                           />
                         ) : (
@@ -1363,7 +1496,7 @@ export default function CommunityScreen() {
                         <View style={styles.commentBody}>
                           <View style={styles.commentAuthorRow}>
                             <Text style={styles.commentAuthor}>
-                              {profilesById[comment.user_id]?.name ?? 'Usuario'}
+                              {getCommunityName(comment.user_id)}
                             </Text>
                             {isOwnerComment ? (
                               <View style={styles.commentAuthorBadge}>
@@ -1372,6 +1505,18 @@ export default function CommunityScreen() {
                             ) : null}
                           </View>
                           {renderCommentWithMentions(comment.content)}
+                          {comment.moderation_status && comment.moderation_status !== 'published' ? (
+                            <>
+                              <View style={styles.commentModerationBadge}>
+                                <Text style={styles.commentModerationBadgeText}>
+                                  {MODERATION_LABELS[comment.moderation_status]}
+                                </Text>
+                              </View>
+                              {comment.moderation_reason ? (
+                                <Text style={styles.moderationReasonText}>{comment.moderation_reason}</Text>
+                              ) : null}
+                            </>
+                          ) : null}
                           <Text style={styles.commentDate}>
                             {new Date(comment.created_at).toLocaleString('es-ES')}
                           </Text>
@@ -1397,7 +1542,14 @@ export default function CommunityScreen() {
                                   <Text style={styles.commentActionText}>Eliminar</Text>
                                 </Pressable>
                               </>
-                            ) : null}
+                            ) : (
+                              <Pressable
+                                style={styles.commentActionBtn}
+                                onPress={() => reportContent('comment', comment.id)}
+                              >
+                                <Text style={styles.commentActionText}>Reportar</Text>
+                              </Pressable>
+                            )}
                           </View>
                         </View>
                       </View>
@@ -1411,7 +1563,7 @@ export default function CommunityScreen() {
                   );
                 };
 
-                const authorName = profilesById[post.user_id]?.name ?? (post.user_id === userId ? 'Tú' : 'Usuario');
+                const authorName = getCommunityName(post.user_id, post.user_id === userId ? 'Tu' : 'Usuario');
                 const primaryComment = postComments.find((item) => item.user_id === post.user_id)?.content ?? '';
                 const totalComments = (commentsByPost[post.id] ?? []).length;
                 const latestCommentPreview = postComments.length > 0
@@ -1435,9 +1587,9 @@ export default function CommunityScreen() {
                         { backgroundColor: getAvatarFallbackColor(post.user_id) },
                       ]}
                     >
-                      {profilesById[post.user_id]?.avatar_url ? (
+                      {getCommunityAvatar(post.user_id) ? (
                         <Image
-                          source={{ uri: profilesById[post.user_id].avatar_url as string }}
+                          source={{ uri: getCommunityAvatar(post.user_id) as string }}
                           style={styles.avatarImage}
                         />
                       ) : (
@@ -1475,6 +1627,19 @@ export default function CommunityScreen() {
                           {severityMeta[post.severity ?? 'informacion'].label}
                         </Text>
                       </View>
+                      {post.moderation_status && post.moderation_status !== 'published' ? (
+                        <>
+                          <View style={styles.moderationBadge}>
+                            <Ionicons name="time-outline" size={12} color="#fbbf24" />
+                            <Text style={styles.moderationBadgeText}>
+                              {MODERATION_LABELS[post.moderation_status]}
+                            </Text>
+                          </View>
+                          {post.moderation_reason ? (
+                            <Text style={styles.moderationReasonText}>{post.moderation_reason}</Text>
+                          ) : null}
+                        </>
+                      ) : null}
                       <Pressable
                         style={({ pressed }) => [styles.postMenuBtn, pressed && { opacity: 0.8 }]}
                         onPress={() => openPostMenu(post)}
@@ -1527,6 +1692,15 @@ export default function CommunityScreen() {
                       <Ionicons name="chatbubble-outline" size={18} color="rgba(226,232,240,0.88)" />
                       <Text style={styles.socialActionText}>{totalComments}</Text>
                     </Pressable>
+                    {post.user_id !== userId ? (
+                      <Pressable
+                        onPress={() => reportContent('post', post.id)}
+                        style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
+                      >
+                        <Ionicons name="flag-outline" size={18} color="rgba(226,232,240,0.88)" />
+                        <Text style={styles.socialActionText}>Reportar</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
 
                   <View style={styles.commentsWrap}>
@@ -1647,6 +1821,91 @@ export default function CommunityScreen() {
       {/* FAB removido: el botón "+" en el header (titleBlock) abre el composer. */}
 
       <Modal
+        visible={isLoggedIn && notificationTrayOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNotificationTrayOpen(false)}
+      >
+        <View style={[styles.overlaySheet, styles.notificationOverlaySheet]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setNotificationTrayOpen(false)} />
+          <View style={styles.notificationTrayCard}>
+            <View style={styles.notificationTrayHandle} />
+            <View style={styles.notificationTrayHeader}>
+              <View>
+                <Text style={styles.notificationTrayKicker}>Comunidad</Text>
+                <Text style={styles.notificationTrayTitle}>Bandeja de notificaciones</Text>
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.notificationCloseBtn, pressed && { opacity: 0.75 }]}
+                onPress={() => setNotificationTrayOpen(false)}
+              >
+                <Ionicons name="close" size={18} color="#e2e8f0" />
+              </Pressable>
+            </View>
+
+            <View style={styles.notificationPrefsRow}>
+              <View style={[styles.notificationPrefPill, accountPreferences.communityMentions && styles.notificationPrefPillActive]}>
+                <Ionicons
+                  name="chatbubble-ellipses-outline"
+                  size={13}
+                  color={accountPreferences.communityMentions ? '#0c1222' : 'rgba(226,232,240,0.72)'}
+                />
+                <Text style={[styles.notificationPrefText, accountPreferences.communityMentions && styles.notificationPrefTextActive]}>
+                  Comentarios
+                </Text>
+              </View>
+            </View>
+
+            {communityNotifications.length === 0 ? (
+              <View style={styles.notificationEmptyState}>
+                <View style={styles.notificationEmptyIcon}>
+                  <Ionicons name="notifications-off-outline" size={26} color={ACCENT} />
+                </View>
+                <Text style={styles.notificationEmptyTitle}>Todo tranquilo por ahora</Text>
+                <Text style={styles.notificationEmptyText}>
+                  Cuando haya alertas, comentarios o actividad en tus publicaciones, apareceran aqui.
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.notificationList}
+                contentContainerStyle={styles.notificationListContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {communityNotifications.map((item) => (
+                  <Pressable
+                    key={item.id}
+                    style={({ pressed }) => [styles.notificationItem, pressed && { opacity: 0.86 }]}
+                    onPress={() => openNotificationTarget(item)}
+                  >
+                    <View style={[styles.notificationItemIcon, { borderColor: item.accent }]}>
+                      <Ionicons name={item.icon as any} size={18} color={item.accent} />
+                    </View>
+                    <View style={styles.notificationItemBody}>
+                      <View style={styles.notificationItemTop}>
+                        <Text style={styles.notificationItemTitle} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.notificationItemTime}>
+                          {formatNotificationTime(item.createdAt)}
+                        </Text>
+                      </View>
+                      <Text style={styles.notificationItemMessage} numberOfLines={2}>
+                        {item.message}
+                      </Text>
+                    </View>
+                    {item.postId ? (
+                      <Ionicons name="chevron-forward" size={16} color="rgba(148,163,184,0.8)" />
+                    ) : null}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={isLoggedIn && filterModalOpen}
         transparent
         animationType="fade"
@@ -1656,6 +1915,30 @@ export default function CommunityScreen() {
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setFilterModalOpen(false)} />
           <View style={styles.filterCard}>
             <Text style={styles.filterTitle}>Filtrar publicaciones</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.mineFilterRow,
+                showOnlyMyPosts && styles.mineFilterRowActive,
+                pressed && { opacity: 0.86 },
+              ]}
+              onPress={() => setShowOnlyMyPosts((prev) => !prev)}
+            >
+              <View style={styles.mineFilterIcon}>
+                <Ionicons
+                  name={showOnlyMyPosts ? 'checkmark-circle' : 'person-circle-outline'}
+                  size={20}
+                  color={showOnlyMyPosts ? '#0c1222' : ACCENT}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.mineFilterTitle, showOnlyMyPosts && styles.mineFilterTitleActive]}>
+                  Mis publicaciones
+                </Text>
+                <Text style={[styles.mineFilterSub, showOnlyMyPosts && styles.mineFilterSubActive]}>
+                  Ver solo lo que publicaste tu
+                </Text>
+              </View>
+            </Pressable>
             <View style={styles.filterRow}>
               {(['todas', 'grave', 'alerta', 'informacion'] as const).map((item) => (
                 <Pressable
@@ -1670,20 +1953,6 @@ export default function CommunityScreen() {
                   <Text style={styles.filterPillText}>{item[0].toUpperCase() + item.slice(1)}</Text>
                 </Pressable>
               ))}
-            </View>
-            <View style={styles.filterSortRow}>
-              <Pressable
-                style={({ pressed }) => [styles.sortBtn, feedSortMode === 'priority' && styles.sortBtnActive, pressed && { opacity: 0.85 }]}
-                onPress={() => setFeedSortMode('priority')}
-              >
-                <Text style={styles.sortBtnText}>Prioridad</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.sortBtn, feedSortMode === 'recent' && styles.sortBtnActive, pressed && { opacity: 0.85 }]}
-                onPress={() => setFeedSortMode('recent')}
-              >
-                <Text style={styles.sortBtnText}>Recientes</Text>
-              </Pressable>
             </View>
           </View>
         </View>
@@ -2047,7 +2316,7 @@ const styles = StyleSheet.create({
     width: 340,
     height: 340,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.24)',
+    backgroundColor: premiumColors.auroraAqua,
     zIndex: 0,
     pointerEvents: 'none',
   },
@@ -2058,7 +2327,7 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    backgroundColor: premiumColors.auroraTeal,
     zIndex: 0,
     pointerEvents: 'none',
   },
@@ -2083,6 +2352,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 14,
     marginBottom: 18,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerNotifyBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: 'rgba(8,13,28,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fb7185',
+    borderWidth: 2,
+    borderColor: '#08111f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  notificationBadgeText: {
+    color: '#fff1f2',
+    fontSize: 9,
+    fontWeight: '900',
   },
   headerNewBtn: {
     width: 44,
@@ -2306,6 +2610,89 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginHorizontal: -4,
   },
+  communityPrefsCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.2)',
+    backgroundColor: 'rgba(8,13,28,0.78)',
+    padding: 14,
+    gap: 12,
+    ...premiumShadow('medium'),
+  },
+  communityPrefsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  communityPrefsIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    position: 'relative',
+  },
+  communityPrefsBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#fb7185',
+    borderWidth: 2,
+    borderColor: '#08111f',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  communityPrefsBadgeText: {
+    color: '#fff1f2',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+  communityPrefsTitle: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  communityPrefsSub: {
+    color: 'rgba(148,163,184,0.82)',
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  communityPrefsChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  communityPrefsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  communityPrefsChipActive: {
+    backgroundColor: ACCENT,
+    borderColor: 'rgba(255,255,255,0.34)',
+  },
+  communityPrefsChipText: {
+    color: 'rgba(226,232,240,0.78)',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  communityPrefsChipTextActive: {
+    color: '#0c1222',
+  },
   feedSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2322,6 +2709,34 @@ const styles = StyleSheet.create({
     color: 'rgba(148,163,184,0.86)',
     fontSize: 11,
     marginTop: 2,
+  },
+  feedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  myPostsBtn: {
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.36)',
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  myPostsBtnActive: {
+    backgroundColor: ACCENT,
+    borderColor: 'rgba(255,255,255,0.38)',
+  },
+  myPostsBtnText: {
+    color: ACCENT,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  myPostsBtnTextActive: {
+    color: '#0c1222',
   },
   feedFilterBtn: {
     width: 36,
@@ -2396,17 +2811,13 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   postCard: {
-    backgroundColor: 'rgba(15,23,42,0.78)',
+    backgroundColor: 'rgba(8,13,28,0.82)',
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.16)',
+    borderColor: 'rgba(125,211,252,0.18)',
     padding: 16,
     gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 6,
+    ...premiumShadow('medium'),
     overflow: 'hidden',
   },
   feedHeader: {
@@ -2470,6 +2881,28 @@ const styles = StyleSheet.create({
   feedBadgeText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  moderationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(251,191,36,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.45)',
+  },
+  moderationBadgeText: {
+    color: '#fde68a',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  moderationReasonText: {
+    color: '#fde68a',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
   },
   postMenuBtn: {
     width: 30,
@@ -2727,6 +3160,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
+  notificationOverlaySheet: {
+    justifyContent: 'flex-end',
+    paddingHorizontal: 14,
+    paddingBottom: 18,
+  },
   filterCard: {
     backgroundColor: 'rgba(12,18,34,0.96)',
     borderRadius: 20,
@@ -2739,6 +3177,200 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     fontSize: 16,
     fontWeight: '700',
+  },
+  notificationTrayCard: {
+    maxHeight: '78%',
+    backgroundColor: 'rgba(8,14,30,0.98)',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.28)',
+    padding: 16,
+    gap: 14,
+    ...premiumShadow('strong'),
+  },
+  notificationTrayHandle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(148,163,184,0.5)',
+  },
+  notificationTrayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationTrayKicker: {
+    color: 'rgba(125,211,252,0.95)',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+  },
+  notificationTrayTitle: {
+    marginTop: 2,
+    color: '#f8fafc',
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  notificationCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  notificationPrefsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  notificationPrefPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  notificationPrefPillActive: {
+    backgroundColor: ACCENT,
+    borderColor: 'rgba(255,255,255,0.34)',
+  },
+  notificationPrefText: {
+    color: 'rgba(226,232,240,0.78)',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  notificationPrefTextActive: {
+    color: '#0c1222',
+  },
+  notificationEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 18,
+  },
+  notificationEmptyIcon: {
+    width: 58,
+    height: 58,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    marginBottom: 14,
+  },
+  notificationEmptyTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  notificationEmptyText: {
+    marginTop: 7,
+    color: 'rgba(203,213,225,0.74)',
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
+  notificationList: {
+    maxHeight: 430,
+  },
+  notificationListContent: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.055)',
+    padding: 12,
+  },
+  notificationItemIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1,
+  },
+  notificationItemBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notificationItemTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notificationItemTitle: {
+    flex: 1,
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  notificationItemTime: {
+    color: 'rgba(148,163,184,0.82)',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  notificationItemMessage: {
+    marginTop: 4,
+    color: 'rgba(203,213,225,0.78)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  mineFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    padding: 12,
+  },
+  mineFilterRowActive: {
+    backgroundColor: ACCENT,
+    borderColor: 'rgba(255,255,255,0.38)',
+  },
+  mineFilterIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(56,189,248,0.12)',
+  },
+  mineFilterTitle: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  mineFilterTitleActive: {
+    color: '#0c1222',
+  },
+  mineFilterSub: {
+    color: 'rgba(203,213,225,0.72)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  mineFilterSubActive: {
+    color: 'rgba(12,18,34,0.72)',
   },
   filterRow: {
     flexDirection: 'row',
@@ -2760,28 +3392,6 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
     fontSize: 12,
     fontWeight: '600',
-  },
-  filterSortRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  sortBtn: {
-    flex: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-    paddingVertical: 10,
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
-  },
-  sortBtnActive: {
-    borderColor: 'rgba(56,189,248,0.5)',
-    backgroundColor: 'rgba(56,189,248,0.16)',
-  },
-  sortBtnText: {
-    color: '#e2e8f0',
-    fontSize: 12,
-    fontWeight: '700',
   },
   reactionCard: {
     backgroundColor: 'rgba(12,18,34,0.96)',
@@ -3015,6 +3625,20 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     maxWidth: '100%',
     flexShrink: 1,
+  },
+  commentModerationBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(251,191,36,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.4)',
+  },
+  commentModerationBadgeText: {
+    color: '#fde68a',
+    fontSize: 10,
+    fontWeight: '800',
   },
   commentDate: {
     color: 'rgba(255,255,255,0.45)',

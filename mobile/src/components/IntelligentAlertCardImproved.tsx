@@ -14,39 +14,45 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { IntelligentAlert } from '../hooks/useIntelligentAlerts';
+import { premiumColors, premiumRadii, premiumShadow } from '../theme/premium';
 
 interface Props {
   alert: IntelligentAlert;
   onMarkAsRead: (id: string) => void;
   onProvideFeedback: (id: string, feedback: 'accurate' | 'false_positive') => void;
+  canProvideFeedback?: boolean;
 }
 
 const RISK_CONFIG = {
   low: {
-    bg: '#DCFCE7',
-    border: '#22C55E',
+    bg: 'rgba(52,211,153,0.12)',
+    border: premiumColors.success,
     icon: 'checkmark-circle',
+    glow: 'rgba(52,211,153,0.18)',
     emoji: '🟢',
     title: 'Bajo Riesgo',
   },
   medium: {
-    bg: '#FEF3C7',
-    border: '#F59E0B',
+    bg: 'rgba(251,191,36,0.12)',
+    border: premiumColors.warning,
     icon: 'alert-circle',
+    glow: 'rgba(251,191,36,0.18)',
     emoji: '🟡',
     title: 'Riesgo Medio',
   },
   high: {
-    bg: '#FED7AA',
-    border: '#F97316',
+    bg: 'rgba(251,146,60,0.14)',
+    border: '#fb923c',
     icon: 'warning',
+    glow: 'rgba(251,146,60,0.19)',
     emoji: '🟠',
     title: 'Alto Riesgo',
   },
   severe: {
-    bg: '#FEE2E2',
-    border: '#EF4444',
+    bg: 'rgba(251,113,133,0.14)',
+    border: premiumColors.danger,
     icon: 'alert-circle',
+    glow: 'rgba(251,113,133,0.2)',
     emoji: '🔴',
     title: 'Riesgo Severo',
   },
@@ -100,6 +106,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
   alert,
   onMarkAsRead,
   onProvideFeedback,
+  canProvideFeedback = true,
 }) => {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [feedbackProvided, setFeedbackProvided] = useState<'accurate' | 'false_positive' | null>(null);
@@ -133,7 +140,8 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
         style={[
           styles.card,
           {
-            backgroundColor: colors.bg,
+            backgroundColor: config.bg,
+            borderColor: `${config.border}55`,
             borderLeftColor: config.border,
             opacity: alert.is_read ? 0.6 : 1,
           },
@@ -143,7 +151,9 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
         {/* Header con emoji, nivel de riesgo y hora */}
         <View style={styles.cardHeader}>
           <View style={styles.headerLeft}>
-            <Text style={styles.emojiLarge}>{config.emoji}</Text>
+            <View style={[styles.riskIconOrb, { backgroundColor: config.glow }]}>
+              <Ionicons name={config.icon as any} size={22} color={config.border} />
+            </View>
             <View style={styles.headerInfo}>
               <Text style={[styles.riskLevelBold, { color: config.border }]}>
                 {config.title}
@@ -199,9 +209,11 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
         <View style={styles.modalOverlay}>
           <SafeAreaView style={styles.modalContent}>
             {/* Header del modal */}
-            <View style={[styles.modalHeader, { backgroundColor: config.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: `${config.border}55` }]}>
               <View style={styles.modalHeaderLeft}>
-                <Text style={styles.modalHeaderEmoji}>{config.emoji}</Text>
+                <View style={[styles.modalHeaderIconOrb, { backgroundColor: config.glow }]}>
+                  <Ionicons name={config.icon as any} size={24} color={config.border} />
+                </View>
                 <View>
                   <Text style={styles.modalTitle}>{config.title}</Text>
                   <Text style={styles.modalSubtitle}>{timeAgo}</Text>
@@ -233,7 +245,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
                     <MaterialCommunityIcons
-                      name={getWeatherIcon(alert.weather_code)}
+                      name={getWeatherIcon(alert.weather_code) as any}
                       size={20}
                       color="#F59E0B"
                     />
@@ -246,7 +258,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
                       <Text style={styles.conditionValue}>{alert.temperature}°C</Text>
                     </View>
                     <View style={styles.conditionBox}>
-                      <MaterialCommunityIcons name="wind" size={18} color="#06B6D4" />
+                      <MaterialCommunityIcons name={'wind' as any} size={18} color="#06B6D4" />
                       <Text style={styles.conditionLabel}>Viento</Text>
                       <Text style={styles.conditionValue}>{alert.wind_speed} km/h</Text>
                     </View>
@@ -274,7 +286,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
               {alert.recommended_actions.length > 0 && (
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
-                    <MaterialCommunityIcons name="checklist" size={20} color="#10B981" />
+                    <MaterialCommunityIcons name={'checklist' as any} size={20} color="#10B981" />
                     <Text style={styles.sectionTitle}>Acciones Recomendadas</Text>
                   </View>
                   <View style={styles.actionsContainer}>
@@ -348,6 +360,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
               )}
 
               {/* Feedback */}
+              {canProvideFeedback ? (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <MaterialCommunityIcons name="comment-question" size={20} color="#06B6D4" />
@@ -399,6 +412,7 @@ export const IntelligentAlertCardImproved: React.FC<Props> = ({
                   </Pressable>
                 </View>
               </View>
+              ) : null}
 
               <View style={styles.spacer} />
             </ScrollView>
@@ -427,24 +441,16 @@ function getTimeAgo(date: Date): string {
   return `Hace ${days}d`;
 }
 
-const colors = {
-  bg: '#F9FAFB',
-};
-
 const styles = StyleSheet.create({
   // CARD COMPACTA
   card: {
-    marginHorizontal: 12,
-    marginVertical: 8,
-    padding: 12,
-    borderRadius: 12,
+    marginHorizontal: 4,
+    marginVertical: 6,
+    padding: 14,
+    borderRadius: premiumRadii.xl,
     borderLeftWidth: 4,
-    backgroundColor: colors.bg,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
-    elevation: 2,
+    borderWidth: 1,
+    ...premiumShadow('medium'),
   },
   cardHeader: {
     flexDirection: 'row',
@@ -457,21 +463,27 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'flex-start',
   },
-  emojiLarge: {
-    fontSize: 28,
+  riskIconOrb: {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   headerInfo: {
     flex: 1,
   },
   riskLevelBold: {
     fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 0,
   },
   locationCompact: {
     fontSize: 11,
-    color: '#666',
+    color: premiumColors.inkSubtle,
     marginTop: 2,
   },
   timeColumn: {
@@ -479,19 +491,19 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
-    color: '#999',
+    color: premiumColors.inkSubtle,
   },
   newDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#EF4444',
+    backgroundColor: premiumColors.danger,
     marginTop: 4,
   },
   reasonCompact: {
     fontSize: 12,
     lineHeight: 16,
-    color: '#555',
+    color: premiumColors.inkMuted,
     marginBottom: 8,
   },
   actionsCompactContainer: {
@@ -503,15 +515,17 @@ const styles = StyleSheet.create({
   actionCompactBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f0f0',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: premiumRadii.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
     gap: 4,
   },
   actionCompactText: {
     fontSize: 10,
-    color: '#555',
+    color: premiumColors.inkMuted,
   },
   expandArrow: {
     alignSelf: 'flex-end',
@@ -521,47 +535,53 @@ const styles = StyleSheet.create({
   // MODAL
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: 'rgba(2,6,18,0.74)',
     justifyContent: 'flex-end',
     paddingTop: 24,
   },
   modalContent: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    backgroundColor: premiumColors.surfaceStrong,
+    borderTopLeftRadius: premiumRadii.xxl,
+    borderTopRightRadius: premiumRadii.xxl,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.2)',
     marginTop: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 10,
+    ...premiumShadow('strong'),
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: premiumRadii.xxl,
+    borderTopRightRadius: premiumRadii.xxl,
+    borderBottomWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.035)',
   },
   modalHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
-  modalHeaderEmoji: {
-    fontSize: 28,
+  modalHeaderIconOrb: {
+    width: 46,
+    height: 46,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#fff',
+    color: premiumColors.ink,
   },
   modalSubtitle: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.8)',
+    color: premiumColors.inkSubtle,
     marginTop: 2,
   },
   modalScroll: {
@@ -577,7 +597,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: 'rgba(255,255,255,0.09)',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -588,11 +608,11 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#333',
+    color: premiumColors.ink,
   },
   sectionContent: {
     fontSize: 13,
-    color: '#666',
+    color: premiumColors.inkMuted,
     lineHeight: 18,
   },
 
@@ -603,34 +623,36 @@ const styles = StyleSheet.create({
   },
   conditionBox: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: premiumRadii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
   },
   conditionLabel: {
     fontSize: 10,
-    color: '#999',
+    color: premiumColors.inkSubtle,
     marginTop: 6,
     marginBottom: 4,
   },
   conditionValue: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#333',
+    color: premiumColors.ink,
   },
 
   // ANÁLISIS
   analysisBox: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: premiumRadii.md,
     borderLeftWidth: 3,
   },
   analysisText: {
     fontSize: 12,
     lineHeight: 17,
-    color: '#555',
+    color: premiumColors.inkMuted,
   },
 
   // ACCIONES MEJORADAS
@@ -642,8 +664,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 12,
-    backgroundColor: '#f9f9f9',
-    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: premiumRadii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
     gap: 12,
   },
   actionIconCircle: {
@@ -656,7 +680,7 @@ const styles = StyleSheet.create({
   actionFullText: {
     flex: 1,
     fontSize: 12,
-    color: '#333',
+    color: premiumColors.inkMuted,
     lineHeight: 16,
     fontWeight: '500',
   },
@@ -668,13 +692,15 @@ const styles = StyleSheet.create({
   },
   patternItem: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     padding: 10,
-    borderRadius: 8,
+    borderRadius: premiumRadii.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   patternLabel: {
     fontSize: 10,
-    color: '#999',
+    color: premiumColors.inkSubtle,
     marginBottom: 6,
   },
   patternValue: {
@@ -685,13 +711,13 @@ const styles = StyleSheet.create({
   patternValueText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#333',
+    color: premiumColors.ink,
   },
 
   // FEEDBACK
   feedbackQuestion: {
     fontSize: 12,
-    color: '#666',
+    color: premiumColors.inkMuted,
     marginBottom: 12,
   },
   feedbackButtonsRow: {
@@ -704,42 +730,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
-    borderRadius: 10,
+    borderRadius: premiumRadii.md,
     borderWidth: 1.5,
-    borderColor: '#e0e0e0',
-    backgroundColor: '#fafafa',
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     gap: 8,
   },
   feedbackBtnAccurate: {
     borderColor: '#10B981',
-    backgroundColor: '#f0fdf4',
+    backgroundColor: 'rgba(52,211,153,0.12)',
   },
   feedbackBtnFalse: {
     borderColor: '#EF4444',
-    backgroundColor: '#fef2f2',
+    backgroundColor: 'rgba(251,113,133,0.12)',
   },
   feedbackBtnText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#666',
+    color: premiumColors.inkMuted,
   },
   feedbackBtnTextActive: {
-    color: '#333',
+    color: premiumColors.ink,
   },
 
   // FOOTER
   closeButton: {
     paddingVertical: 14,
     paddingHorizontal: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: 'rgba(255,255,255,0.1)',
     alignItems: 'center',
   },
   closeButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: premiumColors.accentSoft,
   },
 
   spacer: {

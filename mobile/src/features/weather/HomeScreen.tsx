@@ -19,9 +19,18 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAccess } from '../../core/access/AccessContext';
 import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
+import { API_URL } from '../../core/api/weatherApi';
+import { MapView, Marker, UrlTile } from '../../components/NativeWeatherMap';
+import {
+  applyLocationPrecision,
+  type AccountPreferences,
+  useAccountPreferences,
+} from '../../core/preferences/accountPreferences';
 import type { City } from '../../types';
+import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -88,12 +97,12 @@ const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
   99: { label: 'Tormenta con granizo fuerte',  icon: '⛈️' },
 };
 
-const SURFACE_DEEP = '#0b1220';
-const SURFACE_DEEPER = '#060a14';
-const ACCENT = '#38bdf8';
-const ACCENT_SOFT = '#7dd3fc';
-const GLASS_BG = 'rgba(10,18,32,0.45)';
-const GLASS_BORDER = 'rgba(255,255,255,0.12)';
+const SURFACE_DEEP = premiumColors.surface;
+const SURFACE_DEEPER = '#030712';
+const ACCENT = premiumColors.accent;
+const ACCENT_SOFT = premiumColors.accentSoft;
+const GLASS_BG = 'rgba(8,13,28,0.58)';
+const GLASS_BORDER = premiumColors.glassBorder;
 const RAIN_LIGHT = '#3b82f6';
 const RAIN_MODERATE = '#8b5cf6';
 const RAIN_STRONG = '#d946ef';
@@ -196,9 +205,7 @@ function gpsLocationIconProps() {
 }
 
 async function apiFetchWeather(latitude: number, longitude: number): Promise<WeatherState> {
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (!apiUrl) throw new Error('API backend no configurada');
-  const res = await fetch(`${apiUrl}/clima?lat=${latitude}&lon=${longitude}`);
+  const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}`);
   if (!res.ok) throw new Error('No se pudo obtener el clima');
   const data = await res.json();
   const current = data?.current;
@@ -255,9 +262,7 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
 }
 
 async function apiFetchAddress(latitude: number, longitude: number): Promise<string | null> {
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (!apiUrl) return null;
-  const res = await fetch(`${apiUrl}/geocode?lat=${latitude}&lon=${longitude}`);
+  const res = await fetch(`${API_URL}/geocode?lat=${latitude}&lon=${longitude}`);
   if (!res.ok) return null;
   const data = await res.json();
   return data?.display_name ?? null;
@@ -268,11 +273,9 @@ async function persistLocation(
   longitude: number,
   payload: { address: string | null; temperature: number; weatherCode: number; windSpeed: number }
 ) {
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (!apiUrl) return;
   try {
     const token = await getToken();
-    await fetch(`${apiUrl}/location`, {
+    await fetch(`${API_URL}/location`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -407,18 +410,6 @@ function buildWeeklyForecast(
   });
 }
 
-const MapModule = (() => {
-  try {
-    return require('react-native-maps');
-  } catch {
-    return null;
-  }
-})();
-
-const MapView = MapModule?.default ?? null;
-const UrlTile = MapModule?.UrlTile ?? null;
-const Marker = MapModule?.Marker ?? null;
-
 function GlassCard({
   children,
   style,
@@ -506,18 +497,22 @@ function WeatherSlide({
   slide,
   onRefresh,
   isGPS,
+  preferences,
 }: {
   slide: SlideData;
   onRefresh?: () => void;
   isGPS: boolean;
+  preferences: AccountPreferences;
 }) {
   const insets = useSafeAreaInsets();
+  const { hasEntitlement } = useAccess();
+  const canUseAdvancedWeather = hasEntitlement('weather.comparisons');
   const info = weatherInfo(slide.weather?.weatherCode);
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
   const mapScale = useRef(new Animated.Value(0)).current;
-  const [mapExpanded, setMapExpanded] = useState(true);
+  const [mapExpanded, setMapExpanded] = useState(false);
   const mapRef = useRef<any>(null);
   const [mapRegion, setMapRegion] = useState(WORLD_REGION);
   const hourly = useMemo(() => {
@@ -544,14 +539,16 @@ function WeatherSlide({
   const [radarIndex, setRadarIndex] = useState(0);
   const owmKey = process.env.EXPO_PUBLIC_OWM_API_KEY;
   const tempTileUrl = useMemo(() => {
+    if (preferences.dataSaver) return null;
     if (!owmKey) return null;
     return `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${owmKey}`;
-  }, [owmKey]);
+  }, [preferences.dataSaver, owmKey]);
   const radarTileUrl = useMemo(() => {
+    if (preferences.dataSaver) return null;
     const path = radarFrames[radarIndex];
     if (!path) return null;
     return `https://tilecache.rainviewer.com/v2/radar/${path}/256/{z}/{x}/{y}/2/1_1.png`;
-  }, [radarFrames, radarIndex]);
+  }, [preferences.dataSaver, radarFrames, radarIndex]);
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -594,11 +591,22 @@ function WeatherSlide({
   };
 
   useEffect(() => {
+    if (!canUseAdvancedWeather) {
+      setRadarFrames([]);
+      setRadarIndex(0);
+      return;
+    }
+
     let frameTimer: ReturnType<typeof setInterval> | null = null;
     let refreshTimer: ReturnType<typeof setInterval> | null = null;
     let isMounted = true;
 
     const loadRadarFrames = async () => {
+      if (preferences.dataSaver) {
+        setRadarFrames([]);
+        setRadarIndex(0);
+        return;
+      }
       try {
         const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
         if (!res.ok) return;
@@ -630,7 +638,7 @@ function WeatherSlide({
       if (frameTimer) clearInterval(frameTimer);
       if (refreshTimer) clearInterval(refreshTimer);
     };
-  }, [radarFrames.length]);
+  }, [canUseAdvancedWeather, preferences.dataSaver, radarFrames.length]);
 
   useEffect(() => {
     Animated.timing(mapScale, {
@@ -679,7 +687,7 @@ function WeatherSlide({
           { opacity: isCloudy || isRain ? 1 : 0.4, transform: [{ translateY: cloudTranslate }] },
         ]}
       />
-      <RainLayer active={isRain} />
+      <RainLayer active={isRain && !preferences.dataSaver} />
 
       <Animated.ScrollView
         style={{ width: SCREEN_WIDTH }}
@@ -744,7 +752,7 @@ function WeatherSlide({
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryTitle}>Resumen inteligente</Text>
             <View style={styles.summaryChip}>
-              <Text style={styles.summaryChipText}>Premium</Text>
+              <Text style={styles.summaryChipText}>Actual</Text>
             </View>
           </View>
           <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
@@ -761,6 +769,32 @@ function WeatherSlide({
             </View>
           </View>
         </GlassCard>
+
+        {canUseAdvancedWeather ? (
+          <>
+        {preferences.weeklySummary ? (
+          <GlassCard style={styles.weeklySummaryCard}>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryTitle}>Resumen semanal</Text>
+              <View style={styles.summaryChip}>
+                <Text style={styles.summaryChipText}>Activo</Text>
+              </View>
+            </View>
+            <Text style={styles.summaryText}>
+              Esta semana se mueve entre {weekly[0]?.min ?? '--'}° y {weekly[0]?.max ?? '--'}° hoy,
+              con tendencia de lluvia cercana al {weekly[0]?.rainChance ?? 0}%.
+            </Text>
+            <View style={styles.weeklySummaryGrid}>
+              {weekly.slice(0, 4).map((day) => (
+                <View key={day.key} style={styles.weeklySummaryItem}>
+                  <Text style={styles.weeklySummaryDay}>{day.label}</Text>
+                  <Text style={styles.weeklySummaryTemp}>{day.min}°/{day.max}°</Text>
+                  <Text style={styles.weeklySummaryRain}>{day.rainChance}% lluvia</Text>
+                </View>
+              ))}
+            </View>
+          </GlassCard>
+        ) : null}
 
         <GlassCard style={styles.hourlyCard}>
           <View style={styles.sectionHeader}>
@@ -814,7 +848,7 @@ function WeatherSlide({
               <Ionicons name="expand" size={18} color={ACCENT_SOFT} />
             </View>
             <View style={styles.mapPreview}>
-              {MapView && slide.coords ? (
+              {!preferences.dataSaver && MapView && slide.coords ? (
                 <MapView
                   style={StyleSheet.absoluteFillObject}
                   initialRegion={WORLD_REGION}
@@ -860,7 +894,9 @@ function WeatherSlide({
                 </MapView>
               ) : (
                 <View style={styles.mapFallback}>
-                  <Text style={styles.mapFallbackText}>Mapa de calor disponible</Text>
+                  <Text style={styles.mapFallbackText}>
+                    {preferences.dataSaver ? 'Ahorro de datos activo' : 'Mapa de calor disponible'}
+                  </Text>
                 </View>
               )}
               <View style={styles.mapOverlay} pointerEvents="box-none">
@@ -1027,11 +1063,26 @@ function WeatherSlide({
             <Text style={styles.infoHint}>Nivel atmosferico actual.</Text>
           </GlassCard>
         </View>
+          </>
+        ) : (
+          <GlassCard style={styles.summaryCard}>
+            <View style={styles.summaryHeader}>
+              <Text style={styles.summaryTitle}>Funciones Premium</Text>
+              <View style={styles.summaryChip}>
+                <Text style={styles.summaryChipText}>Bloqueado</Text>
+              </View>
+            </View>
+            <Text style={styles.summaryText}>
+              Suscribete para ver pronostico por horas, 10 dias, radar, indice UV,
+              humedad, presion y comparativas climaticas.
+            </Text>
+          </GlassCard>
+        )}
 
         {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
       </Animated.ScrollView>
 
-      {mapExpanded && (
+      {canUseAdvancedWeather && mapExpanded && (
         <Animated.View
           style={[
             styles.mapOverlayFullscreen,
@@ -1046,7 +1097,7 @@ function WeatherSlide({
           ]}
         >
           <View style={styles.mapFullscreenCard}>
-            {MapView && slide.coords ? (
+            {!preferences.dataSaver && MapView && slide.coords ? (
               <MapView
                 style={StyleSheet.absoluteFillObject}
                 initialRegion={WORLD_REGION}
@@ -1095,7 +1146,9 @@ function WeatherSlide({
               </MapView>
             ) : (
               <View style={styles.mapFallback}>
-                <Text style={styles.mapFallbackText}>Vista de calor completa</Text>
+                <Text style={styles.mapFallbackText}>
+                  {preferences.dataSaver ? 'Ahorro de datos activo' : 'Vista de calor completa'}
+                </Text>
               </View>
             )}
             <View style={styles.mapFullscreenOverlay} pointerEvents="box-none">
@@ -1182,6 +1235,7 @@ function WeatherSlide({
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { savedCities, removeCity } = useCities();
+  const accountPreferences = useAccountPreferences();
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -1228,24 +1282,29 @@ export default function HomeScreen() {
 
   // Cargar clima de GPS
   const loadGpsWeather = async (latitude: number, longitude: number) => {
+    const safeCoords = applyLocationPrecision(
+      latitude,
+      longitude,
+      accountPreferences.preciseLocation
+    );
     updateGpsSlide({ status: 'loading', message: '' });
     try {
       const [weather, address] = await Promise.all([
-        apiFetchWeather(latitude, longitude),
-        apiFetchAddress(latitude, longitude),
+        apiFetchWeather(safeCoords.latitude, safeCoords.longitude),
+        apiFetchAddress(safeCoords.latitude, safeCoords.longitude),
       ]);
       const cityName = address
         ? address.split(',').slice(0, 2).join(',').trim()
-        : `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`;
+        : `${safeCoords.latitude.toFixed(2)}, ${safeCoords.longitude.toFixed(2)}`;
       updateGpsSlide({
-        coords: { latitude, longitude },
+        coords: safeCoords,
         weather,
         cityName,
         updatedAt: new Date().toLocaleTimeString(),
         status: 'ready',
         message: '',
       });
-      await persistLocation(latitude, longitude, {
+      await persistLocation(safeCoords.latitude, safeCoords.longitude, {
         address,
         temperature: weather.temperature,
         weatherCode: weather.weatherCode,
@@ -1424,6 +1483,7 @@ export default function HomeScreen() {
             key={slide.key}
             slide={slide}
             isGPS={i === 0}
+            preferences={accountPreferences}
             onRefresh={
               i === 0
                 ? () => {
@@ -1471,7 +1531,7 @@ const styles = StyleSheet.create({
     width: 360,
     height: 360,
     borderRadius: 999,
-    backgroundColor: 'rgba(15,116,158,0.35)',
+    backgroundColor: premiumColors.auroraAqua,
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -1480,7 +1540,7 @@ const styles = StyleSheet.create({
     width: 360,
     height: 360,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.16)',
+    backgroundColor: premiumColors.auroraTeal,
   },
   slideRoot: {
     width: SCREEN_WIDTH,
@@ -1638,15 +1698,11 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   glassCard: {
-    borderRadius: 26,
+    borderRadius: premiumRadii.xl,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: 'rgba(125,211,252,0.18)',
     backgroundColor: GLASS_BG,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 18,
-    elevation: 4,
+    ...premiumShadow('medium'),
     overflow: 'hidden',
   },
   glassInner: {
@@ -1715,6 +1771,45 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(226,232,240,0.85)',
     fontWeight: '500',
+  },
+  weeklySummaryCard: {
+    marginBottom: 12,
+    borderColor: 'rgba(45,212,191,0.24)',
+    backgroundColor: 'rgba(15,23,42,0.78)',
+  },
+  weeklySummaryGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  weeklySummaryItem: {
+    flex: 1,
+    minHeight: 82,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  weeklySummaryDay: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    color: 'rgba(125,211,252,0.94)',
+    textTransform: 'uppercase',
+  },
+  weeklySummaryTemp: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f8fafc',
+  },
+  weeklySummaryRain: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(203,213,225,0.78)',
   },
   sectionHeader: {
     marginBottom: 14,

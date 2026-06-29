@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -15,10 +16,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_URL } from '../../core/api/weatherApi';
 import { getSession, supabase } from '../../core/auth/supabaseClient';
 import type { Alert as WeatherAlert } from '../../types';
 import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
 import { IntelligentAlertCardImproved } from '../../components/IntelligentAlertCardImproved';
+import { PremiumReveal } from '../../components/PremiumMotion';
 
 const GLASS_BG     = 'rgba(255,255,255,0.08)';
 const GLASS_BORDER = 'rgba(255,255,255,0.14)';
@@ -135,9 +138,13 @@ export default function AlertsScreen() {
     loading: intelligentLoading,
     markAsRead: markIntelligentAsRead,
     provideFeedback: provideIntelligentFeedback,
+    fetchAlerts: reloadIntelligentAlerts,
+    analyzeLocation,
+    canUseAdvancedAlerts,
   } = useIntelligentAlerts();
 
   const [formOpen, setFormOpen] = useState(false);
+  const [analyzingLocation, setAnalyzingLocation] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [reloadingEvidence, setReloadingEvidence] = useState(false);
 
@@ -194,9 +201,7 @@ export default function AlertsScreen() {
 
   const markAsRead = async (alertId: string) => {
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) return;
-      await fetch(`${apiUrl}/alerts/${alertId}/read`, { method: 'PATCH' });
+      await fetch(`${API_URL}/alerts/${alertId}/read`, { method: 'PATCH' });
       setAlerts((prev) => prev.map((a) => (a.id === alertId ? { ...a, is_read: true } : a)));
     } catch (error) {
       console.warn('Error marking alert as read:', error);
@@ -257,6 +262,52 @@ export default function AlertsScreen() {
     setDescription('');
     setSeverity('warning');
     setImageUri(null);
+  };
+
+  const analyzeCurrentLocation = async () => {
+    if (analyzingLocation) return;
+
+    setAnalyzingLocation(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        NativeAlert.alert(
+          'Permiso requerido',
+          'Debes permitir acceso a tu ubicacion para generar una alerta personalizada.'
+        );
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+
+      let address: string | null = null;
+      try {
+        const places = await Location.reverseGeocodeAsync({ latitude, longitude });
+        const place = places[0];
+        address = place
+          ? [place.city, place.region, place.country].filter(Boolean).join(', ') || null
+          : null;
+      } catch {
+        address = null;
+      }
+
+      await analyzeLocation({ latitude, longitude, address });
+      await reloadIntelligentAlerts();
+
+      NativeAlert.alert(
+        'Analisis listo',
+        'CliMax genero una alerta inteligente con recomendaciones para tu ubicacion actual.'
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo analizar la ubicacion.';
+      NativeAlert.alert('Error', message);
+    } finally {
+      setAnalyzingLocation(false);
+    }
   };
 
   const createEvidence = async () => {
@@ -409,7 +460,7 @@ export default function AlertsScreen() {
         ]}
       >
         {/* ── Encabezado ── */}
-        <View style={styles.header}>
+        <PremiumReveal style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={styles.headerTitleBlock}>
               <Text style={styles.eyebrow}>Panel</Text>
@@ -426,11 +477,37 @@ export default function AlertsScreen() {
               ? `${unreadCount} alerta${unreadCount > 1 ? 's' : ''} sin leer`
               : 'Sin alertas pendientes'}
           </Text>
-        </View>
+        </PremiumReveal>
 
         {/* ── Alertas inteligentes de Groq ── */}
+        <PremiumReveal delay={45} style={styles.aiActionCard}>
+          <View style={styles.aiActionTextBlock}>
+            <View style={styles.aiActionTitleRow}>
+              <Ionicons name="sparkles" size={17} color={ACCENT} />
+              <Text style={styles.aiActionTitle}>IA meteorologica</Text>
+            </View>
+            <Text style={styles.aiActionText}>
+              Analiza tu ubicacion actual y genera recomendaciones personalizadas.
+            </Text>
+          </View>
+          <Pressable
+            style={[styles.aiActionButton, analyzingLocation && styles.aiActionButtonDisabled]}
+            onPress={analyzeCurrentLocation}
+            disabled={analyzingLocation}
+          >
+            {analyzingLocation ? (
+              <ActivityIndicator size="small" color="#082f49" />
+            ) : (
+              <Ionicons name="locate-outline" size={18} color="#082f49" />
+            )}
+            <Text style={styles.aiActionButtonText}>
+              {analyzingLocation ? 'Analizando...' : 'Analizar ahora'}
+            </Text>
+          </Pressable>
+        </PremiumReveal>
+
         {intelligentAlerts && intelligentAlerts.length > 0 && (
-          <View style={styles.intelligentAlertsSection}>
+          <PremiumReveal delay={90} style={styles.intelligentAlertsSection}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionIconWrap}>
                 <Ionicons name="sparkles" size={18} color={ACCENT} />
@@ -449,34 +526,35 @@ export default function AlertsScreen() {
                 onProvideFeedback={(_, feedback) =>
                   provideIntelligentFeedback(alert.id as string, feedback)
                 }
+                canProvideFeedback={canUseAdvancedAlerts}
               />
             ))}
-          </View>
+          </PremiumReveal>
         )}
 
         {showingIntelligentLoading && (
-          <View style={styles.emptyCard}>
+          <PremiumReveal delay={90} style={styles.emptyCard}>
             <ActivityIndicator size="small" color={ACCENT} />
             <Text style={styles.emptyTitle}>Cargando alertas inteligentes...</Text>
             <Text style={styles.emptyText}>
               Estamos analizando las condiciones de riesgo en tu zona.
             </Text>
-          </View>
+          </PremiumReveal>
         )}
 
         {!hasAlerts && !showingIntelligentLoading && (
           /* ── Estado vacío ── */
-          <View style={styles.emptyCard}>
+          <PremiumReveal delay={90} style={styles.emptyCard}>
             <Ionicons name="notifications-outline" size={48} color="rgba(255,255,255,0.4)" />
             <Text style={styles.emptyTitle}>Sin alertas inteligentes</Text>
             <Text style={styles.emptyText}>
               Te notificaremos cuando Groq AI detecte patrones de riesgo climático en tu zona.
             </Text>
-          </View>
+          </PremiumReveal>
         )}
 
         {/* ── Recomendaciones de seguridad ── */}
-        <View style={styles.safetySection}>
+        <PremiumReveal delay={160} style={styles.safetySection}>
           <View style={styles.safetyTitleRow}>
             <View style={styles.safetyTitleIconWrap}>
               <Ionicons name="shield-checkmark-outline" size={17} color={ACCENT} />
@@ -495,7 +573,7 @@ export default function AlertsScreen() {
               </View>
             ))}
           </View>
-        </View>
+        </PremiumReveal>
 
       </ScrollView>
     </View>
@@ -589,6 +667,55 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: 'rgba(148,163,184,0.95)',
     lineHeight: 20,
+  },
+  aiActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.24)',
+    backgroundColor: 'rgba(15,23,42,0.68)',
+  },
+  aiActionTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
+  aiActionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiActionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#f8fafc',
+  },
+  aiActionText: {
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(203,213,225,0.82)',
+  },
+  aiActionButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: ACCENT,
+  },
+  aiActionButtonDisabled: {
+    opacity: 0.72,
+  },
+  aiActionButtonText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#082f49',
   },
 
   emptyCard: {

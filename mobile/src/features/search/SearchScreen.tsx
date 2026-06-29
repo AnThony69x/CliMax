@@ -19,14 +19,16 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_URL } from '../../core/api/weatherApi';
 import { useCities } from '../../core/cities/CitiesContext';
 import type { City } from '../../types';
+import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 
-const GLASS_BG     = 'rgba(255,255,255,0.08)';
-const GLASS_BORDER = 'rgba(255,255,255,0.14)';
-const SURFACE_DEEP = '#0c1222';
-const ACCENT       = '#38bdf8';
-const ACCENT_SOFT  = '#7dd3fc';
+const GLASS_BG     = premiumColors.glass;
+const GLASS_BORDER = premiumColors.glassBorder;
+const SURFACE_DEEP = premiumColors.surface;
+const ACCENT       = premiumColors.accent;
+const ACCENT_SOFT  = premiumColors.accentSoft;
 const DEBOUNCE_MS  = 350;
 const SWIPE_HINT_KEY = '@climax/search/swipe-hint-shown';
 
@@ -63,10 +65,8 @@ export default function SearchScreen() {
     setLoadingSug(true);
     debounceRef.current = setTimeout(async () => {
       try {
-        const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-        if (!apiUrl) { setLoadingSug(false); return; }
         const res = await fetch(
-          `${apiUrl}/search?city=${encodeURIComponent(trimmed)}&count=6`
+          `${API_URL}/search?city=${encodeURIComponent(trimmed)}&count=6`
         );
         if (res.ok) {
           const data = await res.json();
@@ -91,10 +91,8 @@ export default function SearchScreen() {
     setLoading(true);
     setSearched(true);
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) { setResults([]); return; }
       const res = await fetch(
-        `${apiUrl}/search?city=${encodeURIComponent(query.trim())}`
+        `${API_URL}/search?city=${encodeURIComponent(query.trim())}`
       );
       if (res.ok) {
         const data = await res.json();
@@ -305,7 +303,7 @@ export default function SearchScreen() {
             ) : results.length === 0 ? (
               <View style={styles.stateBox}>
                 <Ionicons name="earth-outline" size={40} color="rgba(255,255,255,0.35)" />
-                <Text style={styles.stateText}>No se encontraron ciudades para "{query}"</Text>
+                <Text style={styles.stateText}>No se encontraron ciudades para {query}</Text>
               </View>
             ) : (
               <View style={styles.resultsList}>
@@ -498,7 +496,7 @@ const styles = StyleSheet.create({
     width: 320,
     height: 320,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.26)',
+    backgroundColor: premiumColors.auroraAqua,
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -507,7 +505,7 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    backgroundColor: premiumColors.auroraTeal,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -660,17 +658,13 @@ const styles = StyleSheet.create({
   },
   stateBox: {
     backgroundColor: GLASS_BG,
-    borderRadius: 22,
+    borderRadius: premiumRadii.xl,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
     padding: 28,
     alignItems: 'center',
     gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 14,
-    elevation: 3,
+    ...premiumShadow('medium'),
   },
   stateText: {
     fontSize: 14,
