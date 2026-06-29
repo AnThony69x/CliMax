@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\UserAccountModeration;
 use Closure;
 use GuzzleHttp\Client;
 use Illuminate\Http\JsonResponse;
@@ -27,6 +28,19 @@ class AuthenticateWithSupabase
             return response()->json([
                 'message' => 'Token de Supabase invalido o expirado.',
             ], 401);
+        }
+
+        $accountBlock = $this->activeAccountBlock((string) $user['id']);
+        if ($accountBlock) {
+            return response()->json([
+                'message' => $this->accountBlockMessage($accountBlock['status']),
+                'code' => 'account_'.$accountBlock['status'],
+                'data' => [
+                    'status' => $accountBlock['status'],
+                    'reason' => $accountBlock['reason'],
+                    'suspended_until' => $accountBlock['suspended_until'],
+                ],
+            ], 403);
         }
 
         $request->attributes->set('supabase_user', $user);
@@ -95,5 +109,44 @@ class AuthenticateWithSupabase
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /** @return array{status: string, reason: string|null, suspended_until: string|null}|null */
+    private function activeAccountBlock(string $userId): ?array
+    {
+        $moderation = UserAccountModeration::query()
+            ->where('user_id', $userId)
+            ->whereIn('status', ['suspended', 'banned', 'deleted'])
+            ->first();
+
+        if (! $moderation) {
+            return null;
+        }
+
+        if ($moderation->status === 'suspended' && $moderation->suspended_until && $moderation->suspended_until->isPast()) {
+            $moderation->update([
+                'status' => 'active',
+                'reason' => null,
+                'suspended_until' => null,
+            ]);
+
+            return null;
+        }
+
+        return [
+            'status' => $moderation->status,
+            'reason' => $moderation->reason,
+            'suspended_until' => $moderation->suspended_until?->toISOString(),
+        ];
+    }
+
+    private function accountBlockMessage(string $status): string
+    {
+        return match ($status) {
+            'suspended' => 'Tu cuenta esta suspendida temporalmente.',
+            'banned' => 'Tu cuenta fue baneada por infringir las normas de la aplicacion.',
+            'deleted' => 'Tu cuenta fue eliminada por administracion.',
+            default => 'Tu cuenta no puede acceder en este momento.',
+        };
     }
 }

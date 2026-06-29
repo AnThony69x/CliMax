@@ -38,49 +38,54 @@ class WeatherFetcherService
     {
         $baseUrl = config('services.weather.base_url', 'https://api.open-meteo.com/v1/forecast');
         $verify = config('services.weather.verify', false);
+        $timeout = (int) config('services.weather.timeout', 8);
+        $connectTimeout = (int) config('services.weather.connect_timeout', 3);
 
         try {
-            $response = Http::withOptions(['verify' => $verify])->get($baseUrl, [
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-                'current' => implode(',', [
-                    'temperature_2m',
-                    'relative_humidity_2m',
-                    'apparent_temperature',
-                    'precipitation',
-                    'rain',
-                    'showers',
-                    'snowfall',
-                    'weather_code',
-                    'cloud_cover',
-                    'pressure_msl',
-                    'surface_pressure',
-                    'wind_speed_10m',
-                    'wind_direction_10m',
-                    'wind_gusts_10m',
-                    'visibility',
-                    'uv_index',
-                    'is_day',
-                ]),
-                'hourly' => implode(',', [
-                    'temperature_2m',
-                    'precipitation_probability',
-                    'weather_code',
-                ]),
-                'daily' => implode(',', [
-                    'temperature_2m_max',
-                    'temperature_2m_min',
-                    'sunrise',
-                    'sunset',
-                    'uv_index_max',
-                    'precipitation_sum',
-                    'precipitation_probability_max',
-                    'wind_gusts_10m_max',
-                    'weather_code',
-                ]),
-                'forecast_days' => 10,
-                'timezone' => 'auto',
-            ]);
+            $response = Http::withOptions(['verify' => $verify])
+                ->connectTimeout($connectTimeout)
+                ->timeout($timeout)
+                ->get($baseUrl, [
+                    'latitude' => $latitude,
+                    'longitude' => $longitude,
+                    'current' => implode(',', [
+                        'temperature_2m',
+                        'relative_humidity_2m',
+                        'apparent_temperature',
+                        'precipitation',
+                        'rain',
+                        'showers',
+                        'snowfall',
+                        'weather_code',
+                        'cloud_cover',
+                        'pressure_msl',
+                        'surface_pressure',
+                        'wind_speed_10m',
+                        'wind_direction_10m',
+                        'wind_gusts_10m',
+                        'visibility',
+                        'uv_index',
+                        'is_day',
+                    ]),
+                    'hourly' => implode(',', [
+                        'temperature_2m',
+                        'precipitation_probability',
+                        'weather_code',
+                    ]),
+                    'daily' => implode(',', [
+                        'temperature_2m_max',
+                        'temperature_2m_min',
+                        'sunrise',
+                        'sunset',
+                        'uv_index_max',
+                        'precipitation_sum',
+                        'precipitation_probability_max',
+                        'wind_gusts_10m_max',
+                        'weather_code',
+                    ]),
+                    'forecast_days' => 10,
+                    'timezone' => 'auto',
+                ]);
         } catch (\Throwable $exception) {
             Log::warning('WeatherFetcherService: error de red', [
                 'lat' => $latitude,

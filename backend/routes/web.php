@@ -1,5 +1,6 @@
 <?php
 
+use App\Interfaces\Controllers\BillingController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -8,3 +9,5 @@ Route::get('/', function () {
 		'status' => 'ok',
 	]);
 });
+
+Route::get('/billing/return', [BillingController::class, 'returnFromCheckout']);
