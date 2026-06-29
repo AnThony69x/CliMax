@@ -1,15 +1,48 @@
 import { createClient, SignInWithPasswordCredentials } from '@supabase/supabase-js';
-import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { clearToken, saveToken } from './authStorage';
+import { getAuthRedirectUrl } from './authRedirect';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+let warnedSupabaseNetwork = false;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase no configurada en .env');
 }
 
+const supabaseFetch: typeof fetch = async (input, init) => {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (!warnedSupabaseNetwork) {
+      warnedSupabaseNetwork = true;
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[supabase] No se pudo conectar a ${supabaseUrl}: ${message}. ` +
+          'Revisa EXPO_PUBLIC_SUPABASE_URL, DNS o el estado del proyecto.'
+      );
+    }
+
+    return new Response(
+      JSON.stringify({
+        message: 'Supabase no alcanzable desde este dispositivo',
+      }),
+      {
+        status: 503,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+};
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: {
+    fetch: supabaseFetch,
+  },
   auth: {
     persistSession: true,
     storage: {
@@ -18,24 +51,32 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
           if (Platform.OS === 'web') {
             return globalThis.localStorage?.getItem(key) ?? null;
           }
-          return await SecureStore.getItemAsync(key);
+          return await AsyncStorage.getItem(key);
         } catch {
           return null;
         }
       },
       setItem: async (key: string, value: string) => {
-        if (Platform.OS === 'web') {
-          globalThis.localStorage?.setItem(key, value);
-          return;
+        try {
+          if (Platform.OS === 'web') {
+            globalThis.localStorage?.setItem(key, value);
+            return;
+          }
+          await AsyncStorage.setItem(key, value);
+        } catch {
+          // Storage failures should not crash auth flows.
         }
-        await SecureStore.setItemAsync(key, value);
       },
       removeItem: async (key: string) => {
-        if (Platform.OS === 'web') {
-          globalThis.localStorage?.removeItem(key);
-          return;
+        try {
+          if (Platform.OS === 'web') {
+            globalThis.localStorage?.removeItem(key);
+            return;
+          }
+          await AsyncStorage.removeItem(key);
+        } catch {
+          // Best-effort cleanup.
         }
-        await SecureStore.deleteItemAsync(key);
       },
     },
   },
@@ -104,6 +145,7 @@ export async function signUp(
     email: email.trim(),
     password,
     options: {
+      emailRedirectTo: getAuthRedirectUrl(),
       data: {
         name: trimmedName,
       },
@@ -145,6 +187,7 @@ export async function signOut(): Promise<void> {
   if (error) {
     throw new Error(error.message);
   }
+  await clearToken();
 }
 
 export async function getSession(): Promise<{ user: AuthUser; session: any } | null> {
@@ -158,8 +201,6 @@ export async function getSession(): Promise<{ user: AuthUser; session: any } | n
     return null;
   }
 
-  await ensureProfileExists(data.session.user as any);
-
   return {
     user: data.session.user,
     session: data.session,
@@ -167,6 +208,58 @@ export async function getSession(): Promise<{ user: AuthUser; session: any } | n
 }
 
 export async function getAccessToken(): Promise<string | null> {
-  const { data } = await supabase.auth.getSession();
-  return data.session?.access_token ?? null;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token ?? null;
+    if (token) {
+      await saveToken(token);
+    }
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: getAuthRedirectUrl('reset-password'),
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function verifyRecoveryCodeAndUpdatePassword(
+  email: string,
+  code: string,
+  password: string
+): Promise<void> {
+  const { data, error: verifyError } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.trim(),
+    type: 'recovery',
+  });
+
+  if (verifyError) {
+    throw new Error(verifyError.message);
+  }
+
+  if (data.session?.access_token) {
+    await saveToken(data.session.access_token);
+  }
+
+  const { error: updateError } = await supabase.auth.updateUser({ password });
+
+  if (updateError) {
+    throw new Error(updateError.message);
+  }
+}
+
+export async function updatePassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password });
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

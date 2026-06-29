@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
@@ -17,6 +18,7 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -25,37 +27,49 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decode } from 'base64-arraybuffer';
 import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
 import { GaruaRainOverlay } from '../../components/GaruaRainOverlay';
+import { API_URL } from '../../core/api/weatherApi';
 import { clearToken } from '../../core/auth/authStorage';
 import { getSession, signOut, supabase } from '../../core/auth/supabaseClient';
 import type { User } from '../../types';
+import { premiumColors, premiumShadow } from '../../theme/premium';
 
 const { width: SW } = Dimensions.get('window');
 
-const SURFACE   = '#0c1222';
+const SURFACE   = premiumColors.surface;
 const GLASS_BG  = 'rgba(255,255,255,0.08)';
 const GLASS_BD  = 'rgba(255,255,255,0.14)';
-const ACCENT    = '#38bdf8';
-const ACCENT_DK = '#082f49';
+const ACCENT    = premiumColors.accent;
+const ACCENT_DK = premiumColors.accentDeep;
+const PROFILE_FETCH_TIMEOUT_MS = 12000;
 
-/* ── helper: tiempo relativo ── */
-function timeAgo(iso: string): string {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60)   return 'Hace un momento';
-  if (diff < 3600) return `Hace ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `Hace ${Math.floor(diff / 3600)} h`;
-  if (diff < 604800) return `Hace ${Math.floor(diff / 86400)} días`;
-  return new Date(iso).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+async function fetchProfileWithTimeout(url: string, init: RequestInit) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROFILE_FETCH_TIMEOUT_MS);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-type MyPost = {
-  id: string;
-  content: string;
-  created_at: string;
-  image_url?: string | null;
-  commentsCount: number;
-};
-
 type Stats = { posts: number; reports: number; cities: number; daysActive: number };
+type AccountPanel = 'preferences' | 'security' | null;
+type PreferenceKey =
+  | 'communityMentions'
+  | 'weeklySummary'
+  | 'dataSaver'
+  | 'preciseLocation';
+
+type AccountPreferences = Record<PreferenceKey, boolean>;
+
+const ACCOUNT_PREFS_STORAGE_KEY = 'climax_account_preferences';
+const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
+  communityMentions: true,
+  weeklySummary: false,
+  dataSaver: false,
+  preciseLocation: true,
+};
 
 /* ───────────────────────────────────────── */
 export default function ProfileScreen() {
@@ -69,11 +83,20 @@ export default function ProfileScreen() {
   const [saving,          setSaving]          = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [stats,           setStats]           = useState<Stats>({ posts: 0, reports: 0, cities: 0, daysActive: 0 });
-  const [myPosts,         setMyPosts]         = useState<MyPost[]>([]);
-  const [loadingPosts,    setLoadingPosts]    = useState(false);
-  const [showAllPosts,    setShowAllPosts]    = useState(false);
+  const [accountPanel,    setAccountPanel]    = useState<AccountPanel>(null);
+  const [preferences,     setPreferences]     = useState<AccountPreferences>(DEFAULT_ACCOUNT_PREFERENCES);
 
   useEffect(() => { void bootstrap(); }, []);
+  useEffect(() => {
+    AsyncStorage.getItem(ACCOUNT_PREFS_STORAGE_KEY)
+      .then((value) => {
+        if (!value) return;
+        const parsed = JSON.parse(value) as Partial<AccountPreferences>;
+        setPreferences({ ...DEFAULT_ACCOUNT_PREFERENCES, ...parsed });
+      })
+      .catch(() => {});
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       void refreshProfileActivity();
@@ -82,23 +105,30 @@ export default function ProfileScreen() {
 
   /* ── bootstrap ── */
   const bootstrap = async () => {
-    const session = await getSession();
-    if (!session?.user) { setLoading(false); return; }
-    const userId = (session.user as any).id as string;
-    const createdAt = (session.user as any).created_at as string | undefined;
+    try {
+      const session = await getSession();
+      if (!session?.user) { setLoading(false); return; }
+      const userId = (session.user as any).id as string;
+      const createdAt = (session.user as any).created_at as string | undefined;
 
-    void loadStats(userId, createdAt);
-    void loadMyPosts(userId);
-    await loadProfile(session);
+      void loadStats(userId, createdAt);
+      await loadProfile(session);
+    } catch (e) {
+      console.warn('bootstrapProfile', e);
+      setLoading(false);
+    }
   };
 
   const refreshProfileActivity = async () => {
-    const session = await getSession();
-    if (!session?.user) return;
-    const userId = (session.user as any).id as string;
-    const createdAt = (session.user as any).created_at as string | undefined;
-    void loadStats(userId, createdAt);
-    void loadMyPosts(userId);
+    try {
+      const session = await getSession();
+      if (!session?.user) return;
+      const userId = (session.user as any).id as string;
+      const createdAt = (session.user as any).created_at as string | undefined;
+      void loadStats(userId, createdAt);
+    } catch (e) {
+      console.warn('refreshProfileActivity', e);
+    }
   };
 
   /* ── load stats ── */
@@ -115,43 +145,6 @@ export default function ProfileScreen() {
       ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
       : 1;
     setStats({ posts, reports, cities, daysActive });
-  };
-
-  /* ── load my posts ── */
-  const loadMyPosts = async (userId: string) => {
-    setLoadingPosts(true);
-    try {
-      const { data: postsData } = await supabase
-        .from('community_posts')
-        .select('id, content, created_at, image_url')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (!postsData?.length) { setMyPosts([]); return; }
-
-      const ids = postsData.map((p: any) => p.id);
-      const { data: commentsData } = await supabase
-        .from('community_comments')
-        .select('post_id')
-        .in('post_id', ids);
-
-      const countMap: Record<string, number> = {};
-      (commentsData ?? []).forEach((c: any) => {
-        countMap[c.post_id] = (countMap[c.post_id] ?? 0) + 1;
-      });
-
-      setMyPosts(postsData.map((p: any) => ({
-        id:            p.id,
-        content:       p.content ?? '',
-        created_at:    p.created_at,
-        image_url:     p.image_url ?? null,
-        commentsCount: countMap[p.id] ?? 0,
-      })));
-    } catch (e) {
-      console.warn('loadMyPosts', e);
-    } finally {
-      setLoadingPosts(false);
-    }
   };
 
   /* ── helpers Supabase ── */
@@ -181,11 +174,9 @@ export default function ProfileScreen() {
       };
       setProfile(fallback);
       setName(fallback.name ?? '');
+      setLoading(false);
 
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (!apiUrl) return;
-
-      const res = await fetch(`${apiUrl}/profile`, {
+      const res = await fetchProfileWithTimeout(`${API_URL}/profile`, {
         headers: { Authorization: `Bearer ${session.session.access_token}` },
       });
       if (res.ok) {
@@ -213,21 +204,18 @@ export default function ProfileScreen() {
   const saveProfile = async () => {
     setSaving(true);
     try {
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
       const session = await getSession();
       if (!session?.session || !session.user?.id) return;
       const nextName = name.trim() || null;
-      if (apiUrl) {
-        const res = await fetch(`${apiUrl}/profile`, {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${session.session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name: nextName }),
-        });
-        if (!res.ok) throw new Error();
-      }
+      const res = await fetch(`${API_URL}/profile`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${session.session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: nextName }),
+      });
+      if (!res.ok) throw new Error();
       await upsertProfileRow(session.user.id, { name: nextName });
       setEditing(false);
       void loadProfile();
@@ -276,9 +264,8 @@ export default function ProfileScreen() {
       await upsertProfileRow(userId, { avatar_url: avatarUrl });
       setProfile(p => p ? { ...p, avatar_url: avatarUrl } : p);
 
-      const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-      if (apiUrl && session.session) {
-        await fetch(`${apiUrl}/profile`, {
+      if (session.session) {
+        await fetch(`${API_URL}/profile`, {
           method: 'PATCH',
           headers: {
             Authorization: `Bearer ${session.session.access_token}`,
@@ -310,17 +297,55 @@ export default function ProfileScreen() {
     setName(profile?.name ?? '');
   };
 
-  const openAllPostsModal = () => {
-    if (myPosts.length >= 2) setShowAllPosts(true);
+  const closeAccountPanel = () => setAccountPanel(null);
+
+  const persistPreferences = async (next: AccountPreferences) => {
+    try {
+      await AsyncStorage.setItem(ACCOUNT_PREFS_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Best-effort local preferences; the UI should still respond instantly.
+    }
   };
 
-  const closeAllPostsModal = () => {
-    setShowAllPosts(false);
+  const togglePreference = (key: PreferenceKey) => {
+    setPreferences((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      void persistPreferences(next);
+      return next;
+    });
   };
 
-  const goToCommunityPost = (postId: string) => {
-    setShowAllPosts(false);
-    router.push(`/(tabs)/community?postId=${encodeURIComponent(postId)}`);
+  const resetPreferences = () => {
+    Alert.alert('Restablecer ajustes', 'Volver a la configuracion recomendada de CliMax?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Restablecer',
+        onPress: () => {
+          setPreferences(DEFAULT_ACCOUNT_PREFERENCES);
+          void persistPreferences(DEFAULT_ACCOUNT_PREFERENCES);
+        },
+      },
+    ]);
+  };
+
+  const clearLocalPreferences = () => {
+    Alert.alert('Limpiar preferencias locales', 'Se borraran ajustes guardados solo en este dispositivo.', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Limpiar',
+        style: 'destructive',
+        onPress: async () => {
+          await AsyncStorage.removeItem(ACCOUNT_PREFS_STORAGE_KEY).catch(() => {});
+          setPreferences(DEFAULT_ACCOUNT_PREFERENCES);
+          Alert.alert('Listo', 'Preferencias locales limpiadas.');
+        },
+      },
+    ]);
+  };
+
+  const goToPasswordChange = () => {
+    setAccountPanel(null);
+    router.push('/reset-password' as any);
   };
 
   /* ── derived ── */
@@ -407,8 +432,6 @@ export default function ProfileScreen() {
     { value: stats.cities,     label: 'UBICACIONES',   icon: 'location-outline'        as const },
     { value: stats.daysActive, label: 'DÍAS ACTIVO',   icon: 'calendar-outline'        as const },
   ];
-  const previewPosts = myPosts.slice(0, 2);
-
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -419,7 +442,7 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           s.scroll,
-          { paddingTop: insets.top + 14, paddingBottom: Math.max(insets.bottom, 16) + 24 },
+          { paddingTop: insets.top + 14, paddingBottom: Math.max(insets.bottom, 16) + 132 },
         ]}
       >
 
@@ -479,82 +502,7 @@ export default function ProfileScreen() {
             </View>
           ))}
         </View>
-
-        {/* ═══ MIS PUBLICACIONES ═══ */}
-        <View style={s.sectionBlock}>
-          <View style={s.sectionHeader}>
-            <View style={s.sectionIconWrap}>
-              <Ionicons name="newspaper-outline" size={18} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.sectionEyebrow}>Actividad</Text>
-              <Text style={s.sectionTitle}>Mis publicaciones</Text>
-            </View>
-            {myPosts.length >= 2 && (
-              <Pressable style={s.viewAllBtn} onPress={openAllPostsModal}>
-                <Text style={s.viewAllText}>Ver todas</Text>
-                <Ionicons name="chevron-forward" size={16} color={ACCENT} />
-              </Pressable>
-            )}
-          </View>
-
-          {loadingPosts ? (
-            <View style={s.postsLoadingWrap}>
-              <ActivityIndicator size="small" color={ACCENT} />
-            </View>
-          ) : myPosts.length === 0 ? (
-            <View style={s.postsEmptyCard}>
-              <Ionicons name="cloud-upload-outline" size={40} color="rgba(56,189,248,0.35)" />
-              <Text style={s.postsEmptyTitle}>Sin publicaciones aún</Text>
-              <Text style={s.postsEmptyDesc}>
-                Comparte una observación del clima en la comunidad y aparecerá aquí.
-              </Text>
-            </View>
-          ) : (
-            previewPosts.map(post => (
-              <Pressable
-                key={post.id}
-                style={({ pressed }) => [s.postCard, pressed && s.postCardPressed]}
-                onPress={() => goToCommunityPost(post.id)}
-              >
-                {post.image_url ? (
-                  <View style={s.postImageWrap}>
-                    <Image
-                      source={{ uri: post.image_url }}
-                      style={s.postImage}
-                      resizeMode="cover"
-                    />
-                    <View style={s.postTimeBadge}>
-                      <Text style={s.postTimeBadgeText}>{timeAgo(post.created_at)}</Text>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={s.postNoImageHeader}>
-                    <Ionicons name="cloud-outline" size={22} color="rgba(56,189,248,0.45)" />
-                    <Text style={s.postTimeBadgeNoImg}>{timeAgo(post.created_at)}</Text>
-                  </View>
-                )}
-                <View style={s.postBody}>
-                  <Text style={s.postContent} numberOfLines={3}>{post.content}</Text>
-                  <View style={s.postFooter}>
-                    <View style={s.postStat}>
-                      <Ionicons name="chatbubble-outline" size={16} color="rgba(148,163,184,0.75)" />
-                      <Text style={s.postStatText}>{post.commentsCount}</Text>
-                    </View>
-                    {!post.image_url && (
-                      <View style={s.postStat}>
-                        <Ionicons name="image-outline" size={16} color="rgba(148,163,184,0.4)" />
-                        <Text style={[s.postStatText, { opacity: 0.5 }]}>Sin imagen</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </Pressable>
-            ))
-          )}
-        </View>
-
-        {/* ═══ CUENTA ═══ */}
+        {/* CUENTA ═══ */}
         <View style={s.sectionBlock}>
           <View style={s.sectionHeader}>
             <View style={s.sectionIconWrap}>
@@ -568,7 +516,7 @@ export default function ProfileScreen() {
           <View style={s.glassCard}>
             <Pressable
               style={({ pressed }) => [s.menuRow, pressed && s.menuRowPressed]}
-              onPress={() => {}}
+              onPress={() => setAccountPanel('preferences')}
             >
               <View style={s.menuIconWrap}>
                 <Ionicons name="settings-outline" size={20} color="#e2e8f0" />
@@ -577,7 +525,10 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.28)" />
             </Pressable>
             <View style={s.menuDivider} />
-            <Pressable style={({ pressed }) => [s.menuRow, pressed && s.menuRowPressed]}>
+            <Pressable
+              style={({ pressed }) => [s.menuRow, pressed && s.menuRowPressed]}
+              onPress={() => setAccountPanel('security')}
+            >
               <View style={s.menuIconWrap}>
                 <Ionicons name="shield-checkmark-outline" size={20} color="#e2e8f0" />
               </View>
@@ -599,98 +550,6 @@ export default function ProfileScreen() {
         </View>
 
       </ScrollView>
-
-      {/* Modal grande: todas las publicaciones del usuario */}
-      <Modal
-        animationType="fade"
-        transparent
-        visible={showAllPosts}
-        onRequestClose={closeAllPostsModal}
-        statusBarTranslucent
-      >
-        <View style={s.modalRoot}>
-          <BlurView
-            intensity={Platform.OS === 'ios' ? 38 : 26}
-            tint="dark"
-            style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
-          />
-          <View style={[StyleSheet.absoluteFillObject, s.modalTint, { zIndex: 0 }]} />
-          <Pressable
-            accessibilityRole="button"
-            style={[StyleSheet.absoluteFillObject, s.modalBackdropPressable]}
-            onPress={closeAllPostsModal}
-          />
-
-          <View
-            style={[
-              StyleSheet.absoluteFillObject,
-              s.modalOverlay,
-              {
-                paddingTop: Math.max(insets.top, 12),
-                paddingBottom: Math.max(insets.bottom, 12),
-                paddingHorizontal: 20,
-              },
-            ]}
-          >
-            <View style={s.postsModalCard}>
-              <View style={s.editPanelHeader}>
-                <View style={s.sectionIconWrap}>
-                  <Ionicons name="newspaper-outline" size={18} color={ACCENT} />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.sectionEyebrow}>Actividad</Text>
-                  <Text style={s.sectionTitle}>Todas mis publicaciones</Text>
-                </View>
-                <Pressable
-                  hitSlop={12}
-                  onPress={closeAllPostsModal}
-                  style={({ pressed }) => [s.modalCloseBtn, pressed && { opacity: 0.7 }]}
-                  accessibilityLabel="Cerrar"
-                >
-                  <Ionicons name="close" size={22} color="rgba(226,232,240,0.9)" />
-                </Pressable>
-              </View>
-
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={s.postsModalList}
-              >
-                {myPosts.map(post => (
-                  <Pressable
-                    key={post.id}
-                    style={({ pressed }) => [s.postCard, pressed && s.postCardPressed]}
-                    onPress={() => goToCommunityPost(post.id)}
-                  >
-                    {post.image_url ? (
-                      <View style={s.postImageWrap}>
-                        <Image source={{ uri: post.image_url }} style={s.postImage} resizeMode="cover" />
-                        <View style={s.postTimeBadge}>
-                          <Text style={s.postTimeBadgeText}>{timeAgo(post.created_at)}</Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={s.postNoImageHeader}>
-                        <Ionicons name="cloud-outline" size={22} color="rgba(56,189,248,0.45)" />
-                        <Text style={s.postTimeBadgeNoImg}>{timeAgo(post.created_at)}</Text>
-                      </View>
-                    )}
-                    <View style={s.postBody}>
-                      <Text style={s.postContent} numberOfLines={3}>{post.content}</Text>
-                      <View style={s.postFooter}>
-                        <View style={s.postStat}>
-                          <Ionicons name="chatbubble-outline" size={16} color="rgba(148,163,184,0.75)" />
-                          <Text style={s.postStatText}>{post.commentsCount}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       {/* Panel flotante “Tus datos” con blur */}
       <Modal
         animationType="fade"
@@ -838,7 +697,216 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={accountPanel !== null}
+        onRequestClose={closeAccountPanel}
+        statusBarTranslucent
+      >
+        <View style={s.modalRoot}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 42 : 32}
+            tint="dark"
+            style={[StyleSheet.absoluteFillObject, { zIndex: 0 }]}
+          />
+          <View style={[StyleSheet.absoluteFillObject, s.modalTint, { zIndex: 0 }]} />
+          <Pressable
+            accessibilityRole="button"
+            style={[StyleSheet.absoluteFillObject, s.modalBackdropPressable]}
+            onPress={closeAccountPanel}
+          />
+
+          <View
+            style={[
+              StyleSheet.absoluteFillObject,
+              s.modalOverlay,
+              {
+                paddingTop: Math.max(insets.top, 12),
+                paddingBottom: Math.max(insets.bottom, 12),
+                paddingHorizontal: 20,
+              },
+            ]}
+          >
+            <View style={s.accountPanelCard}>
+              <View style={s.editPanelHeader}>
+                <View style={s.sectionIconWrap}>
+                  <Ionicons
+                    name={accountPanel === 'security' ? 'shield-checkmark-outline' : 'settings-outline'}
+                    size={18}
+                    color={ACCENT}
+                  />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={s.sectionEyebrow}>
+                    {accountPanel === 'security' ? 'Control de datos' : 'Experiencia'}
+                  </Text>
+                  <Text style={s.sectionTitle}>
+                    {accountPanel === 'security' ? 'Seguridad y privacidad' : 'Ajustes de cuenta'}
+                  </Text>
+                </View>
+                <Pressable
+                  hitSlop={12}
+                  onPress={closeAccountPanel}
+                  style={({ pressed }) => [s.modalCloseBtn, pressed && { opacity: 0.7 }]}
+                  accessibilityLabel="Cerrar"
+                >
+                  <Ionicons name="close" size={22} color="rgba(226,232,240,0.9)" />
+                </Pressable>
+              </View>
+
+              {accountPanel === 'preferences' ? (
+                <>
+                  <Text style={s.editHint}>
+                    Personaliza como CliMax te avisa y cuanto consume en este dispositivo.
+                  </Text>
+                  <View style={s.accountPanelGroup}>
+                    <PreferenceToggle
+                      icon="chatbubble-ellipses-outline"
+                      title="Menciones de comunidad"
+                      description="Recibe avisos cuando interactuen con tus reportes."
+                      value={preferences.communityMentions}
+                      onToggle={() => togglePreference('communityMentions')}
+                    />
+                    <PreferenceToggle
+                      icon="calendar-outline"
+                      title="Resumen semanal"
+                      description="Un resumen compacto de actividad, alertas y ciudades."
+                      value={preferences.weeklySummary}
+                      onToggle={() => togglePreference('weeklySummary')}
+                    />
+                    <PreferenceToggle
+                      icon="cellular-outline"
+                      title="Ahorro de datos"
+                      description="Reduce cargas visuales cuando la conexion este lenta."
+                      value={preferences.dataSaver}
+                      onToggle={() => togglePreference('dataSaver')}
+                    />
+                  </View>
+                  <Pressable
+                    style={({ pressed }) => [s.panelActionBtn, pressed && { opacity: 0.86 }]}
+                    onPress={resetPreferences}
+                  >
+                    <Ionicons name="refresh-outline" size={18} color={ACCENT} />
+                    <Text style={s.panelActionText}>Restablecer ajustes recomendados</Text>
+                  </Pressable>
+                </>
+              ) : null}
+
+              {accountPanel === 'security' ? (
+                <>
+                  <Text style={s.editHint}>
+                    Administra tu acceso, visibilidad y datos locales guardados en este telefono.
+                  </Text>
+                  <View style={s.securitySummaryCard}>
+                    <View style={s.securitySummaryIcon}>
+                      <Ionicons name="mail-outline" size={20} color={ACCENT} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.securitySummaryLabel}>Correo de acceso</Text>
+                      <Text style={s.securitySummaryValue} numberOfLines={1}>{profile.email ?? 'Sin correo'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={s.accountPanelGroup}>
+                    <PreferenceToggle
+                      icon="navigate-outline"
+                      title="Ubicacion precisa en reportes"
+                      description="Permite usar coordenadas precisas al crear reportes."
+                      value={preferences.preciseLocation}
+                      onToggle={() => togglePreference('preciseLocation')}
+                    />
+                  </View>
+
+                  <View style={s.accountPanelGroup}>
+                    <PanelActionRow
+                      icon="key-outline"
+                      title="Cambiar contrasena"
+                      description="Actualiza tu clave desde una sesion activa."
+                      onPress={goToPasswordChange}
+                    />
+                    <PanelActionRow
+                      icon="trash-outline"
+                      title="Limpiar preferencias locales"
+                      description="Borra ajustes guardados solo en este dispositivo."
+                      onPress={clearLocalPreferences}
+                    />
+                    <PanelActionRow
+                      icon="log-out-outline"
+                      title="Cerrar sesion"
+                      description="Salir de CliMax en este dispositivo."
+                      danger
+                      onPress={handleLogout}
+                    />
+                  </View>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
+  );
+}
+
+function PreferenceToggle({
+  icon,
+  title,
+  description,
+  value,
+  onToggle,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  title: string;
+  description: string;
+  value: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [s.preferenceRow, pressed && s.menuRowPressed]} onPress={onToggle}>
+      <View style={s.preferenceIcon}>
+        <Ionicons name={icon} size={19} color={ACCENT} />
+      </View>
+      <View style={s.preferenceCopy}>
+        <Text style={s.preferenceTitle}>{title}</Text>
+        <Text style={s.preferenceDescription}>{description}</Text>
+      </View>
+      <Switch
+        pointerEvents="none"
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ false: 'rgba(148,163,184,0.28)', true: 'rgba(56,189,248,0.5)' }}
+        thumbColor={value ? premiumColors.accentSoft : '#cbd5e1'}
+      />
+    </Pressable>
+  );
+}
+
+function PanelActionRow({
+  icon,
+  title,
+  description,
+  danger,
+  onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  title: string;
+  description: string;
+  danger?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [s.preferenceRow, pressed && s.menuRowPressed]} onPress={onPress}>
+      <View style={[s.preferenceIcon, danger && s.menuIconWrapDanger]}>
+        <Ionicons name={icon} size={19} color={danger ? '#fecaca' : ACCENT} />
+      </View>
+      <View style={s.preferenceCopy}>
+        <Text style={[s.preferenceTitle, danger && { color: '#fecaca' }]}>{title}</Text>
+        <Text style={s.preferenceDescription}>{description}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
+    </Pressable>
   );
 }
 
@@ -859,7 +927,7 @@ const STAT_W = (SW - 40 - 10) / 2;
 const s = StyleSheet.create({
   container:       { flex: 1, backgroundColor: SURFACE, overflow: 'hidden' },
   /** Invitado: mismo fondo que login + burbujas/garúa */
-  guestScreen:     { flex: 1, backgroundColor: '#000b18', overflow: 'hidden' },
+  guestScreen:     { flex: 1, backgroundColor: premiumColors.surface, overflow: 'hidden' },
   guestGlow1: {
     position: 'absolute',
     top: -120,
@@ -867,7 +935,7 @@ const s = StyleSheet.create({
     width: 400,
     height: 400,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.14)',
+    backgroundColor: premiumColors.auroraAqua,
     zIndex: 0,
     pointerEvents: 'none',
   },
@@ -878,14 +946,14 @@ const s = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.07)',
+    backgroundColor: premiumColors.auroraTeal,
     zIndex: 0,
     pointerEvents: 'none',
   },
   loadingContainer:{ flex: 1, backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
 
-  glow1: { position: 'absolute', top: -100, left: -100, width: 340, height: 340, borderRadius: 999, backgroundColor: 'rgba(2,87,129,0.28)' },
-  glow2: { position: 'absolute', bottom: -60, right: -80, width: 280, height: 280, borderRadius: 999, backgroundColor: 'rgba(56,189,248,0.11)' },
+  glow1: { position: 'absolute', top: -100, left: -100, width: 340, height: 340, borderRadius: 999, backgroundColor: premiumColors.auroraAqua },
+  glow2: { position: 'absolute', bottom: -60, right: -80, width: 280, height: 280, borderRadius: 999, backgroundColor: premiumColors.auroraTeal },
 
   scroll: { paddingHorizontal: 20, gap: 20 },
 
@@ -896,9 +964,7 @@ const s = StyleSheet.create({
     borderColor: 'rgba(56,189,248,0.22)',
     paddingVertical: 30, paddingHorizontal: 20,
     alignItems: 'center', gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.32, shadowRadius: 26, elevation: 10,
+    ...premiumShadow('strong'),
   },
   avatarRing: {
     width: 112, height: 112, borderRadius: 56,
@@ -1119,9 +1185,7 @@ const s = StyleSheet.create({
     borderColor: 'rgba(56,189,248,0.16)',
     paddingVertical: 18, paddingHorizontal: 12,
     alignItems: 'center', gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22, shadowRadius: 14, elevation: 4,
+    ...premiumShadow('medium'),
   },
   statIconWrap: {
     width: 42, height: 42, borderRadius: 13,
@@ -1213,6 +1277,110 @@ const s = StyleSheet.create({
   },
 
   /* ── Glass Card ── */
+  accountPanelCard: {
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 440,
+    maxHeight: Dimensions.get('window').height * 0.9,
+    backgroundColor: 'rgba(12,18,34,0.9)',
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+    padding: 18,
+    gap: 14,
+    overflow: 'hidden',
+    ...premiumShadow('strong'),
+  },
+  accountPanelGroup: {
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.045)',
+    overflow: 'hidden',
+  },
+  preferenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 13,
+    paddingVertical: 13,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  preferenceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: 'rgba(56,189,248,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  preferenceCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  preferenceTitle: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  preferenceDescription: {
+    color: 'rgba(148,163,184,0.78)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  panelActionBtn: {
+    minHeight: 46,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.26)',
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  panelActionText: {
+    color: ACCENT,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  securitySummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.2)',
+    backgroundColor: 'rgba(56,189,248,0.08)',
+    padding: 13,
+  },
+  securitySummaryIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    backgroundColor: 'rgba(56,189,248,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  securitySummaryLabel: {
+    color: 'rgba(148,163,184,0.82)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.45,
+    textTransform: 'uppercase',
+  },
+  securitySummaryValue: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '700',
+    marginTop: 3,
+  },
   glassCard: {
     backgroundColor: GLASS_BG, borderRadius: 22,
     borderWidth: 1, borderColor: GLASS_BD,

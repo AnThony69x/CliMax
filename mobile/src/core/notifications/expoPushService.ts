@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
+import { API_URL } from '../api/weatherApi';
 import { getAccessToken } from '../auth/supabaseClient';
 
 const PUSH_TOKEN_STORAGE_KEY = 'climax.push.token';
@@ -152,19 +153,13 @@ export async function clearCachedPushToken(): Promise<void> {
  * y haga upsert en una tabla push_tokens. Mientras no exista, esta función solo loggea.
  */
 export async function registerPushTokenWithBackend(token: string): Promise<boolean> {
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (!apiUrl) {
-    console.warn('[push] EXPO_PUBLIC_API_URL no configurada, no se envía token al backend.');
-    return false;
-  }
-
   const accessToken = await getAccessToken();
   if (!accessToken) {
     return false;
   }
 
   try {
-    const response = await fetch(`${apiUrl}/push-tokens`, {
+    const response = await fetch(`${API_URL}/push-tokens`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -193,14 +188,11 @@ export async function registerPushTokenWithBackend(token: string): Promise<boole
  * Best-effort: si falla no rompe el logout local.
  */
 export async function unregisterPushTokenWithBackend(token: string): Promise<void> {
-  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (!apiUrl) return;
-
   const accessToken = await getAccessToken();
   if (!accessToken) return;
 
   try {
-    await fetch(`${apiUrl}/push-tokens/${encodeURIComponent(token)}`, {
+    await fetch(`${API_URL}/push-tokens/${encodeURIComponent(token)}`, {
       method: 'DELETE',
       headers: {
         Accept: 'application/json',

@@ -1,14 +1,20 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { PremiumReveal } from '../../components/PremiumMotion';
 import { clearToken } from '../../core/auth/authStorage';
 import { signOut } from '../../core/auth/supabaseClient';
+import { premiumColors, premiumRadii, premiumShadow, premiumType } from '../../theme/premium';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 type SettingItem = {
   id: string;
   label: string;
   description?: string;
-  icon: string;
+  icon: IoniconName;
   type: 'toggle' | 'action' | 'navigation';
   value?: boolean;
   onPress?: () => void;
@@ -16,35 +22,32 @@ type SettingItem = {
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState(true);
   const [location, setLocation] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
 
   const handleToggle = (setting: string, value: boolean) => {
     switch (setting) {
       case 'notifications': setNotifications(value); break;
-      case 'location':      setLocation(value);      break;
-      case 'darkMode':      setDarkMode(value);       break;
+      case 'location': setLocation(value); break;
+      case 'darkMode': setDarkMode(value); break;
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Cerrar sesión',
-      '¿Estás seguro de que quieres salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Salir',
-          style: 'destructive',
-          onPress: async () => {
-            try { await signOut(); } catch { /* ignorar errores de red */ }
-            await clearToken();
-            router.replace('/login');
-          },
+    Alert.alert('Cerrar sesión', '¿Estás seguro de que quieres salir?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Salir',
+        style: 'destructive',
+        onPress: async () => {
+          try { await signOut(); } catch {}
+          await clearToken();
+          router.replace('/login');
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleClearCache = () => {
@@ -55,21 +58,23 @@ export default function SettingsScreen() {
   };
 
   const settings: SettingItem[] = [
-    { id: 'notifications', label: 'Notificaciones', description: 'Recibir alertas climáticas', icon: '🔔', type: 'toggle', value: notifications },
-    { id: 'location',      label: 'Ubicación en tiempo real', description: 'Rastrear ubicación constantemente', icon: '📍', type: 'toggle', value: location },
-    { id: 'darkMode',      label: 'Modo oscuro', description: 'Cambiar tema de la app', icon: '🌙', type: 'toggle', value: darkMode },
+    { id: 'notifications', label: 'Notificaciones', description: 'Recibir alertas climáticas críticas', icon: 'notifications-outline', type: 'toggle', value: notifications },
+    { id: 'location', label: 'Ubicación en tiempo real', description: 'Mantener precisión para clima y reportes', icon: 'navigate-outline', type: 'toggle', value: location },
+    { id: 'darkMode', label: 'Modo premium', description: 'Tema nocturno optimizado para CliMax', icon: 'moon-outline', type: 'toggle', value: darkMode },
   ];
 
   const actions: SettingItem[] = [
-    { id: 'account',    label: 'Cuenta',         description: 'Gestionar tu cuenta',              icon: '👤', type: 'navigation', onPress: () => router.push('/profile' as any) },
-    { id: 'privacy',    label: 'Privacidad',      description: 'Cómo usamos tus datos',            icon: '🔒', type: 'navigation', onPress: () => router.push('/modal') },
-    { id: 'help',       label: 'Ayuda',           description: 'Preguntas frecuentes',             icon: '❓', type: 'navigation', onPress: () => router.push('/modal') },
-    { id: 'clearCache', label: 'Limpiar caché',   description: 'Liberar espacio de almacenamiento', icon: '🗑️', type: 'action',     onPress: handleClearCache },
+    { id: 'account', label: 'Cuenta', description: 'Gestionar perfil y actividad', icon: 'person-circle-outline', type: 'navigation', onPress: () => router.push('/profile' as any) },
+    { id: 'privacy', label: 'Privacidad', description: 'Cómo usamos tus datos', icon: 'lock-closed-outline', type: 'navigation', onPress: () => router.push('/modal') },
+    { id: 'help', label: 'Ayuda', description: 'Preguntas frecuentes', icon: 'help-circle-outline', type: 'navigation', onPress: () => router.push('/modal') },
+    { id: 'clearCache', label: 'Limpiar caché', description: 'Liberar espacio de almacenamiento', icon: 'trash-outline', type: 'action', onPress: handleClearCache },
   ];
 
   const renderSetting = (item: SettingItem) => (
     <View key={item.id} style={styles.settingItem}>
-      <Text style={styles.settingIcon}>{item.icon}</Text>
+      <View style={styles.settingIcon}>
+        <Ionicons name={item.icon} size={20} color={premiumColors.accentSoft} />
+      </View>
       <View style={styles.settingContent}>
         <Text style={styles.settingLabel}>{item.label}</Text>
         {item.description && <Text style={styles.settingDescription}>{item.description}</Text>}
@@ -78,11 +83,11 @@ export default function SettingsScreen() {
         <Switch
           value={item.value}
           onValueChange={(value) => handleToggle(item.id, value)}
-          trackColor={{ false: '#D6DED9', true: '#2A7A4B' }}
-          thumbColor="#FFFFFF"
+          trackColor={{ false: 'rgba(148,163,184,0.32)', true: 'rgba(56,189,248,0.55)' }}
+          thumbColor={item.value ? premiumColors.accentSoft : '#cbd5e1'}
         />
       ) : (
-        <Text style={styles.chevron}>→</Text>
+        <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
       )}
     </View>
   );
@@ -93,68 +98,140 @@ export default function SettingsScreen() {
       style={({ pressed }) => [styles.settingItem, pressed && styles.settingItemPressed]}
       onPress={item.onPress}
     >
-      <Text style={styles.settingIcon}>{item.icon}</Text>
+      <View style={styles.settingIcon}>
+        <Ionicons name={item.icon} size={20} color={premiumColors.accentSoft} />
+      </View>
       <View style={styles.settingContent}>
         <Text style={styles.settingLabel}>{item.label}</Text>
         {item.description && <Text style={styles.settingDescription}>{item.description}</Text>}
       </View>
-      <Text style={styles.chevron}>→</Text>
+      <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
     </Pressable>
   );
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Configuración</Text>
-        <Text style={styles.subtitle}>Personaliza tu experiencia</Text>
-      </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <View style={styles.glowTop} />
+      <View style={styles.glowBottom} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + 18, paddingBottom: Math.max(insets.bottom, 16) + 32 },
+        ]}
+      >
+        <PremiumReveal style={styles.header}>
+          <Text style={styles.eyebrow}>Preferencias</Text>
+          <Text style={styles.title}>Configuración</Text>
+          <Text style={styles.subtitle}>Ajusta notificaciones, privacidad y experiencia visual.</Text>
+        </PremiumReveal>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>General</Text>
-        {settings.map(renderSetting)}
-      </View>
+        <PremiumReveal delay={80} style={styles.section}>
+          <Text style={styles.sectionTitle}>General</Text>
+          <View style={styles.panel}>{settings.map(renderSetting)}</View>
+        </PremiumReveal>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Otros</Text>
-        {actions.map(renderAction)}
-      </View>
+        <PremiumReveal delay={150} style={styles.section}>
+          <Text style={styles.sectionTitle}>Otros</Text>
+          <View style={styles.panel}>{actions.map(renderAction)}</View>
+        </PremiumReveal>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Sesión</Text>
-        <Pressable
-          style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutButtonPressed]}
-          onPress={handleLogout}
-        >
-          <Text style={styles.logoutText}>Cerrar sesión</Text>
-        </Pressable>
-      </View>
+        <PremiumReveal delay={220} style={styles.section}>
+          <Text style={styles.sectionTitle}>Sesión</Text>
+          <Pressable
+            style={({ pressed }) => [styles.logoutButton, pressed && styles.logoutButtonPressed]}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={18} color={premiumColors.danger} />
+            <Text style={styles.logoutText}>Cerrar sesión</Text>
+          </Pressable>
+        </PremiumReveal>
 
-      <View style={styles.footer}>
-        <Text style={styles.version}>CliMax v1.0.0</Text>
-        <Text style={styles.copyright}>© 2026 CliMax</Text>
-      </View>
-    </ScrollView>
+        <View style={styles.footer}>
+          <Text style={styles.version}>CliMax v1.0.0</Text>
+          <Text style={styles.copyright}>© 2026 CliMax</Text>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#F1F5F2' },
-  header: { marginBottom: 24 },
-  title: { fontSize: 28, fontWeight: '700', color: '#0B1411' },
-  subtitle: { marginTop: 4, fontSize: 14, color: '#52655A' },
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 13, fontWeight: '600', color: '#52655A', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 },
-  settingItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, marginBottom: 8, gap: 12 },
-  settingItemPressed: { opacity: 0.85 },
-  settingIcon: { fontSize: 20 },
-  settingContent: { flex: 1 },
-  settingLabel: { fontSize: 15, fontWeight: '500', color: '#0B1411' },
-  settingDescription: { marginTop: 2, fontSize: 13, color: '#6E7F77' },
-  chevron: { fontSize: 16, color: '#6E7F77' },
-  logoutButton: { backgroundColor: '#FFFFFF', padding: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#FDEAEA' },
-  logoutButtonPressed: { backgroundColor: '#FDEAEA' },
-  logoutText: { fontSize: 15, fontWeight: '500', color: '#A33A3A' },
-  footer: { alignItems: 'center', marginTop: 20, marginBottom: 40 },
-  version: { fontSize: 13, color: '#6E7F77' },
-  copyright: { marginTop: 4, fontSize: 12, color: '#9CA39F' },
+  container: { flex: 1, backgroundColor: premiumColors.surface, overflow: 'hidden' },
+  glowTop: {
+    position: 'absolute',
+    top: -110,
+    left: -100,
+    width: 340,
+    height: 340,
+    borderRadius: 999,
+    backgroundColor: premiumColors.auroraAqua,
+  },
+  glowBottom: {
+    position: 'absolute',
+    bottom: -90,
+    right: -100,
+    width: 320,
+    height: 320,
+    borderRadius: 999,
+    backgroundColor: premiumColors.auroraGold,
+  },
+  scroll: { paddingHorizontal: 20, gap: 22 },
+  header: { gap: 7 },
+  eyebrow: premiumType.eyebrow,
+  title: premiumType.title,
+  subtitle: { ...premiumType.body, maxWidth: 340 },
+  section: { gap: 12 },
+  sectionTitle: { ...premiumType.sectionTitle, paddingHorizontal: 2 },
+  panel: {
+    borderRadius: premiumRadii.xl,
+    backgroundColor: premiumColors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+    overflow: 'hidden',
+    ...premiumShadow('medium'),
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  settingItemPressed: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    transform: [{ scale: 0.995 }],
+  },
+  settingIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: premiumRadii.md,
+    backgroundColor: 'rgba(56,189,248,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingContent: { flex: 1, minWidth: 0 },
+  settingLabel: { fontSize: 15, fontWeight: '800', color: premiumColors.ink },
+  settingDescription: { marginTop: 3, fontSize: 12, lineHeight: 17, color: premiumColors.inkSubtle },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(251,113,133,0.1)',
+    padding: 16,
+    borderRadius: premiumRadii.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.35)',
+  },
+  logoutButtonPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
+  logoutText: { fontSize: 15, fontWeight: '800', color: premiumColors.danger },
+  footer: { alignItems: 'center', marginTop: 4, marginBottom: 8 },
+  version: { fontSize: 13, color: premiumColors.inkSubtle },
+  copyright: { marginTop: 4, fontSize: 12, color: 'rgba(148,163,184,0.62)' },
 });

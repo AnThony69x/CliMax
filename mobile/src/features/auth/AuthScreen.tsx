@@ -15,8 +15,17 @@ import {
 } from 'react-native';
 import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
 import { GaruaRainOverlay } from '../../components/GaruaRainOverlay';
+import { PremiumReveal } from '../../components/PremiumMotion';
+import { useAccess } from '../../core/access/AccessContext';
 import { clearToken, saveToken } from '../../core/auth/authStorage';
-import { getSession, signInWithPassword, signUp } from '../../core/auth/supabaseClient';
+import {
+  getSession,
+  requestPasswordReset,
+  signOut,
+  signInWithPassword,
+  signUp,
+} from '../../core/auth/supabaseClient';
+import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 
 const LOGO = require('../../../assets/images/icon.png');
 
@@ -74,18 +83,18 @@ function AuthField({
 const fieldStyles = StyleSheet.create({
   label: {
     fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(148,163,184,0.9)',
+    fontWeight: '700',
+    color: premiumColors.inkSubtle,
     marginBottom: 6,
     letterSpacing: 0.4,
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: premiumColors.glass,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    borderRadius: 14,
+    borderColor: premiumColors.glassBorder,
+    borderRadius: premiumRadii.md,
     paddingHorizontal: 14,
   },
   inputRowError: {
@@ -94,20 +103,21 @@ const fieldStyles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 15,
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     paddingVertical: 13,
   },
   toggleBtn: { padding: 4 },
   errorText: {
     marginTop: 5,
     fontSize: 12,
-    color: '#f87171',
+    color: premiumColors.danger,
   },
 });
 
 /* ── Pantalla principal ── */
 export default function AuthScreen({ initialMode = 'login' }: { initialMode?: AuthMode }) {
   const router = useRouter();
+  const { refreshAccess } = useAccess();
   const params = useLocalSearchParams<{ force?: string }>();
   const forceLoginView = params.force === '1';
   const [mode, setMode]         = useState<AuthMode>(initialMode);
@@ -121,6 +131,8 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
   const [showConfirm, setShowConfirm]       = useState(false);
   const [errors, setErrors]                 = useState<FieldErrors>({});
   const [isSubmitting, setIsSubmitting]     = useState(false);
+  const [isSendingReset, setIsSendingReset] = useState(false);
+  const [resetMessage, setResetMessage]     = useState('');
 
   const confirmAnim  = useRef(new Animated.Value(0)).current;
   const passwordAnim = useRef(new Animated.Value(0)).current;
@@ -132,16 +144,29 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
   /* Verificar sesión activa al montar */
   useEffect(() => {
     getSession()
-      .then((result) => {
+      .then(async (result) => {
         const confirmed = (result?.session?.user as any)?.email_confirmed_at;
-        if (confirmed && !forceLoginView) router.replace('/(tabs)');
-        else setChecking(false);
+        if (confirmed && !forceLoginView) {
+          if (result?.session?.access_token) {
+            await saveToken(result.session.access_token);
+          }
+          await refreshAccess();
+          router.replace('/(tabs)');
+        } else {
+          setChecking(false);
+        }
       })
       .catch(() => setChecking(false));
-  }, [forceLoginView]);
+  }, [forceLoginView, refreshAccess, router]);
 
   const handleGuest = async () => {
+    try {
+      await signOut();
+    } catch {
+      // Guest mode should still work if remote sign-out cannot complete.
+    }
     await clearToken();
+    await refreshAccess();
     router.replace('/(tabs)');
   };
 
@@ -219,6 +244,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
       if (isLogin) {
         const { session } = await signInWithPassword(trimmedEmail, password);
         if (session?.access_token) await saveToken(session.access_token);
+        await refreshAccess();
         router.replace('/(tabs)');
       } else {
         await signUp(name.trim(), trimmedEmail, password);
@@ -233,6 +259,34 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
       setErrors({ email: msg });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    setResetMessage('');
+
+    if (!trimmedEmail) {
+      setErrors({ email: 'Ingresa tu correo para enviarte el codigo.' });
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(trimmedEmail)) {
+      setErrors({ email: 'El formato del correo no es valido.' });
+      return;
+    }
+
+    setIsSendingReset(true);
+    try {
+      await requestPasswordReset(trimmedEmail);
+      setErrors({});
+      setResetMessage('Te enviamos un codigo para cambiar tu contrasena. Revisa tu correo.');
+      router.push(`/reset-password?email=${encodeURIComponent(trimmedEmail)}` as any);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'No se pudo enviar el codigo.';
+      setErrors({ email: msg });
+    } finally {
+      setIsSendingReset(false);
     }
   };
 
@@ -274,7 +328,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
         showsVerticalScrollIndicator={false}
       >
         {/* Wrapper de sombra */}
-        <View style={styles.cardShadow}>
+        <PremiumReveal style={styles.cardShadow}>
           <View style={styles.blurCard}>
             <View style={styles.cardInner}>
 
@@ -293,6 +347,21 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
                     ? 'Ingresa con tu cuenta para continuar.'
                     : 'Regístrate con tu correo y contraseña.'}
                 </Text>
+              </View>
+
+              <View style={styles.valuePills}>
+                <View style={styles.valuePill}>
+                  <Ionicons name="sparkles" size={13} color={premiumColors.accentSoft} />
+                  <Text style={styles.valuePillText}>Alertas IA</Text>
+                </View>
+                <View style={styles.valuePill}>
+                  <Ionicons name="location" size={13} color={premiumColors.accentSoft} />
+                  <Text style={styles.valuePillText}>Clima local</Text>
+                </View>
+                <View style={styles.valuePill}>
+                  <Ionicons name="shield-checkmark" size={13} color={premiumColors.accentSoft} />
+                  <Text style={styles.valuePillText}>Prevención</Text>
+                </View>
               </View>
 
               {/* Campos */}
@@ -336,6 +405,23 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
                     error={errors.password}
                   />
                 </Animated.View>
+
+                {isLogin ? (
+                  <View style={styles.forgotWrap}>
+                    <Pressable
+                      onPress={handleForgotPassword}
+                      disabled={isSendingReset}
+                      style={({ pressed }) => [styles.forgotBtn, pressed && { opacity: 0.72 }]}
+                    >
+                      {isSendingReset ? (
+                        <ActivityIndicator size="small" color={premiumColors.accentSoft} />
+                      ) : (
+                        <Text style={styles.forgotText}>Olvidaste tu contrasena?</Text>
+                      )}
+                    </Pressable>
+                    {resetMessage ? <Text style={styles.resetMessage}>{resetMessage}</Text> : null}
+                  </View>
+                ) : null}
 
                 {/* Confirmar contraseña (solo registro) */}
                 <Animated.View style={{ overflow: 'hidden', maxHeight: confirmMaxHeight, marginTop: confirmMarginTop }}>
@@ -397,7 +483,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
 
             </View>
           </View>
-        </View>
+        </PremiumReveal>
       </ScrollView>
     </View>
   );
@@ -407,7 +493,7 @@ const styles = StyleSheet.create({
   /* ── Splash ── */
   splash: {
     flex: 1,
-    backgroundColor: '#000b18',
+    backgroundColor: premiumColors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -416,14 +502,14 @@ const styles = StyleSheet.create({
   splashTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     letterSpacing: -0.5,
   },
 
   /* ── Pantalla principal ── */
   container: {
     flex: 1,
-    backgroundColor: '#000b18',
+    backgroundColor: premiumColors.surface,
   },
 
   /* Destellos de fondo */
@@ -434,7 +520,7 @@ const styles = StyleSheet.create({
     width: 400,
     height: 400,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.14)',
+    backgroundColor: premiumColors.auroraAqua,
     zIndex: 0,
     pointerEvents: 'none',
   },
@@ -445,7 +531,7 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.07)',
+    backgroundColor: premiumColors.auroraTeal,
     zIndex: 0,
     pointerEvents: 'none',
   },
@@ -460,19 +546,15 @@ const styles = StyleSheet.create({
 
   /* Card */
   cardShadow: {
-    borderRadius: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.7,
-    shadowRadius: 40,
-    elevation: 20,
+    borderRadius: premiumRadii.xxl,
+    ...premiumShadow('strong'),
   },
   blurCard: {
-    borderRadius: 32,
+    borderRadius: premiumRadii.xxl,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(8,16,42,0.82)',
+    borderColor: 'rgba(125,211,252,0.24)',
+    backgroundColor: 'rgba(8,16,42,0.86)',
   },
   cardInner: {
     padding: 28,
@@ -486,14 +568,14 @@ const styles = StyleSheet.create({
   /* Heading */
   headingWrap: { gap: 6, alignItems: 'center' },
   heading: {
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.5,
     textAlign: 'center',
   },
   subheading: {
-    color: 'rgba(148,163,184,0.85)',
+    color: premiumColors.inkMuted,
     fontSize: 14,
     lineHeight: 21,
     textAlign: 'center',
@@ -501,20 +583,66 @@ const styles = StyleSheet.create({
 
   /* Fields */
   fields: { gap: 16 },
+  forgotWrap: {
+    alignItems: 'flex-end',
+    gap: 7,
+    marginTop: -8,
+  },
+  forgotBtn: {
+    minHeight: 28,
+    justifyContent: 'center',
+  },
+  forgotText: {
+    color: premiumColors.accentSoft,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  resetMessage: {
+    color: premiumColors.success,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'right',
+  },
+
+  valuePills: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: -4,
+  },
+  valuePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: premiumRadii.pill,
+    backgroundColor: 'rgba(56,189,248,0.09)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.2)',
+  },
+  valuePillText: {
+    color: premiumColors.inkMuted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   /* Botón submit */
   submitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#38bdf8',
-    borderRadius: 18,
+    backgroundColor: premiumColors.accent,
+    borderRadius: premiumRadii.lg,
     paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   submitBtnPressed: { backgroundColor: '#0284c7' },
   submitBtnDisabled: { backgroundColor: 'rgba(51,65,85,0.8)' },
   submitBtnText: {
-    color: '#082f49',
+    color: premiumColors.accentDeep,
     fontSize: 16,
     fontWeight: '800',
   },
@@ -538,7 +666,7 @@ const styles = StyleSheet.create({
   /* Toggle modo */
   toggleMode: { alignItems: 'center', paddingVertical: 4 },
   toggleModeGray: { color: 'rgba(148,163,184,0.85)', fontSize: 15 },
-  toggleModeBlue: { color: '#38bdf8', fontSize: 15, fontWeight: '700' },
+  toggleModeBlue: { color: premiumColors.accentSoft, fontSize: 15, fontWeight: '700' },
 
   /* Invitado */
   guestBtn: { alignItems: 'center', paddingVertical: 4 },
