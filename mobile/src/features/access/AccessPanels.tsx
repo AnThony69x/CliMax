@@ -847,11 +847,14 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
       if (data?.checkout_url) {
         const result = await WebBrowser.openAuthSessionAsync(data.checkout_url, ExpoLinking.createURL('subscriptions'));
         if (result.type === 'success' && result.url.includes('checkout=success')) {
-          if (data.session?.id) {
-            await syncBillingCheckout(data.session.id, token);
+          const returnedSessionId = Number(readUrlParam(result.url, 'checkout_session_id')) || data.session?.id;
+          if (returnedSessionId) {
+            await syncBillingCheckout(returnedSessionId, token);
           }
           await refreshAccess();
           Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
+        } else {
+          await refreshAccess();
         }
       } else if (data?.session?.id) {
         await simulateBillingSuccess(data.session.id, token);
@@ -1395,6 +1398,11 @@ function formatMoney(cents = 0, currency = 'usd') {
     style: 'currency',
     currency: currency.toUpperCase(),
   }).format((cents ?? 0) / 100);
+}
+
+function readUrlParam(url: string, key: string) {
+  const match = url.match(new RegExp(`[?&]${key}=([^&#]+)`));
+  return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
 }
 
 function featuresForPlan(plan: BillingPlan['key']) {

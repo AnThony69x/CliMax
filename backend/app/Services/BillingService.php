@@ -158,6 +158,8 @@ class BillingService
         $cancelUrl = $this->allowedReturnUrl($cancelUrlOverride)
             ?: config('services.billing.checkout_cancel_url')
             ?: $fallbackBaseUrl.'/billing/cancel';
+        $successUrl = $this->withLocalSessionId($successUrl, $session);
+        $cancelUrl = $this->withLocalSessionId($cancelUrl, $session);
 
         $response = Http::asForm()
             ->withToken($secret)
@@ -209,6 +211,17 @@ class BillingService
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
 
         return in_array($scheme, ['climax', 'exp', 'exps', 'http', 'https'], true) ? $url : null;
+    }
+
+    private function withLocalSessionId(string $url, SubscriptionCheckoutSession $session): string
+    {
+        if (str_contains($url, '{LOCAL_SESSION_ID}')) {
+            return str_replace('{LOCAL_SESSION_ID}', (string) $session->id, $url);
+        }
+
+        $separator = str_contains($url, '?') ? '&' : '?';
+
+        return $url.$separator.'local_session_id='.$session->id;
     }
 
     private function subscriptionForCompletedSession(SubscriptionCheckoutSession $session): ?UserSubscription

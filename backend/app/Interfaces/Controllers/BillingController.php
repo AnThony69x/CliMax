@@ -130,18 +130,43 @@ class BillingController extends Controller
         return response()->json(['received' => true]);
     }
 
-    public function returnFromCheckout(Request $request): Response
+    public function returnFromCheckout(Request $request, BillingService $billing): Response
     {
         $status = $request->query('status') === 'cancel' ? 'cancel' : 'success';
         $appUrl = $this->safeAppReturnUrl((string) $request->query('app_url', ''));
+        $localSessionId = (int) $request->query('local_session_id', 0);
+        $syncStatus = null;
+
+        if ($status === 'success' && $localSessionId > 0) {
+            $session = SubscriptionCheckoutSession::query()->find($localSessionId);
+
+            if ($session) {
+                try {
+                    $billing->syncCheckout($session, null);
+                    $syncStatus = 'ok';
+                } catch (\RuntimeException) {
+                    $syncStatus = 'pending';
+                }
+            }
+        }
+
         $title = $status === 'success' ? 'Pago completado' : 'Pago cancelado';
-        $message = $status === 'success'
-            ? 'Listo. Vuelve a CliMax para actualizar tu suscripcion.'
-            : 'No se completo el pago. Puedes volver a CliMax e intentarlo de nuevo.';
+        $message = match (true) {
+            $status !== 'success' => 'No se completo el pago. Puedes volver a CliMax e intentarlo de nuevo.',
+            $syncStatus === 'ok' => 'Listo. Tu suscripcion ya fue actualizada en CliMax.',
+            default => 'Listo. Vuelve a CliMax para actualizar tu suscripcion.',
+        };
         $button = $status === 'success' ? 'Abrir CliMax' : 'Volver a CliMax';
 
         if (! $appUrl) {
             $appUrl = 'climax://subscriptions?checkout='.$status;
+        }
+
+        if ($localSessionId > 0) {
+            $appUrl = $this->appendAppReturnQuery($appUrl, [
+                'checkout_session_id' => (string) $localSessionId,
+                'sync' => $syncStatus ?? 'pending',
+            ]);
         }
 
         $safeTitle = e($title);
@@ -242,5 +267,14 @@ HTML);
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
 
         return in_array($scheme, ['climax', 'exp', 'exps'], true) ? $url : null;
+    }
+
+    private function appendAppReturnQuery(string $url, array $params): string
+    {
+        [$base, $fragment] = array_pad(explode('#', $url, 2), 2, '');
+        $separator = str_contains($base, '?') ? '&' : '?';
+        $nextUrl = $base.$separator.http_build_query($params);
+
+        return $fragment !== '' ? $nextUrl.'#'.$fragment : $nextUrl;
     }
 }
