@@ -6,16 +6,49 @@ import { getAuthRedirectUrl } from './authRedirect';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_REQUEST_TIMEOUT_MS = 20000;
 let warnedSupabaseNetwork = false;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase no configurada en .env');
 }
 
-const supabaseFetch: typeof fetch = async (input, init) => {
+function timeoutResponse(message: string, status = 504) {
+  return new Response(JSON.stringify({ message }), {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
+async function withTimeout<T>(promise: Promise<T>, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), SUPABASE_REQUEST_TIMEOUT_MS);
+  });
+
   try {
-    return await fetch(input, init);
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+const supabaseFetch: typeof fetch = async (input, init) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
   } catch (error) {
+    const timedOut =
+      error instanceof Error &&
+      (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'));
+
     if (!warnedSupabaseNetwork) {
       warnedSupabaseNetwork = true;
       const message = error instanceof Error ? error.message : String(error);
@@ -25,17 +58,14 @@ const supabaseFetch: typeof fetch = async (input, init) => {
       );
     }
 
-    return new Response(
-      JSON.stringify({
-        message: 'Supabase no alcanzable desde este dispositivo',
-      }),
-      {
-        status: 503,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
+    return timeoutResponse(
+      timedOut
+        ? 'Supabase tardo demasiado en responder. Revisa tu conexion e intenta de nuevo.'
+        : 'Supabase no alcanzable desde este dispositivo',
+      timedOut ? 504 : 503
     );
+  } finally {
+    clearTimeout(timeoutId);
   }
 };
 
@@ -141,16 +171,19 @@ export async function signUp(
   password: string
 ): Promise<{ user: AuthUser; session: any }> {
   const trimmedName = name.trim();
-  const { data, error } = await supabase.auth.signUp({
-    email: email.trim(),
-    password,
-    options: {
-      emailRedirectTo: getAuthRedirectUrl(),
-      data: {
-        name: trimmedName,
+  const { data, error } = await withTimeout(
+    supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        emailRedirectTo: getAuthRedirectUrl(),
+        data: {
+          name: trimmedName,
+        },
       },
-    },
-  });
+    }),
+    'El registro tardo demasiado. Si ya recibiste el correo, confirma tu cuenta e inicia sesion.'
+  );
 
   if (error) {
     throw new Error(error.message);
@@ -160,10 +193,12 @@ export async function signUp(
     throw new Error('No se pudo registrar');
   }
 
-  await ensureProfileExists({
-    id: data.user.id,
-    user_metadata: { name: trimmedName || undefined },
-  });
+  if (data.session) {
+    await ensureProfileExists({
+      id: data.user.id,
+      user_metadata: { name: trimmedName || undefined },
+    });
+  }
 
   return {
     user: data.user,
