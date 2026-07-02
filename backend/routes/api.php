@@ -32,6 +32,7 @@ Route::middleware('supabase.auth')->group(function () {
     Route::prefix('billing')->group(function () {
         Route::get('/plans', [BillingController::class, 'plans']);
         Route::post('/checkout', [BillingController::class, 'checkout']);
+        Route::post('/sync-checkout', [BillingController::class, 'syncCheckout']);
         Route::post('/simulate-success', [BillingController::class, 'simulateSuccess']);
     });
 

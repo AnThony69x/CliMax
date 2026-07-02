@@ -19,6 +19,7 @@ import {
   moderateCommunityComment,
   moderateCommunityPost,
   simulateBillingSuccess,
+  syncBillingCheckout,
   updateAdminPlan,
   updateUserAccountStatus,
   updateUserRole,
@@ -846,7 +847,11 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
       if (data?.checkout_url) {
         const result = await WebBrowser.openAuthSessionAsync(data.checkout_url, ExpoLinking.createURL('subscriptions'));
         if (result.type === 'success' && result.url.includes('checkout=success')) {
+          if (data.session?.id) {
+            await syncBillingCheckout(data.session.id, token);
+          }
           await refreshAccess();
+          Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
         }
       } else if (data?.session?.id) {
         await simulateBillingSuccess(data.session.id, token);

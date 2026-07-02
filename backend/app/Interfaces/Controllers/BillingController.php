@@ -61,11 +61,38 @@ class BillingController extends Controller
             ->where('user_id', $userId)
             ->firstOrFail();
 
-        $subscription = $billing->activateSubscription($session, $userId);
+        $subscription = $billing->syncCheckout($session, $userId);
 
         return response()->json([
             'data' => [
                 'subscription' => $subscription,
+                'access' => $access->resolveForUser($userId),
+            ],
+        ]);
+    }
+
+    public function syncCheckout(Request $request, BillingService $billing, AccessControlService $access): JsonResponse
+    {
+        $validated = $request->validate([
+            'checkout_session_id' => ['required', 'integer'],
+        ]);
+
+        $userId = $this->resolveSupabaseUserId($request);
+        $session = SubscriptionCheckoutSession::query()
+            ->where('id', $validated['checkout_session_id'])
+            ->where('user_id', $userId)
+            ->firstOrFail();
+
+        try {
+            $subscription = $billing->syncCheckout($session, $userId);
+        } catch (\RuntimeException $error) {
+            return response()->json(['message' => $error->getMessage()], 409);
+        }
+
+        return response()->json([
+            'data' => [
+                'subscription' => $subscription,
+                'session' => $session->fresh(),
                 'access' => $access->resolveForUser($userId),
             ],
         ]);

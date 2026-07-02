@@ -96,6 +96,42 @@ class BillingService
         return $subscription;
     }
 
+    public function syncCheckout(SubscriptionCheckoutSession $session, ?string $actorId = null): UserSubscription
+    {
+        if ($session->status === 'completed') {
+            $existing = $this->subscriptionForCompletedSession($session);
+            if ($existing) {
+                return $existing;
+            }
+        }
+
+        $stripeSession = null;
+        if ($session->payment_provider === 'stripe') {
+            $stripeSession = $this->retrieveStripeCheckoutSession($session);
+            $isComplete = ($stripeSession['status'] ?? null) === 'complete';
+            $isPaid = in_array($stripeSession['payment_status'] ?? null, ['paid', 'no_payment_required'], true);
+
+            if (! $isComplete && ! $isPaid) {
+                throw new \RuntimeException('Stripe aun no confirma el pago. Intenta actualizar en unos segundos.');
+            }
+
+            $session->update([
+                'provider_session_id' => $stripeSession['id'] ?? $session->provider_session_id,
+            ]);
+            $session = $session->fresh();
+        }
+
+        $subscription = $this->activateSubscription($session, $actorId);
+        $stripeSubscriptionId = is_array($stripeSession) ? ($stripeSession['subscription'] ?? null) : null;
+
+        if (is_string($stripeSubscriptionId) && $stripeSubscriptionId !== '') {
+            $subscription->update(['provider_subscription_id' => $stripeSubscriptionId]);
+            $subscription = $subscription->fresh();
+        }
+
+        return $subscription;
+    }
+
     private function createStripeCheckout(
         SubscriptionCheckoutSession $session,
         SubscriptionPlan $plan,
@@ -145,6 +181,25 @@ class BillingService
         return $response->json();
     }
 
+    private function retrieveStripeCheckoutSession(SubscriptionCheckoutSession $session): array
+    {
+        $secret = (string) env('STRIPE_SECRET_KEY', '');
+        $providerSessionId = (string) $session->provider_session_id;
+
+        if ($secret === '' || $providerSessionId === '') {
+            throw new \RuntimeException('No se puede confirmar el checkout de Stripe porque falta configuracion.');
+        }
+
+        $response = Http::withToken($secret)
+            ->get('https://api.stripe.com/v1/checkout/sessions/'.rawurlencode($providerSessionId));
+
+        if ($response->failed()) {
+            throw new \RuntimeException($response->json('error.message') ?? 'No se pudo confirmar el checkout en Stripe.');
+        }
+
+        return $response->json();
+    }
+
     private function allowedReturnUrl(?string $url): ?string
     {
         if (! $url) {
@@ -154,5 +209,24 @@ class BillingService
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
 
         return in_array($scheme, ['climax', 'exp', 'exps', 'http', 'https'], true) ? $url : null;
+    }
+
+    private function subscriptionForCompletedSession(SubscriptionCheckoutSession $session): ?UserSubscription
+    {
+        $providerCheckoutId = $session->provider_session_id ?: (string) $session->id;
+
+        return UserSubscription::query()
+            ->where('user_id', $session->user_id)
+            ->where('subscription_plan_id', $session->subscription_plan_id)
+            ->where('status', 'active')
+            ->where('provider_checkout_session_id', $providerCheckoutId)
+            ->latest('starts_at')
+            ->first()
+            ?? UserSubscription::query()
+                ->where('user_id', $session->user_id)
+                ->where('subscription_plan_id', $session->subscription_plan_id)
+                ->where('status', 'active')
+                ->latest('starts_at')
+                ->first();
     }
 }

@@ -222,6 +222,22 @@ export async function createBillingCheckout(
   return response.json();
 }
 
+export async function syncBillingCheckout(checkoutSessionId: number, token: string) {
+  const response = await fetch(`${API_URL}/billing/sync-checkout`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ checkout_session_id: checkoutSessionId }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message ?? 'Error syncing checkout');
+  }
+  return response.json();
+}
+
 export async function simulateBillingSuccess(checkoutSessionId: number, token: string) {
   const response = await fetch(`${API_URL}/billing/simulate-success`, {
     method: 'POST',
