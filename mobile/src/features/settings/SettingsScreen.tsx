@@ -83,11 +83,11 @@ export default function SettingsScreen() {
         <Switch
           value={item.value}
           onValueChange={(value) => handleToggle(item.id, value)}
-          trackColor={{ false: 'rgba(148,163,184,0.32)', true: 'rgba(56,189,248,0.55)' }}
-          thumbColor={item.value ? premiumColors.accentSoft : '#cbd5e1'}
+          trackColor={{ false: 'rgba(148,163,184,0.32)', true: `${premiumColors.accent}8c` }}
+          thumbColor={item.value ? premiumColors.accentSoft : premiumColors.inkSubtle}
         />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
+        <Ionicons name="chevron-forward" size={18} color={premiumColors.inkMuted} />
       )}
     </View>
   );
@@ -105,7 +105,7 @@ export default function SettingsScreen() {
         <Text style={styles.settingLabel}>{item.label}</Text>
         {item.description && <Text style={styles.settingDescription}>{item.description}</Text>}
       </View>
-      <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
+      <Ionicons name="chevron-forward" size={18} color={premiumColors.inkMuted} />
     </Pressable>
   );
 
@@ -209,9 +209,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: premiumRadii.md,
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: `${premiumColors.accent}1a`,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
+    borderColor: `${premiumColors.accentSoft}38`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -223,11 +223,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'rgba(251,113,133,0.1)',
+    backgroundColor: `${premiumColors.danger}1a`,
     padding: 16,
     borderRadius: premiumRadii.lg,
     borderWidth: 1,
-    borderColor: 'rgba(251,113,133,0.35)',
+    borderColor: `${premiumColors.danger}59`,
   },
   logoutButtonPressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
   logoutText: { fontSize: 15, fontWeight: '800', color: premiumColors.danger },

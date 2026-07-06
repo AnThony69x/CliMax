@@ -36,8 +36,8 @@ import { premiumColors, premiumShadow } from '../../theme/premium';
 const { width: SW } = Dimensions.get('window');
 
 const SURFACE   = premiumColors.surface;
-const GLASS_BG  = 'rgba(255,255,255,0.08)';
-const GLASS_BD  = 'rgba(255,255,255,0.14)';
+const GLASS_BG  = premiumColors.glass;
+const GLASS_BD  = premiumColors.glassBorder;
 const ACCENT    = premiumColors.accent;
 const ACCENT_DK = premiumColors.accentDeep;
 const PROFILE_FETCH_TIMEOUT_MS = 12000;
@@ -876,7 +876,7 @@ function PreferenceToggle({
         pointerEvents="none"
         value={value}
         onValueChange={onToggle}
-        trackColor={{ false: 'rgba(148,163,184,0.28)', true: 'rgba(56,189,248,0.5)' }}
+        trackColor={{ false: 'rgba(148,163,184,0.28)', true: `${ACCENT}80` }}
         thumbColor={value ? premiumColors.accentSoft : '#cbd5e1'}
       />
     </Pressable>
@@ -961,36 +961,36 @@ const s = StyleSheet.create({
   heroCard: {
     backgroundColor: 'rgba(15,23,42,0.78)',
     borderRadius: 28, borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: `${ACCENT}38`,
     paddingVertical: 30, paddingHorizontal: 20,
     alignItems: 'center', gap: 10,
     ...premiumShadow('strong'),
   },
   avatarRing: {
     width: 112, height: 112, borderRadius: 56,
-    borderWidth: 2.5, borderColor: 'rgba(56,189,248,0.5)',
+    borderWidth: 2.5, borderColor: `${ACCENT}80`,
     padding: 3, backgroundColor: 'rgba(8,47,73,0.5)',
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 2,
   },
   avatar:        { width: 100, height: 100, borderRadius: 50 },
-  avatarFallback:{ width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(56,189,248,0.18)', justifyContent: 'center', alignItems: 'center' },
+  avatarFallback:{ width: 100, height: 100, borderRadius: 50, backgroundColor: `${ACCENT}2e`, justifyContent: 'center', alignItems: 'center' },
   avatarInitial: { fontSize: 38, fontWeight: '700', color: ACCENT },
   avatarEditBadge: {
     position: 'absolute', bottom: 3, right: 3,
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: 'rgba(12,18,34,0.95)',
-    borderWidth: 1.5, borderColor: 'rgba(56,189,248,0.5)',
+    borderWidth: 1.5, borderColor: `${ACCENT}80`,
     justifyContent: 'center', alignItems: 'center',
   },
-  heroName:  { fontSize: 24, fontWeight: '700', color: '#f8fafc', letterSpacing: -0.3, textAlign: 'center' },
+  heroName:  { fontSize: 24, fontWeight: '700', color: premiumColors.ink, letterSpacing: -0.3, textAlign: 'center' },
   heroEmail: { fontSize: 13, color: 'rgba(148,163,184,0.9)', textAlign: 'center' },
   memberBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(56,189,248,0.10)',
+    backgroundColor: `${ACCENT}1a`,
     paddingHorizontal: 14, paddingVertical: 7,
     borderRadius: 999, borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)', marginTop: 2,
+    borderColor: `${ACCENT}3d`, marginTop: 2,
   },
   memberBadgeText: { fontSize: 12, fontWeight: '600', color: 'rgba(241,245,249,0.9)' },
   btnPrimary: {
@@ -1008,7 +1008,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 11,
     minHeight: 44,
   },
-  btnGhostText: { color: '#e2e8f0', fontWeight: '600', fontSize: 14 },
+  btnGhostText: { color: premiumColors.inkMuted, fontWeight: '600', fontSize: 14 },
 
   /* ── Modal flotante “Tus datos” ── */
   modalRoot: {
@@ -1047,7 +1047,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(12,18,34,0.82)',
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     padding: 18,
     gap: 14,
     overflow: 'hidden',
@@ -1093,7 +1093,7 @@ const s = StyleSheet.create({
     height: 104,
     borderRadius: 52,
     borderWidth: 2,
-    borderColor: 'rgba(56,189,248,0.45)',
+    borderColor: `${ACCENT}73`,
     padding: 3,
     backgroundColor: 'rgba(8,47,73,0.35)',
     justifyContent: 'center',
@@ -1128,7 +1128,7 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
   editStaticBlock: {
     gap: 8,
@@ -1154,7 +1154,7 @@ const s = StyleSheet.create({
   editStaticValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     paddingLeft: 25,
   },
   editStaticValueMuted: {
@@ -1182,18 +1182,18 @@ const s = StyleSheet.create({
     width: STAT_W,
     backgroundColor: 'rgba(15,23,42,0.72)',
     borderRadius: 22, borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.16)',
+    borderColor: `${ACCENT}29`,
     paddingVertical: 18, paddingHorizontal: 12,
     alignItems: 'center', gap: 6,
     ...premiumShadow('medium'),
   },
   statIconWrap: {
     width: 42, height: 42, borderRadius: 13,
-    backgroundColor: 'rgba(56,189,248,0.12)',
-    borderWidth: 1, borderColor: 'rgba(56,189,248,0.22)',
+    backgroundColor: `${ACCENT}1f`,
+    borderWidth: 1, borderColor: `${ACCENT}38`,
     justifyContent: 'center', alignItems: 'center', marginBottom: 2,
   },
-  statValue: { fontSize: 28, fontWeight: '800', color: '#f8fafc', letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
+  statValue: { fontSize: 28, fontWeight: '800', color: premiumColors.ink, letterSpacing: -0.5, fontVariant: ['tabular-nums'] },
   statLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(148,163,184,0.8)', textAlign: 'center', letterSpacing: 0.4 },
 
   /* ── Sections ── */
@@ -1201,12 +1201,12 @@ const s = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 2 },
   sectionIconWrap: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: 'rgba(56,189,248,0.12)',
-    borderWidth: 1, borderColor: 'rgba(56,189,248,0.25)',
+    backgroundColor: `${ACCENT}1f`,
+    borderWidth: 1, borderColor: `${ACCENT}40`,
     justifyContent: 'center', alignItems: 'center',
   },
   sectionEyebrow: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: 'rgba(148,163,184,0.75)', textTransform: 'uppercase' },
-  sectionTitle:   { fontSize: 17, fontWeight: '700', color: '#f1f5f9', marginTop: 2 },
+  sectionTitle:   { fontSize: 17, fontWeight: '700', color: premiumColors.ink, marginTop: 2 },
   viewAllBtn:     { flexDirection: 'row', alignItems: 'center', gap: 2 },
   viewAllText:    { fontSize: 13, fontWeight: '600', color: ACCENT },
 
@@ -1218,7 +1218,7 @@ const s = StyleSheet.create({
     paddingVertical: 36, paddingHorizontal: 24,
     alignItems: 'center', gap: 12,
   },
-  postsEmptyTitle: { fontSize: 16, fontWeight: '700', color: '#f1f5f9', textAlign: 'center' },
+  postsEmptyTitle: { fontSize: 16, fontWeight: '700', color: premiumColors.ink, textAlign: 'center' },
   postsEmptyDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', textAlign: 'center', lineHeight: 20 },
 
   postCard: {
@@ -1243,14 +1243,14 @@ const s = StyleSheet.create({
     borderRadius: 999, borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  postTimeBadgeText: { fontSize: 12, fontWeight: '600', color: '#e2e8f0' },
+  postTimeBadgeText: { fontSize: 12, fontWeight: '600', color: premiumColors.inkMuted },
   postNoImageHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4,
   },
   postTimeBadgeNoImg: { fontSize: 12, fontWeight: '600', color: 'rgba(148,163,184,0.8)' },
   postBody:    { padding: 16, gap: 12 },
-  postContent: { fontSize: 15, fontWeight: '500', color: '#e2e8f0', lineHeight: 22 },
+  postContent: { fontSize: 15, fontWeight: '500', color: premiumColors.inkMuted, lineHeight: 22 },
   postFooter:  { flexDirection: 'row', alignItems: 'center', gap: 16 },
   postStat:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
   postStatText:{ fontSize: 13, fontWeight: '600', color: 'rgba(148,163,184,0.75)' },
@@ -1262,7 +1262,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(12,18,34,0.88)',
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)',
+    borderColor: `${ACCENT}3d`,
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 18 },
@@ -1285,7 +1285,7 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(12,18,34,0.9)',
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     padding: 18,
     gap: 14,
     overflow: 'hidden',
@@ -1311,7 +1311,7 @@ const s = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 13,
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
     borderColor: 'rgba(125,211,252,0.22)',
     justifyContent: 'center',
@@ -1323,7 +1323,7 @@ const s = StyleSheet.create({
     gap: 3,
   },
   preferenceTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -1336,8 +1336,8 @@ const s = StyleSheet.create({
     minHeight: 46,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.26)',
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderColor: `${ACCENT}42`,
+    backgroundColor: `${ACCENT}14`,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1354,15 +1354,15 @@ const s = StyleSheet.create({
     gap: 12,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.2)',
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderColor: `${ACCENT}33`,
+    backgroundColor: `${ACCENT}14`,
     padding: 13,
   },
   securitySummaryIcon: {
     width: 42,
     height: 42,
     borderRadius: 14,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
     borderColor: 'rgba(125,211,252,0.22)',
     alignItems: 'center',
@@ -1376,7 +1376,7 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   securitySummaryValue: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 14,
     fontWeight: '700',
     marginTop: 3,
@@ -1393,10 +1393,10 @@ const s = StyleSheet.create({
 
   /* ── Info rows ── */
   infoRow:      { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 4 },
-  infoIconBadge:{ width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(56,189,248,0.10)', justifyContent: 'center', alignItems: 'center' },
+  infoIconBadge:{ width: 40, height: 40, borderRadius: 12, backgroundColor: `${ACCENT}1a`, justifyContent: 'center', alignItems: 'center' },
   infoTextCol:  { flex: 1, minWidth: 0, gap: 4 },
   infoLabel:    { fontSize: 11, fontWeight: '600', letterSpacing: 0.4, color: 'rgba(148,163,184,0.9)', textTransform: 'uppercase' },
-  infoValue:    { fontSize: 15, fontWeight: '500', color: '#f8fafc' },
+  infoValue:    { fontSize: 15, fontWeight: '500', color: premiumColors.ink },
   separator:    { height: StyleSheet.hairlineWidth, backgroundColor: GLASS_BD, marginLeft: 54 },
 
   /* ── Menu rows ── */
@@ -1405,7 +1405,7 @@ const s = StyleSheet.create({
   menuRowPressed:  { backgroundColor: 'rgba(255,255,255,0.06)' },
   menuIconWrap:    { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.06)', justifyContent: 'center', alignItems: 'center' },
   menuIconWrapDanger: { backgroundColor: 'rgba(239,68,68,0.12)' },
-  menuLabel:       { flex: 1, fontSize: 15, fontWeight: '500', color: '#f1f5f9' },
+  menuLabel:       { flex: 1, fontSize: 15, fontWeight: '500', color: premiumColors.ink },
   menuLabelDanger: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fecaca' },
   menuDivider:     { height: StyleSheet.hairlineWidth, backgroundColor: GLASS_BD, marginLeft: 58 },
   logoutDivider:   { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8, marginHorizontal: 4 },
@@ -1414,15 +1414,15 @@ const s = StyleSheet.create({
   guestScroll:      { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40, gap: 28, zIndex: 2 },
   guestIconWrap:    { alignItems: 'center' },
   guestTextWrap:    { alignItems: 'center', gap: 10 },
-  guestTitle:       { fontSize: 26, fontWeight: '800', color: '#f1f5f9', letterSpacing: -0.4, textAlign: 'center' },
+  guestTitle:       { fontSize: 26, fontWeight: '800', color: premiumColors.ink, letterSpacing: -0.4, textAlign: 'center' },
   guestSubtitle:    { fontSize: 14, color: 'rgba(148,163,184,0.8)', textAlign: 'center', lineHeight: 21 },
   guestCard:        { backgroundColor: 'rgba(8,16,42,0.82)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
   guestOption:      { gap: 8 },
-  guestOptionTitle: { fontSize: 16, fontWeight: '700', color: '#f1f5f9' },
+  guestOptionTitle: { fontSize: 16, fontWeight: '700', color: premiumColors.ink },
   guestOptionDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', lineHeight: 19 },
   guestBtnPrimary:  { marginTop: 4, backgroundColor: ACCENT, borderRadius: 16, paddingVertical: 14, alignItems: 'center' },
   guestBtnPrimaryText: { color: ACCENT_DK, fontSize: 15, fontWeight: '800' },
-  guestBtnOutline:  { marginTop: 4, borderRadius: 16, borderWidth: 1.5, borderColor: 'rgba(56,189,248,0.5)', paddingVertical: 13, alignItems: 'center' },
+  guestBtnOutline:  { marginTop: 4, borderRadius: 16, borderWidth: 1.5, borderColor: `${ACCENT}80`, paddingVertical: 13, alignItems: 'center' },
   guestBtnOutlineText: { color: ACCENT, fontSize: 15, fontWeight: '700' },
   guestDivider:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
   guestDividerLine: { flex: 1, height: 1, backgroundColor: GLASS_BD },

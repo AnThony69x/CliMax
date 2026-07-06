@@ -405,7 +405,7 @@ export default function CommunityScreen() {
           message: post.content || 'Una publicacion requiere atencion de la comunidad.',
           createdAt: post.created_at,
           icon: severity === 'grave' ? 'warning' : 'alert-circle-outline',
-          accent: severity === 'grave' ? '#f87171' : '#fbbf24',
+          accent: severity === 'grave' ? premiumColors.danger : premiumColors.warning,
         });
       }
 
@@ -420,7 +420,7 @@ export default function CommunityScreen() {
             message: `${reactionCount} ${reactionCount === 1 ? 'persona reacciono' : 'personas reaccionaron'} a tu reporte.`,
             createdAt: post.created_at,
             icon: 'heart-outline',
-            accent: '#fb7185',
+            accent: premiumColors.danger,
           });
         }
       }
@@ -444,7 +444,7 @@ export default function CommunityScreen() {
           message: comment.content,
           createdAt: comment.created_at,
           icon: isOnOwnPost ? 'chatbubble-ellipses-outline' : 'at-outline',
-          accent: '#38bdf8',
+          accent: premiumColors.accent,
         });
       });
     });
@@ -1176,18 +1176,18 @@ export default function CommunityScreen() {
       informacion: {
         label: 'Informacion',
         icon: 'ℹ️',
-        bg: 'rgba(56,189,248,0.18)',
-        border: 'rgba(56,189,248,0.7)',
+        bg: `${ACCENT}2e`,
+        border: `${ACCENT}b2`,
         text: '#e0f2fe',
-        glow: 'rgba(56,189,248,0.35)',
+        glow: `${ACCENT}59`,
       },
       alerta: {
         label: 'Alerta',
         icon: '⚠️',
-        bg: 'rgba(251,191,36,0.2)',
-        border: 'rgba(251,191,36,0.75)',
+        bg: `${premiumColors.warning}33`,
+        border: `${premiumColors.warning}bf`,
         text: '#fef3c7',
-        glow: 'rgba(251,191,36,0.35)',
+        glow: `${premiumColors.warning}59`,
       },
       grave: {
         label: 'Grave',
@@ -1679,7 +1679,7 @@ export default function CommunityScreen() {
                       <Ionicons
                         name={currentReactionIcon as any}
                         size={18}
-                        color={likedByPost[post.id] ? '#fb7185' : 'rgba(226,232,240,0.8)'}
+                        color={likedByPost[post.id] ? premiumColors.danger : 'rgba(226,232,240,0.8)'}
                       />
                       <Text style={styles.socialActionText}>{reactionCountByPost[post.id] ?? 0}</Text>
                     </Pressable>
@@ -2376,7 +2376,7 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#fb7185',
+    backgroundColor: premiumColors.danger,
     borderWidth: 2,
     borderColor: '#08111f',
     alignItems: 'center',
@@ -2405,9 +2405,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2422,7 +2422,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: premiumColors.ink,
     letterSpacing: -0.35,
   },
   subtitle: {
@@ -2491,9 +2491,9 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.58)',
   },
   cameraBtn: {
-    backgroundColor: 'rgba(56,189,248,0.2)',
+    backgroundColor: `${ACCENT}33`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.45)',
+    borderColor: `${ACCENT}73`,
     paddingVertical: 13,
     borderRadius: 12,
     alignItems: 'center',
@@ -2507,7 +2507,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionBtnText: {
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -2560,7 +2560,7 @@ const styles = StyleSheet.create({
     minHeight: 96,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)',
+    borderColor: `${ACCENT}3d`,
     backgroundColor: 'rgba(2,6,18,0.48)',
     color: '#FFFFFF',
     paddingHorizontal: 14,
@@ -2630,7 +2630,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
     borderColor: 'rgba(125,211,252,0.22)',
     position: 'relative',
@@ -2642,7 +2642,7 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: '#fb7185',
+    backgroundColor: premiumColors.danger,
     borderWidth: 2,
     borderColor: '#08111f',
     alignItems: 'center',
@@ -2655,7 +2655,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
   communityPrefsTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 15,
     fontWeight: '800',
   },
@@ -2700,7 +2700,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   feedSectionTitle: {
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.2,
@@ -2719,7 +2719,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.36)',
+    borderColor: `${ACCENT}5c`,
     backgroundColor: 'rgba(15,23,42,0.72)',
     paddingHorizontal: 11,
     flexDirection: 'row',
@@ -2743,7 +2743,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.36)',
+    borderColor: `${ACCENT}5c`,
     backgroundColor: 'rgba(15,23,42,0.72)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2889,9 +2889,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(251,191,36,0.14)',
+    backgroundColor: `${premiumColors.warning}24`,
     borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.45)',
+    borderColor: `${premiumColors.warning}73`,
   },
   moderationBadgeText: {
     color: '#fde68a',
@@ -2915,7 +2915,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   postCaption: {
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
     fontSize: 15,
     lineHeight: 22,
     fontWeight: '500',
@@ -2967,7 +2967,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   smallBtn: {
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderColor: ACCENT,
     borderWidth: 1,
     borderRadius: 10,
@@ -2990,7 +2990,7 @@ const styles = StyleSheet.create({
   skeletonWrap: {
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.14)',
+    borderColor: `${ACCENT}24`,
     backgroundColor: 'rgba(15,23,42,0.72)',
     padding: 16,
     gap: 10,
@@ -3070,7 +3070,7 @@ const styles = StyleSheet.create({
     borderRadius: 34,
     backgroundColor: 'rgba(15,23,42,0.94)',
     borderWidth: 2,
-    borderColor: 'rgba(56,189,248,0.5)',
+    borderColor: `${ACCENT}80`,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: ACCENT,
@@ -3105,7 +3105,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: 'rgba(15,23,42,0.98)',
     borderWidth: 1.5,
-    borderColor: 'rgba(56,189,248,0.65)',
+    borderColor: `${ACCENT}a6`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3124,10 +3124,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.26)',
+    borderColor: `${ACCENT}42`,
     padding: 18,
     gap: 12,
-    shadowColor: 'rgba(56,189,248,0.35)',
+    shadowColor: `${ACCENT}59`,
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.35,
     shadowRadius: 22,
@@ -3169,12 +3169,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(12,18,34,0.96)',
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     padding: 16,
     gap: 12,
   },
   filterTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -3210,7 +3210,7 @@ const styles = StyleSheet.create({
   },
   notificationTrayTitle: {
     marginTop: 2,
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 19,
     fontWeight: '900',
     letterSpacing: -0.4,
@@ -3264,13 +3264,13 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
     borderColor: 'rgba(125,211,252,0.22)',
     marginBottom: 14,
   },
   notificationEmptyTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 16,
     fontWeight: '900',
     textAlign: 'center',
@@ -3319,7 +3319,7 @@ const styles = StyleSheet.create({
   },
   notificationItemTitle: {
     flex: 1,
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 13,
     fontWeight: '900',
   },
@@ -3340,7 +3340,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)',
+    borderColor: `${ACCENT}3d`,
     backgroundColor: 'rgba(255,255,255,0.045)',
     padding: 12,
   },
@@ -3354,10 +3354,10 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
   },
   mineFilterTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -3380,16 +3380,16 @@ const styles = StyleSheet.create({
   filterPill: {
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.35)',
+    borderColor: `${ACCENT}59`,
     paddingHorizontal: 12,
     paddingVertical: 8,
     backgroundColor: 'rgba(255,255,255,0.04)',
   },
   filterPillActive: {
-    backgroundColor: 'rgba(56,189,248,0.2)',
+    backgroundColor: `${ACCENT}33`,
   },
   filterPillText: {
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
     fontSize: 12,
     fontWeight: '600',
   },
@@ -3397,7 +3397,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(12,18,34,0.96)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     padding: 14,
     gap: 8,
   },
@@ -3409,7 +3409,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   reactionItemText: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -3419,7 +3419,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalTitle: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 19,
     fontWeight: '800',
     letterSpacing: -0.25,
@@ -3441,7 +3441,7 @@ const styles = StyleSheet.create({
   modalSectionCard: {
     backgroundColor: 'rgba(15,23,42,0.84)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)',
+    borderColor: `${ACCENT}3d`,
     borderRadius: 16,
     padding: 13,
     gap: 9,
@@ -3631,9 +3631,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(251,191,36,0.14)',
+    backgroundColor: `${premiumColors.warning}24`,
     borderWidth: 1,
-    borderColor: 'rgba(251,191,36,0.4)',
+    borderColor: `${premiumColors.warning}66`,
   },
   commentModerationBadgeText: {
     color: '#fde68a',
@@ -3704,7 +3704,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: `${ACCENT}38`,
     backgroundColor: 'rgba(15,23,42,0.9)',
     overflow: 'hidden',
   },
@@ -3715,7 +3715,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   mentionItemPressed: {
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: `${ACCENT}1a`,
   },
   mentionItemText: {
     color: '#bae6fd',

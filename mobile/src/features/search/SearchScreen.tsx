@@ -522,9 +522,9 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.28)',
+    borderColor: `${ACCENT}47`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -539,7 +539,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: premiumColors.ink,
     letterSpacing: -0.4,
   },
   headerSubtitle: {
@@ -558,7 +558,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(15,23,42,0.65)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: `${ACCENT}38`,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -572,20 +572,20 @@ const styles = StyleSheet.create({
   searchRowOpen: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    borderBottomColor: 'rgba(56,189,248,0.12)',
+    borderBottomColor: `${ACCENT}1f`,
   },
   searchIconBadge: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: '#f8fafc',
+    color: premiumColors.ink,
     minWidth: 0,
   },
   clearBtn: { padding: 4 },
@@ -595,7 +595,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.96)',
     borderWidth: 1,
     borderTopWidth: 0,
-    borderColor: 'rgba(56,189,248,0.18)',
+    borderColor: `${ACCENT}2e`,
     borderBottomLeftRadius: 22,
     borderBottomRightRadius: 22,
     overflow: 'hidden',
@@ -607,7 +607,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(56,189,248,0.10)',
+    backgroundColor: `${ACCENT}1a`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.15)',
+    backgroundColor: `${ACCENT}26`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -634,7 +634,7 @@ const styles = StyleSheet.create({
   suggestionName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
   suggestionCountry: {
     fontSize: 12,
@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.3,
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     textTransform: 'none',
   },
   stateBox: {
@@ -677,7 +677,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(56,189,248,0.10)',
+    backgroundColor: `${ACCENT}1a`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -701,7 +701,7 @@ const styles = StyleSheet.create({
   resultName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
   resultCountry: {
     fontSize: 13,
@@ -709,8 +709,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   resultRowAdded: {
-    borderColor: 'rgba(56,189,248,0.45)',
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    borderColor: `${ACCENT}73`,
+    backgroundColor: `${ACCENT}14`,
   },
 
   /* ── Section ── */
@@ -718,7 +718,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
     marginTop: 2,
   },
 
@@ -751,7 +751,7 @@ const styles = StyleSheet.create({
   savedName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
   savedCountry: {
     fontSize: 12,
@@ -764,9 +764,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(56,189,248,0.14)',
+    backgroundColor: `${ACCENT}24`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.35)',
+    borderColor: `${ACCENT}59`,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -782,11 +782,11 @@ const styles = StyleSheet.create({
   justAddedText: {
     flex: 1,
     fontSize: 13,
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
   },
   justAddedName: {
     fontWeight: '700',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
 
   /* ── Tooltip "desliza para eliminar" ── */
@@ -800,13 +800,13 @@ const styles = StyleSheet.create({
     gap: 6,
     backgroundColor: 'rgba(15,23,42,0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.45)',
+    borderColor: `${ACCENT}73`,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
   swipeHintText: {
-    color: '#f8fafc',
+    color: premiumColors.ink,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -820,7 +820,7 @@ const styles = StyleSheet.create({
   deleteActionBtn: {
     flex: 1,
     borderRadius: 18,
-    backgroundColor: 'rgba(239, 68, 68, 0.92)',
+    backgroundColor: premiumColors.danger,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',

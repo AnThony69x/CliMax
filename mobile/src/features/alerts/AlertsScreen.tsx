@@ -22,11 +22,12 @@ import type { Alert as WeatherAlert } from '../../types';
 import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
 import { IntelligentAlertCardImproved } from '../../components/IntelligentAlertCardImproved';
 import { PremiumReveal } from '../../components/PremiumMotion';
+import { premiumColors, premiumShadow } from '../../theme/premium';
 
-const GLASS_BG     = 'rgba(255,255,255,0.08)';
-const GLASS_BORDER = 'rgba(255,255,255,0.14)';
-const SURFACE_DEEP = '#0c1222';
-const ACCENT       = '#38bdf8';
+const GLASS_BG     = premiumColors.glass;
+const GLASS_BORDER = premiumColors.glassBorder;
+const SURFACE_DEEP = premiumColors.surface;
+const ACCENT       = premiumColors.accent;
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 type EvidenceSeverity = 'info' | 'warning' | 'critical';
@@ -496,9 +497,9 @@ export default function AlertsScreen() {
             disabled={analyzingLocation}
           >
             {analyzingLocation ? (
-              <ActivityIndicator size="small" color="#082f49" />
+              <ActivityIndicator size="small" color={premiumColors.accentDeep} />
             ) : (
-              <Ionicons name="locate-outline" size={18} color="#082f49" />
+              <Ionicons name="locate-outline" size={18} color={premiumColors.accentDeep} />
             )}
             <Text style={styles.aiActionButtonText}>
               {analyzingLocation ? 'Analizando...' : 'Analizar ahora'}
@@ -593,7 +594,7 @@ const styles = StyleSheet.create({
     width: 320,
     height: 320,
     borderRadius: 999,
-    backgroundColor: 'rgba(2,87,129,0.24)',
+    backgroundColor: premiumColors.auroraAqua,
     pointerEvents: 'none',
   },
   bgGlowBottom: {
@@ -603,7 +604,7 @@ const styles = StyleSheet.create({
     width: 290,
     height: 290,
     borderRadius: 999,
-    backgroundColor: 'rgba(251,146,60,0.06)',
+    backgroundColor: premiumColors.auroraTeal,
     pointerEvents: 'none',
   },
   loadingContainer: {
@@ -636,13 +637,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.15,
-    color: 'rgba(148,163,184,0.95)',
+    color: premiumColors.inkSubtle,
     textTransform: 'uppercase',
   },
   title: {
     fontSize: 27,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: premiumColors.ink,
     letterSpacing: -0.4,
   },
   unreadPill: {
@@ -650,9 +651,9 @@ const styles = StyleSheet.create({
     height: 28,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.18)',
+    backgroundColor: `${ACCENT}2e`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.45)',
+    borderColor: `${ACCENT}73`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -665,7 +666,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: 'rgba(148,163,184,0.95)',
+    color: premiumColors.inkSubtle,
     lineHeight: 20,
   },
   aiActionCard: {
@@ -676,8 +677,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.24)',
-    backgroundColor: 'rgba(15,23,42,0.68)',
+    borderColor: `${ACCENT}3d`,
+    backgroundColor: premiumColors.surfaceElevated,
   },
   aiActionTextBlock: {
     flex: 1,
@@ -692,12 +693,12 @@ const styles = StyleSheet.create({
   aiActionTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#f8fafc',
+    color: premiumColors.ink,
   },
   aiActionText: {
     fontSize: 12,
     lineHeight: 17,
-    color: 'rgba(203,213,225,0.82)',
+    color: premiumColors.inkMuted,
   },
   aiActionButton: {
     minHeight: 42,
@@ -715,27 +716,23 @@ const styles = StyleSheet.create({
   aiActionButtonText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#082f49',
+    color: premiumColors.accentDeep,
   },
 
   emptyCard: {
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: premiumColors.surfaceStrong,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.14)',
+    borderColor: `${ACCENT}24`,
     padding: 36,
     alignItems: 'center',
     gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 18,
-    elevation: 4,
+    ...premiumShadow('medium'),
   },
-  emptyTitle: { fontSize: 19, fontWeight: '700', color: '#f1f5f9' },
+  emptyTitle: { fontSize: 19, fontWeight: '700', color: premiumColors.ink },
   emptyText: {
     fontSize: 14,
-    color: 'rgba(148,163,184,0.92)',
+    color: premiumColors.inkSubtle,
     textAlign: 'center',
     lineHeight: 21,
   },
@@ -884,7 +881,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     lineHeight: 22,
   },
   safetyGrid: {
@@ -894,10 +891,10 @@ const styles = StyleSheet.create({
   },
   safetyCard: {
     width: '47%',
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    backgroundColor: premiumColors.surfaceElevated,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.14)',
+    borderColor: `${ACCENT}24`,
     padding: 16,
     alignItems: 'center',
     gap: 10,
@@ -906,7 +903,7 @@ const styles = StyleSheet.create({
     width: 46,
     height: 46,
     borderRadius: 15,
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    backgroundColor: `${ACCENT}14`,
     borderWidth: 1,
     borderColor: GLASS_BORDER,
     justifyContent: 'center',
@@ -915,7 +912,7 @@ const styles = StyleSheet.create({
   safetyText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#e2e8f0',
+    color: premiumColors.inkMuted,
     textAlign: 'center',
     lineHeight: 17,
   },
@@ -1283,9 +1280,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.26)',
+    borderColor: `${ACCENT}42`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1293,13 +1290,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.2,
-    color: 'rgba(148,163,184,0.85)',
+    color: premiumColors.inkSubtle,
     textTransform: 'uppercase',
   },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#f1f5f9',
+    color: premiumColors.ink,
     marginTop: 2,
     letterSpacing: -0.2,
   },
@@ -1314,9 +1311,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.22)',
+    borderColor: `${ACCENT}38`,
     alignItems: 'center',
     justifyContent: 'center',
   },
