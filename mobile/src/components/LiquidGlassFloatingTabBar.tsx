@@ -354,13 +354,13 @@ const styles = StyleSheet.create({
     minHeight: 64,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.42)',
-    backgroundColor: 'rgba(8,13,28,0.94)',
+    borderColor: 'rgba(255,255,255,0.32)',
+    backgroundColor: 'rgba(8,13,28,0.4)',
   },
-  /** Velo oscuro: rgba(0,0,0,0.32) ~ acerca a la doc DARK preset */
+  /** Velo oscuro liviano: deja ver la escena de clima detrás del blur */
   pillDarkVeil: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 18, 0.58)',
+    backgroundColor: 'rgba(2, 6, 18, 0.28)',
     pointerEvents: 'none',
   },
   /** Brillo sutil arriba para emular el gradient blanco translúcido */
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: '55%',
-    backgroundColor: 'rgba(255, 255, 255, 0.045)',
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
     borderTopLeftRadius: PILL_RADIUS,
     borderTopRightRadius: PILL_RADIUS,
     pointerEvents: 'none',

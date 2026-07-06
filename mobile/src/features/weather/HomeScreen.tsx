@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Location from 'expo-location';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -31,6 +31,9 @@ import {
 } from '../../core/preferences/accountPreferences';
 import type { City } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
+import { weatherIconInfo } from '../../theme/weatherIcons';
+import { getWeatherScene, isNightNow, WEATHER_SCENES } from '../../theme/weatherScenes';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -73,36 +76,12 @@ type SlideData = {
   message: string;
 };
 
-const WEATHER_CODES: Record<number, { label: string; icon: string }> = {
-  0:  { label: 'Despejado',                   icon: '☀️' },
-  1:  { label: 'Mayormente despejado',         icon: '🌤️' },
-  2:  { label: 'Parcialmente nublado',         icon: '⛅' },
-  3:  { label: 'Nublado',                      icon: '☁️' },
-  45: { label: 'Niebla',                       icon: '🌫️' },
-  48: { label: 'Niebla con escarcha',          icon: '🌫️' },
-  51: { label: 'Llovizna ligera',              icon: '🌦️' },
-  53: { label: 'Llovizna',                     icon: '🌦️' },
-  55: { label: 'Llovizna intensa',             icon: '🌧️' },
-  61: { label: 'Lluvia ligera',                icon: '🌧️' },
-  63: { label: 'Lluvia',                       icon: '🌧️' },
-  65: { label: 'Lluvia intensa',               icon: '🌧️' },
-  71: { label: 'Nieve ligera',                 icon: '🌨️' },
-  73: { label: 'Nieve',                        icon: '❄️' },
-  75: { label: 'Nieve intensa',                icon: '❄️' },
-  80: { label: 'Chubascos ligeros',            icon: '🌦️' },
-  81: { label: 'Chubascos',                    icon: '🌧️' },
-  82: { label: 'Chubascos intensos',           icon: '⛈️' },
-  95: { label: 'Tormenta',                     icon: '⛈️' },
-  96: { label: 'Tormenta con granizo',         icon: '⛈️' },
-  99: { label: 'Tormenta con granizo fuerte',  icon: '⛈️' },
-};
-
-const SURFACE_DEEP = premiumColors.surface;
 const SURFACE_DEEPER = '#030712';
 const ACCENT = premiumColors.accent;
 const ACCENT_SOFT = premiumColors.accentSoft;
-const GLASS_BG = 'rgba(8,13,28,0.58)';
+const GLASS_BG = 'rgba(255,255,255,0.05)';
 const GLASS_BORDER = premiumColors.glassBorder;
+const GLASS_BORDER_HI = premiumColors.glassBorderHi;
 const RAIN_LIGHT = '#3b82f6';
 const RAIN_MODERATE = '#8b5cf6';
 const RAIN_STRONG = '#d946ef';
@@ -126,12 +105,9 @@ const ECUADOR_REGION = {
 };
 
 const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
-const CLOUD_CODES = new Set([2, 3, 45, 48]);
 
-
-function weatherInfo(code: number | undefined) {
-  if (code == null) return { label: 'Cargando...', icon: '⏳' };
-  return WEATHER_CODES[code] ?? { label: 'Condición desconocida', icon: '🌡️' };
+function weatherInfo(code: number | undefined, isNight = false) {
+  return weatherIconInfo(code, isNight);
 }
 
 function formatTempRounded(v: number | null | undefined) {
@@ -413,7 +389,7 @@ function buildWeeklyForecast(
 function GlassCard({
   children,
   style,
-  intensity = 26,
+  intensity = 38,
 }: {
   children: React.ReactNode;
   style?: any;
@@ -421,72 +397,9 @@ function GlassCard({
 }) {
   return (
     <BlurView intensity={intensity} tint="dark" style={[styles.glassCard, style]}>
+      <View style={styles.glassTopHighlight} pointerEvents="none" />
       <View style={styles.glassInner}>{children}</View>
     </BlurView>
-  );
-}
-
-function RainLayer({ active }: { active: boolean }) {
-  const drops = useMemo(
-    () =>
-      Array.from({ length: 18 }, (_, i) => ({
-        id: i,
-        left: (5 + (i * 93) % 100) as number,
-        delay: (i % 6) * 220,
-        duration: 1400 + (i % 5) * 220,
-        height: 120 + (i % 4) * 60,
-      })),
-    []
-  );
-
-  const animValues = useMemo(() => drops.map(() => new Animated.Value(0)), [drops]);
-
-  useEffect(() => {
-    if (!active) return;
-    const loops = animValues.map((val, i) =>
-      Animated.loop(
-        Animated.timing(val, {
-          toValue: 1,
-          duration: drops[i].duration,
-          delay: drops[i].delay,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      )
-    );
-    loops.forEach((loop) => loop.start());
-    return () => loops.forEach((loop) => loop.stop());
-  }, [active, animValues, drops]);
-
-  if (!active) return null;
-
-  return (
-    <View style={styles.rainLayer} pointerEvents="none">
-      {drops.map((drop, i) => (
-        <Animated.View
-          key={drop.id}
-          style={[
-            styles.rainDrop,
-            {
-              left: `${drop.left}%` as `${number}%`,
-              height: drop.height,
-              transform: [
-                {
-                  translateY: animValues[i].interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-80, 720],
-                  }),
-                },
-              ],
-              opacity: animValues[i].interpolate({
-                inputRange: [0, 0.2, 1],
-                outputRange: [0, 0.85, 0],
-              }),
-            },
-          ]}
-        />
-      ))}
-    </View>
   );
 }
 
@@ -507,7 +420,9 @@ function WeatherSlide({
   const insets = useSafeAreaInsets();
   const { hasEntitlement } = useAccess();
   const canUseAdvancedWeather = hasEntitlement('weather.comparisons');
-  const info = weatherInfo(slide.weather?.weatherCode);
+  const isNight = isNightNow(slide.weather?.sunrise, slide.weather?.sunset);
+  const info = weatherInfo(slide.weather?.weatherCode, isNight);
+  const scene = WEATHER_SCENES[getWeatherScene(slide.weather?.weatherCode, isNight)];
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -531,8 +446,6 @@ function WeatherSlide({
       )
     );
   }, [slide.weather]);
-  const isRain = RAIN_CODES.has(slide.weather?.weatherCode ?? -1);
-  const isCloudy = CLOUD_CODES.has(slide.weather?.weatherCode ?? -1);
   const moon = useMemo(() => moonPhaseData(), []);
   const [mapMode, setMapMode] = useState<'radar' | 'temp'>('radar');
   const [radarFrames, setRadarFrames] = useState<string[]>([]);
@@ -659,35 +572,13 @@ function WeatherSlide({
     outputRange: [0, -18],
     extrapolate: 'clamp',
   });
-  const cloudTranslate = scrollY.interpolate({
-    inputRange: [0, 300],
-    outputRange: [0, -40],
-    extrapolate: 'clamp',
-  });
-  const glowTranslate = scrollY.interpolate({
-    inputRange: [0, 300],
-    outputRange: [0, 24],
-    extrapolate: 'clamp',
-  });
-
   return (
     <View style={styles.slideRoot}>
-      <Animated.View
-        style={[
-          styles.dynamicBg,
-          {
-            backgroundColor: isRain ? '#060c18' : isCloudy ? '#0a1426' : '#0b1422',
-          },
-        ]}
+      <WeatherSceneBackground
+        code={slide.weather?.weatherCode}
+        isNight={isNight}
+        particlesEnabled={!preferences.dataSaver}
       />
-      <Animated.View style={[styles.atmosphereGlow, { transform: [{ translateY: glowTranslate }] }]} />
-      <Animated.View
-        style={[
-          styles.cloudLayer,
-          { opacity: isCloudy || isRain ? 1 : 0.4, transform: [{ translateY: cloudTranslate }] },
-        ]}
-      />
-      <RainLayer active={isRain && !preferences.dataSaver} />
 
       <Animated.ScrollView
         style={{ width: SCREEN_WIDTH }}
@@ -698,8 +589,8 @@ function WeatherSlide({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={ACCENT_SOFT}
-              colors={[ACCENT_SOFT]}
+              tintColor={scene.accentSoft}
+              colors={[scene.accentSoft]}
             />
           ) : undefined
         }
@@ -716,14 +607,14 @@ function WeatherSlide({
               <Text style={styles.headerTime}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
               {isGPS ? (
                 <View style={styles.headerLocationRow}>
-                  <Ionicons name="location" size={16} color={ACCENT_SOFT} />
+                  <Ionicons name="location" size={16} color={scene.accentSoft} />
                   <Text style={styles.headerLocationLabel}>Ubicacion actual</Text>
                 </View>
               ) : null}
             </View>
             {isGPS ? (
-              <View style={styles.headerGps}>
-                <Ionicons {...gpsLocationIconProps()} color={ACCENT} />
+              <View style={[styles.headerGps, { borderColor: `${scene.accent}59`, backgroundColor: `${scene.accent}14` }]}>
+                <Ionicons {...gpsLocationIconProps()} color={scene.accent} />
               </View>
             ) : null}
           </View>
@@ -731,14 +622,24 @@ function WeatherSlide({
           <Text style={styles.cityName} numberOfLines={2}>
             {slide.cityName}
           </Text>
-          <View style={styles.tempCenterRow}>
-            <Text style={styles.temperatureHero}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
-            <Text style={styles.temperatureDegree}>°</Text>
+          <View style={styles.heroRow}>
+            <View style={styles.tempCenterRow}>
+              <Text style={styles.temperatureHero}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
+              <Text style={[styles.temperatureDegree, { color: scene.accent }]}>°</Text>
+            </View>
+            <View
+              style={[
+                styles.heroIconWrap,
+                { backgroundColor: `${scene.accent}1f`, borderColor: `${scene.accent}40` },
+              ]}
+            >
+              <MaterialCommunityIcons name={info.icon} size={38} color={scene.accentSoft} />
+            </View>
           </View>
           <Text style={styles.conditionHero}>{info.label}</Text>
 
           {slide.status === 'loading' && !isGPS && (
-            <ActivityIndicator color={ACCENT_SOFT} style={styles.heroLoader} />
+            <ActivityIndicator color={scene.accentSoft} style={styles.heroLoader} />
           )}
           {slide.updatedAt ? (
             <View style={styles.updatedRow}>
@@ -751,14 +652,19 @@ function WeatherSlide({
         <GlassCard style={styles.summaryCard}>
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryTitle}>Resumen inteligente</Text>
-            <View style={styles.summaryChip}>
-              <Text style={styles.summaryChipText}>Actual</Text>
+            <View
+              style={[
+                styles.summaryChip,
+                { backgroundColor: `${scene.accent}26`, borderColor: `${scene.accent}59` },
+              ]}
+            >
+              <Text style={[styles.summaryChipText, { color: scene.accentSoft }]}>Actual</Text>
             </View>
           </View>
           <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
           <View style={styles.summaryFooter}>
-            <View style={styles.summaryPill}>
-              <Ionicons name="speedometer-outline" size={14} color={ACCENT} />
+            <View style={[styles.summaryPill, { backgroundColor: `${scene.accent}1f` }]}>
+              <Ionicons name="speedometer-outline" size={14} color={scene.accent} />
               <Text style={styles.summaryPillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
             </View>
             <View style={styles.summaryPillSoft}>
@@ -808,11 +714,25 @@ function WeatherSlide({
             decelerationRate="fast"
           >
             {hourly.map((slot) => (
-              <View key={slot.key} style={[styles.hourCard, slot.isNow && styles.hourCardActive]}>
+              <View
+                key={slot.key}
+                style={[
+                  styles.hourCard,
+                  slot.isNow && [
+                    styles.hourCardActive,
+                    { backgroundColor: `${scene.accent}2e`, borderColor: `${scene.accent}59` },
+                  ],
+                ]}
+              >
                 <Text style={[styles.hourLabel, slot.isNow && styles.hourLabelActive]}>{slot.label}</Text>
-                <Text style={styles.hourIcon}>{slot.icon}</Text>
+                <MaterialCommunityIcons
+                  name={slot.icon as any}
+                  size={22}
+                  color={slot.isNow ? '#f8fafc' : 'rgba(226,232,240,0.85)'}
+                  style={styles.hourIcon}
+                />
                 <Text style={styles.hourTemp}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
-                <Text style={styles.hourRain}>{slot.rainChance}%</Text>
+                <Text style={[styles.hourRain, { color: scene.accentSoft }]}>{slot.rainChance}%</Text>
               </View>
             ))}
           </ScrollView>
@@ -826,8 +746,13 @@ function WeatherSlide({
           {weekly.map((day) => (
             <View key={day.key} style={styles.weekRow}>
               <Text style={styles.weekDay}>{day.label}</Text>
-              <Text style={styles.weekIcon}>{day.icon}</Text>
-              <Text style={styles.weekRain}>{day.rainChance}%</Text>
+              <MaterialCommunityIcons
+                name={day.icon as any}
+                size={18}
+                color="rgba(226,232,240,0.85)"
+                style={styles.weekIcon}
+              />
+              <Text style={[styles.weekRain, { color: scene.accentSoft }]}>{day.rainChance}%</Text>
               <Text style={styles.weekTempMin}>{day.min}°</Text>
               <View style={styles.weekRangeBar}>
                 <View style={styles.weekRangeFill} />
@@ -845,7 +770,7 @@ function WeatherSlide({
                 <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
                 <Text style={styles.sectionTitle}>Radar de precipitacion</Text>
               </View>
-              <Ionicons name="expand" size={18} color={ACCENT_SOFT} />
+              <Ionicons name="expand" size={18} color={scene.accentSoft} />
             </View>
             <View style={styles.mapPreview}>
               {!preferences.dataSaver && MapView && slide.coords ? (
@@ -1442,6 +1367,13 @@ export default function HomeScreen() {
 
   const activeSlide = allSlides[activeIndex];
   const isActiveGPS = activeIndex === 0;
+  const activeScene =
+    WEATHER_SCENES[
+      getWeatherScene(
+        activeSlide?.weather?.weatherCode,
+        isNightNow(activeSlide?.weather?.sunrise, activeSlide?.weather?.sunset)
+      )
+    ];
 
   return (
     <View style={styles.container}>
@@ -1504,7 +1436,10 @@ export default function HomeScreen() {
           {allSlides.map((_, i) => (
             <Pressable
               key={i}
-              style={[styles.dot, i === activeIndex && styles.dotActive]}
+              style={[
+                styles.dot,
+                i === activeIndex && [styles.dotActive, { backgroundColor: activeScene.accent }],
+              ]}
               onPress={() => {
                 setActiveIndex(i);
                 scrollRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
@@ -1546,42 +1481,6 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     flex: 1,
     overflow: 'hidden',
-  },
-  dynamicBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: SURFACE_DEEP,
-  },
-  atmosphereGlow: {
-    position: 'absolute',
-    top: -80,
-    right: -120,
-    width: 340,
-    height: 340,
-    borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.12)',
-  },
-  cloudLayer: {
-    position: 'absolute',
-    top: 70,
-    left: -80,
-    width: 260,
-    height: 120,
-    borderRadius: 80,
-    backgroundColor: 'rgba(148,163,184,0.14)',
-    shadowColor: '#0f172a',
-    shadowOpacity: 0.3,
-    shadowRadius: 30,
-    shadowOffset: { width: 20, height: 12 },
-  },
-  rainLayer: {
-    ...StyleSheet.absoluteFillObject,
-    opacity: 0.8,
-  },
-  rainDrop: {
-    position: 'absolute',
-    width: 2,
-    backgroundColor: 'rgba(147,197,253,0.55)',
-    borderRadius: 999,
   },
   slideScroll: {
     paddingHorizontal: 20,
@@ -1653,6 +1552,19 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
     marginBottom: 6,
   },
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroIconWrap: {
+    width: 76,
+    height: 76,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tempCenterRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -1667,7 +1579,6 @@ const styles = StyleSheet.create({
   temperatureDegree: {
     fontSize: 30,
     fontWeight: '400',
-    color: ACCENT,
     marginTop: 14,
   },
   conditionHero: {
@@ -1700,10 +1611,19 @@ const styles = StyleSheet.create({
   glassCard: {
     borderRadius: premiumRadii.xl,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.18)',
+    borderColor: GLASS_BORDER,
+    borderTopColor: GLASS_BORDER_HI,
     backgroundColor: GLASS_BG,
     ...premiumShadow('medium'),
     overflow: 'hidden',
+  },
+  glassTopHighlight: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: '45%',
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   glassInner: {
     padding: 18,
@@ -1858,7 +1778,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   hourIcon: {
-    fontSize: 24,
     marginVertical: 8,
   },
   hourTemp: {
@@ -1888,7 +1807,6 @@ const styles = StyleSheet.create({
   weekIcon: {
     width: 28,
     textAlign: 'center',
-    fontSize: 18,
   },
   weekRain: {
     width: 40,
