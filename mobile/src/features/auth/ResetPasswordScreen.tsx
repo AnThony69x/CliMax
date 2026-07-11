@@ -124,7 +124,7 @@ export default function ResetPasswordScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <AuthWeatherBubbles />
       <View style={styles.bgGlowTop} />
       <View style={styles.bgGlowBottom} />
@@ -336,8 +336,8 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: premiumRadii.xxl,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.24)',
-    backgroundColor: 'rgba(8,16,42,0.88)',
+    borderColor: 'rgba(226,98,43,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     overflow: 'hidden',
     padding: 28,
     gap: 20,
@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   eyebrow: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1.4,
@@ -432,10 +432,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   submitBtnPressed: {
-    backgroundColor: '#0284c7',
+    backgroundColor: '#c94f1f',
   },
   submitBtnDisabled: {
-    backgroundColor: 'rgba(51,65,85,0.8)',
+    backgroundColor: 'rgba(27,32,39,0.15)',
   },
   submitText: {
     color: premiumColors.accentDeep,
@@ -447,7 +447,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   backText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 14,
     fontWeight: '700',
   },

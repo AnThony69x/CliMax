@@ -1,10 +1,12 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated as RNAnimated,
   Easing,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -23,18 +25,52 @@ import { API_URL } from '../../core/api/weatherApi';
 import { useCities } from '../../core/cities/CitiesContext';
 import type { City } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
+import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
+import { useAccountPreferences } from '../../core/preferences/accountPreferences';
+import { getWeatherScene, WEATHER_SCENES } from '../../theme/weatherScenes';
+import { weatherIconInfo } from '../../theme/weatherIcons';
 
 const GLASS_BG     = premiumColors.glass;
 const GLASS_BORDER = premiumColors.glassBorder;
 const SURFACE_DEEP = premiumColors.surface;
 const ACCENT       = premiumColors.accent;
-const ACCENT_SOFT  = premiumColors.accentSoft;
 const DEBOUNCE_MS  = 350;
 const SWIPE_HINT_KEY = '@climax/search/swipe-hint-shown';
+const MONO_FONT = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
+
+type CityWeather = {
+  temp: number;
+  code: number;
+  tempMax: number | null;
+  tempMin: number | null;
+} | null;
+
+async function fetchCityWeather(city: City): Promise<CityWeather> {
+  try {
+    const res = await fetch(`${API_URL}/clima?lat=${city.lat}&lon=${city.lon}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const current = data?.current;
+    if (!current) return null;
+    const daily = data?.daily as Record<string, number[] | undefined> | undefined;
+    return {
+      temp: current.temperature_2m,
+      code: current.weather_code,
+      tempMax: typeof daily?.temperature_2m_max?.[0] === 'number' ? daily.temperature_2m_max[0] : null,
+      tempMin: typeof daily?.temperature_2m_min?.[0] === 'number' ? daily.temperature_2m_min[0] : null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const { addCity, hasCity, savedCities, removeCity } = useCities();
+  const { code: weatherCode, isNight, scene } = useWeatherScene();
+  const preferences = useAccountPreferences();
+  const ACCENT = scene.accent;
 
   const [query, setQuery]             = useState('');
   const [results, setResults]         = useState<City[]>([]);
@@ -45,6 +81,9 @@ export default function SearchScreen() {
   const [focused, setFocused]         = useState(false);
   const [justAdded, setJustAdded]     = useState<City | null>(null);
   const [swipeHintCity, setSwipeHintCity] = useState<string | null>(null);
+  const [cityWeather, setCityWeather] = useState<Record<string, CityWeather>>({});
+
+  const weatherFetchedRef = useRef<Set<string>>(new Set());
 
   const debounceRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blurTimerRef      = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -83,6 +122,18 @@ export default function SearchScreen() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [query]);
+
+  /* ── Clima por ciudad para las tarjetas (guardadas + resultados) ── */
+  useEffect(() => {
+    const cities = [...savedCities, ...results];
+    const pending = cities.filter((c) => !weatherFetchedRef.current.has(c.id));
+    if (pending.length === 0) return;
+    pending.forEach((c) => weatherFetchedRef.current.add(c.id));
+    pending.forEach(async (city) => {
+      const weather = await fetchCityWeather(city);
+      setCityWeather((prev) => ({ ...prev, [city.id]: weather }));
+    });
+  }, [savedCities, results]);
 
   /* ── Búsqueda completa (submit) ── */
   const searchCity = async () => {
@@ -197,9 +248,8 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.bgGlowTop} />
-      <View style={styles.bgGlowBottom} />
+      <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+      <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -211,11 +261,16 @@ export default function SearchScreen() {
       >
         {/* ── Encabezado ── */}
         <View style={styles.header}>
-          <View style={styles.headerIconWrap}>
-            <Ionicons name="compass-outline" size={22} color={ACCENT} />
-          </View>
+          <LinearGradient
+            colors={[ACCENT, scene.accentSoft]}
+            start={{ x: 0.15, y: 0 }}
+            end={{ x: 0.9, y: 1 }}
+            style={styles.headerIconWrap}
+          >
+            <Ionicons name="compass-outline" size={22} color="#fff" />
+          </LinearGradient>
           <View style={styles.headerTextCol}>
-            <Text style={styles.labelCaps}>Explorar</Text>
+            <Text style={[styles.labelCaps, { color: ACCENT }]}>Explorar</Text>
             <Text style={styles.title}>Buscar ciudad</Text>
             <Text style={styles.headerSubtitle}>
               Añade ciudades al inicio para ver su clima al deslizar.
@@ -226,9 +281,14 @@ export default function SearchScreen() {
         {/* ── Barra de búsqueda + dropdown ── */}
         <View style={styles.searchWrapper}>
           <View style={[styles.searchRow, showSuggestions && styles.searchRowOpen]}>
-            <View style={styles.searchIconBadge}>
-              <Ionicons name="search" size={18} color={ACCENT_SOFT} />
-            </View>
+            <LinearGradient
+              colors={[ACCENT, scene.accentSoft]}
+              start={{ x: 0.1, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.searchIconBadge}
+            >
+              <Ionicons name="search" size={17} color="#fff" />
+            </LinearGradient>
             <TextInput
               style={styles.searchInput}
               value={query}
@@ -239,7 +299,7 @@ export default function SearchScreen() {
               onFocus={handleFocus}
               onBlur={handleBlur}
               returnKeyType="search"
-              selectionColor={ACCENT_SOFT}
+              selectionColor={ACCENT}
               autoCorrect={false}
             />
             {loadingSug && (
@@ -247,7 +307,7 @@ export default function SearchScreen() {
             )}
             {query.length > 0 && !loadingSug && (
               <Pressable onPress={clearSearch} style={styles.clearBtn}>
-                <Ionicons name="close" size={16} color="rgba(255,255,255,0.5)" />
+                <Ionicons name="close" size={16} color="rgba(27,32,39,0.4)" />
               </Pressable>
             )}
           </View>
@@ -264,12 +324,12 @@ export default function SearchScreen() {
                     style={({ pressed }) => [
                       styles.suggestionRow,
                       !isLast && styles.suggestionDivider,
-                      pressed && { backgroundColor: 'rgba(255,255,255,0.08)' },
+                      pressed && { backgroundColor: 'rgba(27,32,39,0.05)' },
                     ]}
                     onPress={() => handleSelectCity(city)}
                   >
                     <View style={styles.suggestionIconWrap}>
-                      <Ionicons name="location-outline" size={17} color={ACCENT_SOFT} />
+                      <Ionicons name="location-outline" size={17} color={ACCENT} />
                     </View>
                     <View style={styles.suggestionText}>
                       <Text style={styles.suggestionName}>{city.name}</Text>
@@ -302,38 +362,20 @@ export default function SearchScreen() {
               </View>
             ) : results.length === 0 ? (
               <View style={styles.stateBox}>
-                <Ionicons name="earth-outline" size={40} color="rgba(255,255,255,0.35)" />
+                <Ionicons name="earth-outline" size={40} color="rgba(27,32,39,0.3)" />
                 <Text style={styles.stateText}>No se encontraron ciudades para {query}</Text>
               </View>
             ) : (
               <View style={styles.resultsList}>
-                {results.map((city) => {
-                  const added = hasCity(city.id);
-                  return (
-                    <Pressable
-                      key={city.id}
-                      style={({ pressed }) => [
-                        styles.resultRow,
-                        added && styles.resultRowAdded,
-                        pressed && { opacity: 0.75 },
-                      ]}
-                      onPress={() => handleSelectCity(city)}
-                    >
-                      <View style={styles.resultIconWrap}>
-                        <Ionicons name="pin-outline" size={18} color={ACCENT_SOFT} />
-                      </View>
-                      <View style={styles.resultInfo}>
-                        <Text style={styles.resultName}>{city.name}</Text>
-                        <Text style={styles.resultCountry}>{city.country}</Text>
-                      </View>
-                      <Ionicons
-                        name={added ? 'checkmark' : 'chevron-forward'}
-                        size={18}
-                        color={added ? ACCENT : 'rgba(255,255,255,0.28)'}
-                      />
-                    </Pressable>
-                  );
-                })}
+                {results.map((city) => (
+                  <CityWeatherCard
+                    key={city.id}
+                    city={city}
+                    weather={cityWeather[city.id]}
+                    added={hasCity(city.id)}
+                    onPress={() => handleSelectCity(city)}
+                  />
+                ))}
               </View>
             )}
           </View>
@@ -350,19 +392,21 @@ export default function SearchScreen() {
 
             {justAdded && (
               <View style={styles.justAddedBanner}>
-                <View style={styles.justAddedIconWrap}>
-                  <Ionicons name="checkmark" size={16} color="#0c1222" />
+                <View style={styles.justAddedDot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.justAddedLabel}>Añadida a favoritos</Text>
+                  <Text style={styles.justAddedText} numberOfLines={1}>
+                    <Text style={styles.justAddedName}>{justAdded.name}</Text>
+                    {`, ${justAdded.country}`}
+                  </Text>
                 </View>
-                <Text style={styles.justAddedText} numberOfLines={1}>
-                  <Text style={styles.justAddedName}>{justAdded.name}</Text>
-                  {' guardada en tus ciudades'}
-                </Text>
+                <Ionicons name="checkmark-circle" size={20} color={ACCENT} />
               </View>
             )}
 
             {savedCities.length === 0 ? (
               <View style={styles.stateBox}>
-                <Ionicons name="earth-outline" size={40} color="rgba(255,255,255,0.35)" />
+                <Ionicons name="earth-outline" size={40} color="rgba(27,32,39,0.3)" />
                 <Text style={styles.stateText}>
                   Aún no tienes ciudades guardadas.{'\n'}Busca una ciudad para agregarla.
                 </Text>
@@ -388,27 +432,12 @@ export default function SearchScreen() {
                         )}
                         containerStyle={styles.swipeableContainer}
                       >
-                        <Pressable
-                          style={({ pressed }) => [
-                            styles.savedRow,
-                            pressed && { opacity: 0.85 },
-                          ]}
+                        <CityWeatherCard
+                          city={city}
+                          weather={cityWeather[city.id]}
+                          added
                           onPress={() => handleSelectCity(city)}
-                        >
-                          <View style={styles.resultIconWrap}>
-                            <Ionicons name="heart" size={16} color={ACCENT} />
-                          </View>
-                          <View style={styles.savedText}>
-                            <Text style={styles.savedName}>{city.name}</Text>
-                            <Text style={styles.savedCountry}>{city.country}</Text>
-                          </View>
-                          <Ionicons
-                            name="chevron-back"
-                            size={14}
-                            color="rgba(255,255,255,0.25)"
-                            style={{ marginRight: 4 }}
-                          />
-                        </Pressable>
+                        />
                       </ReanimatedSwipeable>
                       {showHint && (
                         <RNAnimated.View
@@ -483,29 +512,78 @@ function SwipeDeleteAction({
   );
 }
 
+/** Tarjeta de ciudad con gradiente según su condición climática (clima en vivo). */
+function CityWeatherCard({
+  city,
+  weather,
+  onPress,
+  added,
+}: {
+  city: City;
+  weather: CityWeather | undefined;
+  onPress: () => void;
+  added?: boolean;
+}) {
+  const sceneKey = getWeatherScene(weather?.code, false);
+  const tokens = WEATHER_SCENES[sceneKey];
+  const info = weatherIconInfo(weather?.code ?? undefined);
+  const isLight = tokens.ink === 'light';
+  const textColor = isLight ? '#fff' : premiumColors.ink;
+  const subColor = isLight ? 'rgba(255,255,255,0.78)' : 'rgba(27,32,39,0.6)';
+
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [pressed && { opacity: 0.9 }]}>
+      <LinearGradient
+        colors={tokens.sky}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={styles.weatherCard}
+      >
+        {added && (
+          <View style={[styles.weatherCardBadge, isLight && { backgroundColor: 'rgba(255,255,255,0.22)' }]}>
+            <Ionicons name="heart" size={12} color={textColor} />
+          </View>
+        )}
+        <View style={styles.weatherCardTop}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={[styles.weatherCardName, { color: textColor }]} numberOfLines={1}>
+              {city.name}
+            </Text>
+            <View style={styles.weatherCardSubRow}>
+              <Ionicons name="location-outline" size={11} color={subColor} />
+              <Text style={[styles.weatherCardSub, { color: subColor }]} numberOfLines={1}>
+                {city.country}
+              </Text>
+            </View>
+          </View>
+          {weather === undefined ? (
+            <ActivityIndicator size="small" color={textColor} />
+          ) : weather ? (
+            <Text style={[styles.weatherCardTemp, { color: textColor }]}>{Math.round(weather.temp)}°</Text>
+          ) : (
+            <MaterialCommunityIcons name="cloud-off-outline" size={22} color={subColor} />
+          )}
+        </View>
+        <View style={styles.weatherCardBottom}>
+          <Text style={[styles.weatherCardCondition, { color: subColor }]} numberOfLines={1}>
+            {weather ? info.label : weather === null ? 'Sin datos' : 'Cargando...'}
+          </Text>
+          {weather?.tempMax != null && weather?.tempMin != null && (
+            <Text style={[styles.weatherCardMinMax, { color: subColor }]}>
+              Máx {Math.round(weather.tempMax)}°  Mín {Math.round(weather.tempMin)}°
+            </Text>
+          )}
+        </View>
+      </LinearGradient>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: SURFACE_DEEP,
     overflow: 'hidden',
-  },
-  bgGlowTop: {
-    position: 'absolute',
-    top: -90,
-    left: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraAqua,
-  },
-  bgGlowBottom: {
-    position: 'absolute',
-    bottom: -70,
-    right: -90,
-    width: 280,
-    height: 280,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraTeal,
   },
   scrollContent: {
     paddingHorizontal: 20,
@@ -522,17 +600,20 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 16,
-    backgroundColor: `${ACCENT}1f`,
-    borderWidth: 1,
-    borderColor: `${ACCENT}47`,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 3,
   },
   headerTextCol: { flex: 1, gap: 4, minWidth: 0 },
   labelCaps: {
-    fontSize: 10,
+    fontFamily: MONO_FONT,
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.4,
+    letterSpacing: 2,
     color: 'rgba(148,163,184,0.95)',
     textTransform: 'uppercase',
   },
@@ -559,7 +640,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.65)',
     borderWidth: 1,
     borderColor: `${ACCENT}38`,
-    borderRadius: 999,
+    borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 10,
@@ -578,7 +659,6 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: `${ACCENT}1f`,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -592,12 +672,12 @@ const styles = StyleSheet.create({
 
   /* ── Dropdown autocompletado ── */
   dropdown: {
-    backgroundColor: 'rgba(15,23,42,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderTopWidth: 0,
     borderColor: `${ACCENT}2e`,
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
     overflow: 'hidden',
   },
   dropdownAttached: {
@@ -628,7 +708,7 @@ const styles = StyleSheet.create({
   },
   suggestionDivider: {
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
+    borderBottomColor: 'rgba(27,32,39,0.08)',
   },
   suggestionText: { flex: 1 },
   suggestionName: {
@@ -673,44 +753,68 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   resultsList: { gap: 10 },
-  resultIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: `${ACCENT}1a`,
+
+  /* ── Tarjeta de ciudad con clima (resultados + guardadas) ── */
+  weatherCard: {
+    borderRadius: 22,
+    padding: 18,
+    gap: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 3,
+  },
+  weatherCardBadge: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 999,
+    backgroundColor: 'rgba(27,32,39,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  resultRow: {
+  weatherCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  weatherCardName: {
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  weatherCardSubRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.55)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    elevation: 2,
+    gap: 4,
+    marginTop: 3,
   },
-  resultInfo: { flex: 1 },
-  resultName: {
-    fontSize: 16,
+  weatherCardSub: {
+    fontSize: 12,
+  },
+  weatherCardTemp: {
+    fontFamily: MONO_FONT,
+    fontSize: 34,
     fontWeight: '600',
-    color: premiumColors.ink,
+    lineHeight: 36,
   },
-  resultCountry: {
+  weatherCardBottom: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  weatherCardCondition: {
     fontSize: 13,
-    color: 'rgba(148,163,184,0.92)',
-    marginTop: 2,
+    fontWeight: '500',
+    flexShrink: 1,
   },
-  resultRowAdded: {
-    borderColor: `${ACCENT}73`,
-    backgroundColor: `${ACCENT}14`,
+  weatherCardMinMax: {
+    fontFamily: MONO_FONT,
+    fontSize: 11,
   },
 
   /* ── Section ── */
@@ -728,60 +832,43 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   swipeableContainer: {
-    borderRadius: 18,
+    borderRadius: 22,
     overflow: 'hidden',
   },
-  savedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.85)',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: GLASS_BORDER,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  savedText: { flex: 1 },
-  savedName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: premiumColors.ink,
-  },
-  savedCountry: {
-    fontSize: 12,
-    color: 'rgba(148,163,184,0.88)',
-    marginTop: 2,
-  },
 
-  /* ── Banner de "ciudad guardada" ── */
+  /* ── Banner de "ciudad guardada" (estilo alerta del mockup) ── */
   justAddedBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: `${ACCENT}24`,
+    gap: 12,
+    backgroundColor: `${ACCENT}16`,
     borderWidth: 1,
-    borderColor: `${ACCENT}59`,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: `${ACCENT}40`,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  justAddedIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 999,
-    backgroundColor: ACCENT_SOFT,
-    alignItems: 'center',
-    justifyContent: 'center',
+  justAddedDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: ACCENT,
+    shadowColor: ACCENT,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+  },
+  justAddedLabel: {
+    fontFamily: MONO_FONT,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.4,
+    color: ACCENT,
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
   justAddedText: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 13.5,
     color: premiumColors.inkMuted,
   },
   justAddedName: {
@@ -806,7 +893,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   swipeHintText: {
-    color: premiumColors.ink,
+    color: '#fdf9f3',
     fontSize: 11,
     fontWeight: '600',
   },

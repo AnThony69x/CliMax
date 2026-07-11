@@ -32,8 +32,9 @@ import {
 import type { City } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 import { weatherIconInfo } from '../../theme/weatherIcons';
-import { getWeatherScene, isNightNow, WEATHER_SCENES } from '../../theme/weatherScenes';
+import { getWeatherScene, isNightNow, isTimeNight, WEATHER_SCENES } from '../../theme/weatherScenes';
 import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
+import { MoonPhaseGlobe } from '../../components/weather/MoonPhaseGlobe';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -76,10 +77,9 @@ type SlideData = {
   message: string;
 };
 
-const SURFACE_DEEPER = '#030712';
+const SURFACE_DEEPER = premiumColors.surface;
 const ACCENT = premiumColors.accent;
-const ACCENT_SOFT = premiumColors.accentSoft;
-const GLASS_BG = 'rgba(255,255,255,0.05)';
+const GLASS_BG = 'rgba(27,32,39,0.05)';
 const GLASS_BORDER = premiumColors.glassBorder;
 const GLASS_BORDER_HI = premiumColors.glassBorderHi;
 const RAIN_LIGHT = '#3b82f6';
@@ -169,6 +169,8 @@ function moonPhaseData(date = new Date()) {
     illumination,
     daysToFull,
     daysToNew,
+    /** Fracción del ciclo sinódico (0 = luna nueva, 0.5 = llena, <1 = nueva otra vez). */
+    phaseFraction: phase / synodicMonth,
   };
 }
 
@@ -300,7 +302,10 @@ function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | nu
     const label = items.length === 0 ? 'Ahora' : `${time.getHours()}:00`;
     const temp = weather.hourlyTemps[i] ?? null;
     const rainChance = weather.hourlyRain?.[i] ?? 0;
-    const icon = weatherInfo(weather.hourlyCodes[i]).icon;
+    const icon = weatherInfo(
+      weather.hourlyCodes[i],
+      isTimeNight(time, weather.sunrise, weather.sunset)
+    ).icon;
     items.push({
       key: `${label}-${i}`,
       label,
@@ -344,7 +349,6 @@ function buildWeeklyFromWeather(weather: WeatherState | null): WeeklyItem[] | nu
 
 function buildHourlyForecast(baseTemp: number | null, code?: number): HourlyItem[] {
   const now = new Date();
-  const icon = weatherInfo(code).icon;
   return Array.from({ length: 8 }, (_, i) => {
     const time = new Date(now.getTime() + i * 60 * 60 * 1000);
     const hour = time.getHours();
@@ -356,7 +360,7 @@ function buildHourlyForecast(baseTemp: number | null, code?: number): HourlyItem
       label,
       temp,
       rainChance,
-      icon,
+      icon: weatherInfo(code, isTimeNight(time)).icon,
       isNow: i === 0,
     };
   });
@@ -396,7 +400,7 @@ function GlassCard({
   intensity?: number;
 }) {
   return (
-    <BlurView intensity={intensity} tint="dark" style={[styles.glassCard, style]}>
+    <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       <View style={styles.glassTopHighlight} pointerEvents="none" />
       <View style={styles.glassInner}>{children}</View>
     </BlurView>
@@ -423,6 +427,15 @@ function WeatherSlide({
   const isNight = isNightNow(slide.weather?.sunrise, slide.weather?.sunset);
   const info = weatherInfo(slide.weather?.weatherCode, isNight);
   const scene = WEATHER_SCENES[getWeatherScene(slide.weather?.weatherCode, isNight)];
+  /**
+   * Antes de tener el primer dato de clima, el fondo se muestra neutro
+   * (ver WeatherSceneBackground) — así que el texto/ícono del hero no
+   * deben tomar el acento/tinta de la escena real (podrían quedar
+   * ilegibles, ej. blanco lunar sobre fondo claro) hasta que llegue.
+   */
+  const hasWeather = !!slide.weather;
+  const displayAccent = hasWeather ? scene.accent : ACCENT;
+  const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#1b2027' : '#fdf9f3') : '#1b2027';
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -589,8 +602,8 @@ function WeatherSlide({
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor={scene.accentSoft}
-              colors={[scene.accentSoft]}
+              tintColor={scene.accent}
+              colors={[scene.accent]}
             />
           ) : undefined
         }
@@ -607,39 +620,42 @@ function WeatherSlide({
               <Text style={styles.headerTime}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
               {isGPS ? (
                 <View style={styles.headerLocationRow}>
-                  <Ionicons name="location" size={16} color={scene.accentSoft} />
+                  <Ionicons name="location" size={16} color={displayAccent} />
                   <Text style={styles.headerLocationLabel}>Ubicacion actual</Text>
                 </View>
               ) : null}
             </View>
             {isGPS ? (
-              <View style={[styles.headerGps, { borderColor: `${scene.accent}59`, backgroundColor: `${scene.accent}14` }]}>
-                <Ionicons {...gpsLocationIconProps()} color={scene.accent} />
+              <View style={[styles.headerGps, { borderColor: `${displayAccent}59`, backgroundColor: `${displayAccent}14` }]}>
+                <Ionicons {...gpsLocationIconProps()} color={displayAccent} />
               </View>
             ) : null}
           </View>
 
-          <Text style={styles.cityName} numberOfLines={2}>
+          <Text
+            style={[styles.cityName, { color: displayInkColor }]}
+            numberOfLines={2}
+          >
             {slide.cityName}
           </Text>
           <View style={styles.heroRow}>
             <View style={styles.tempCenterRow}>
-              <Text style={styles.temperatureHero}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
-              <Text style={[styles.temperatureDegree, { color: scene.accent }]}>°</Text>
+              <Text style={[styles.temperatureHero, { color: displayInkColor }]}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
+              <Text style={[styles.temperatureDegree, { color: displayAccent }]}>°</Text>
             </View>
             <View
               style={[
                 styles.heroIconWrap,
-                { backgroundColor: `${scene.accent}1f`, borderColor: `${scene.accent}40` },
+                { backgroundColor: `${displayAccent}1f`, borderColor: `${displayAccent}40` },
               ]}
             >
-              <MaterialCommunityIcons name={info.icon} size={38} color={scene.accentSoft} />
+              <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
             </View>
           </View>
           <Text style={styles.conditionHero}>{info.label}</Text>
 
           {slide.status === 'loading' && !isGPS && (
-            <ActivityIndicator color={scene.accentSoft} style={styles.heroLoader} />
+            <ActivityIndicator color={displayAccent} style={styles.heroLoader} />
           )}
           {slide.updatedAt ? (
             <View style={styles.updatedRow}>
@@ -658,7 +674,7 @@ function WeatherSlide({
                 { backgroundColor: `${scene.accent}26`, borderColor: `${scene.accent}59` },
               ]}
             >
-              <Text style={[styles.summaryChipText, { color: scene.accentSoft }]}>Actual</Text>
+              <Text style={[styles.summaryChipText, { color: scene.accent }]}>Actual</Text>
             </View>
           </View>
           <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
@@ -682,8 +698,13 @@ function WeatherSlide({
           <GlassCard style={styles.weeklySummaryCard}>
             <View style={styles.summaryHeader}>
               <Text style={styles.summaryTitle}>Resumen semanal</Text>
-              <View style={styles.summaryChip}>
-                <Text style={styles.summaryChipText}>Activo</Text>
+              <View
+                style={[
+                  styles.summaryChip,
+                  { backgroundColor: `${scene.accent}26`, borderColor: `${scene.accent}59` },
+                ]}
+              >
+                <Text style={[styles.summaryChipText, { color: scene.accent }]}>Activo</Text>
               </View>
             </View>
             <Text style={styles.summaryText}>
@@ -693,7 +714,7 @@ function WeatherSlide({
             <View style={styles.weeklySummaryGrid}>
               {weekly.slice(0, 4).map((day) => (
                 <View key={day.key} style={styles.weeklySummaryItem}>
-                  <Text style={styles.weeklySummaryDay}>{day.label}</Text>
+                  <Text style={[styles.weeklySummaryDay, { color: scene.accent }]}>{day.label}</Text>
                   <Text style={styles.weeklySummaryTemp}>{day.min}°/{day.max}°</Text>
                   <Text style={styles.weeklySummaryRain}>{day.rainChance}% lluvia</Text>
                 </View>
@@ -728,11 +749,11 @@ function WeatherSlide({
                 <MaterialCommunityIcons
                   name={slot.icon as any}
                   size={22}
-                  color={slot.isNow ? '#f8fafc' : 'rgba(226,232,240,0.85)'}
+                  color={slot.isNow ? '#1b2027' : 'rgba(27,32,39,0.85)'}
                   style={styles.hourIcon}
                 />
                 <Text style={styles.hourTemp}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
-                <Text style={[styles.hourRain, { color: scene.accentSoft }]}>{slot.rainChance}%</Text>
+                <Text style={[styles.hourRain, { color: scene.accent }]}>{slot.rainChance}%</Text>
               </View>
             ))}
           </ScrollView>
@@ -749,10 +770,10 @@ function WeatherSlide({
               <MaterialCommunityIcons
                 name={day.icon as any}
                 size={18}
-                color="rgba(226,232,240,0.85)"
+                color="rgba(27,32,39,0.85)"
                 style={styles.weekIcon}
               />
-              <Text style={[styles.weekRain, { color: scene.accentSoft }]}>{day.rainChance}%</Text>
+              <Text style={[styles.weekRain, { color: scene.accent }]}>{day.rainChance}%</Text>
               <Text style={styles.weekTempMin}>{day.min}°</Text>
               <View style={styles.weekRangeBar}>
                 <View style={styles.weekRangeFill} />
@@ -770,7 +791,7 @@ function WeatherSlide({
                 <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
                 <Text style={styles.sectionTitle}>Radar de precipitacion</Text>
               </View>
-              <Ionicons name="expand" size={18} color={scene.accentSoft} />
+              <Ionicons name="expand" size={18} color={scene.accent} />
             </View>
             <View style={styles.mapPreview}>
               {!preferences.dataSaver && MapView && slide.coords ? (
@@ -813,7 +834,7 @@ function WeatherSlide({
                     <Marker
                       coordinate={slide.coords}
                       title={slide.cityName}
-                      pinColor="#38bdf8"
+                      pinColor="#e2622b"
                     />
                   ) : null}
                 </MapView>
@@ -898,22 +919,7 @@ function WeatherSlide({
                 <Text style={styles.infoHint}>{moon.illumination}% iluminada</Text>
               </View>
               <View style={styles.moonImageWrap}>
-                <View style={styles.moonVisual}>
-                  <View style={styles.moonSurface} />
-                  <View
-                    style={[
-                      styles.moonShadow,
-                      {
-                        transform: [
-                          {
-                            translateX: (0.5 - moon.illumination / 100) * 48,
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                  <View style={styles.moonHighlight} />
-                </View>
+                <MoonPhaseGlobe size={68} phaseFraction={moon.phaseFraction} />
               </View>
             </View>
             <View style={styles.moonMetaRow}>
@@ -1065,7 +1071,7 @@ function WeatherSlide({
                   <Marker
                     coordinate={slide.coords}
                     title={slide.cityName}
-                    pinColor="#38bdf8"
+                    pinColor="#e2622b"
                   />
                 ) : null}
               </MapView>
@@ -1374,10 +1380,12 @@ export default function HomeScreen() {
         isNightNow(activeSlide?.weather?.sunrise, activeSlide?.weather?.sunset)
       )
     ];
+  /** Mientras no haya datos el fondo es neutro claro: forzar tinta oscura para el status bar. */
+  const activeStatusBarInk = activeSlide?.weather ? activeScene.ink : 'dark';
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle={activeStatusBarInk === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
       <View style={styles.bgGlowTop} />
       <View style={styles.bgGlowBottom} />
 
@@ -1396,7 +1404,7 @@ export default function HomeScreen() {
             scrollRef.current?.scrollTo({ x: newIdx * SCREEN_WIDTH, animated: true });
           }}
         >
-          <Ionicons name="trash-outline" size={17} color="#fecaca" />
+          <Ionicons name="trash-outline" size={17} color="#b6432c" />
         </Pressable>
       )}
 
@@ -1522,7 +1530,7 @@ const styles = StyleSheet.create({
   headerTime: {
     fontSize: 16,
     fontWeight: '600',
-    color: 'rgba(226,232,240,0.9)',
+    color: 'rgba(27,32,39,0.9)',
     letterSpacing: -0.3,
   },
   headerGps: {
@@ -1530,10 +1538,10 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.35)',
+    borderColor: 'rgba(226,98,43,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(56,189,248,0.08)',
+    backgroundColor: 'rgba(226,98,43,0.08)',
   },
   headerLocationRow: {
     flexDirection: 'row',
@@ -1543,13 +1551,13 @@ const styles = StyleSheet.create({
   headerLocationLabel: {
     fontSize: 13,
     letterSpacing: 1.1,
-    color: 'rgba(125,211,252,0.9)',
+    color: 'rgba(226,98,43,0.9)',
     fontWeight: '600',
   },
   cityName: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: '#1b2027',
     marginBottom: 6,
   },
   heroRow: {
@@ -1572,7 +1580,7 @@ const styles = StyleSheet.create({
   temperatureHero: {
     fontSize: 96,
     fontWeight: '300',
-    color: '#f8fafc',
+    color: '#1b2027',
     letterSpacing: -4,
     fontVariant: ['tabular-nums'],
   },
@@ -1605,7 +1613,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     fontSize: 13,
     fontWeight: '500',
-    color: '#fecaca',
+    color: '#b6432c',
     lineHeight: 19,
   },
   glassCard: {
@@ -1623,7 +1631,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: '45%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(27,32,39,0.05)',
   },
   glassInner: {
     padding: 18,
@@ -1640,25 +1648,25 @@ const styles = StyleSheet.create({
   summaryTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: '#1b2027',
   },
   summaryChip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(56,189,248,0.15)',
+    backgroundColor: 'rgba(226,98,43,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(56,189,248,0.35)',
+    borderColor: 'rgba(226,98,43,0.35)',
   },
   summaryChipText: {
     fontSize: 11,
     letterSpacing: 1.6,
-    color: ACCENT_SOFT,
+    color: ACCENT,
     fontWeight: '700',
   },
   summaryText: {
     fontSize: 14,
-    color: 'rgba(226,232,240,0.88)',
+    color: 'rgba(27,32,39,0.88)',
     lineHeight: 20,
   },
   summaryFooter: {
@@ -1671,31 +1679,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: 'rgba(226,98,43,0.12)',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
   },
   summaryPillText: {
     fontSize: 12,
-    color: '#f8fafc',
+    color: '#1b2027',
     fontWeight: '600',
   },
   summaryPillSoft: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(27,32,39,0.08)',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
   },
   summaryPillTextSoft: {
     fontSize: 12,
-    color: 'rgba(226,232,240,0.85)',
+    color: 'rgba(27,32,39,0.85)',
     fontWeight: '500',
   },
   weeklySummaryCard: {
     marginBottom: 12,
-    borderColor: 'rgba(45,212,191,0.24)',
-    backgroundColor: 'rgba(15,23,42,0.78)',
   },
   weeklySummaryGrid: {
     flexDirection: 'row',
@@ -1708,28 +1714,28 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 12,
     paddingHorizontal: 10,
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(27,32,39,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(27,32,39,0.1)',
   },
   weeklySummaryDay: {
     fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.8,
-    color: 'rgba(125,211,252,0.94)',
+    color: 'rgba(226,98,43,0.94)',
     textTransform: 'uppercase',
   },
   weeklySummaryTemp: {
     marginTop: 8,
     fontSize: 16,
     fontWeight: '700',
-    color: '#f8fafc',
+    color: '#1b2027',
   },
   weeklySummaryRain: {
     marginTop: 4,
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(203,213,225,0.78)',
+    color: 'rgba(27,32,39,0.78)',
   },
   sectionHeader: {
     marginBottom: 14,
@@ -1749,7 +1755,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: '#1b2027',
   },
   hourlyCard: {
     marginBottom: 12,
@@ -1760,21 +1766,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingVertical: 14,
     paddingHorizontal: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(27,32,39,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(27,32,39,0.08)',
     alignItems: 'center',
   },
   hourCardActive: {
-    backgroundColor: 'rgba(56,189,248,0.18)',
-    borderColor: 'rgba(56,189,248,0.35)',
+    backgroundColor: 'rgba(226,98,43,0.18)',
+    borderColor: 'rgba(226,98,43,0.35)',
   },
   hourLabel: {
     fontSize: 12,
-    color: 'rgba(226,232,240,0.7)',
+    color: 'rgba(27,32,39,0.7)',
   },
   hourLabelActive: {
-    color: '#f8fafc',
+    color: '#1b2027',
     fontWeight: '600',
   },
   hourIcon: {
@@ -1783,11 +1789,11 @@ const styles = StyleSheet.create({
   hourTemp: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: '#1b2027',
   },
   hourRain: {
     fontSize: 12,
-    color: 'rgba(125,211,252,0.9)',
+    color: 'rgba(226,98,43,0.9)',
     marginTop: 4,
   },
   weeklyCard: {
@@ -1801,7 +1807,7 @@ const styles = StyleSheet.create({
   weekDay: {
     width: 40,
     fontSize: 14,
-    color: '#f8fafc',
+    color: '#1b2027',
     fontWeight: '500',
   },
   weekIcon: {
@@ -1811,13 +1817,13 @@ const styles = StyleSheet.create({
   weekRain: {
     width: 40,
     fontSize: 12,
-    color: 'rgba(125,211,252,0.9)',
+    color: 'rgba(226,98,43,0.9)',
     textAlign: 'center',
   },
   weekTempMin: {
     width: 36,
     fontSize: 13,
-    color: 'rgba(226,232,240,0.75)',
+    color: 'rgba(27,32,39,0.75)',
     textAlign: 'right',
   },
   weekRangeBar: {
@@ -1845,7 +1851,7 @@ const styles = StyleSheet.create({
   weekTempMax: {
     width: 36,
     fontSize: 13,
-    color: '#f8fafc',
+    color: '#1b2027',
   },
   mapCard: {
     marginBottom: 12,
@@ -1855,17 +1861,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(27,32,39,0.08)',
   },
   mapFallback: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.7)',
+    backgroundColor: 'rgba(255,255,255,0.7)',
   },
   mapFallbackText: {
     fontSize: 13,
-    color: 'rgba(226,232,240,0.8)',
+    color: 'rgba(27,32,39,0.8)',
   },
   mapOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -1958,12 +1964,12 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: 22,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: '#1b2027',
     marginBottom: 6,
   },
   infoHint: {
     fontSize: 12,
-    color: 'rgba(226,232,240,0.7)',
+    color: 'rgba(27,32,39,0.7)',
     lineHeight: 17,
   },
   moonHeader: {
@@ -1974,47 +1980,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   moonImageWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.3)',
-    backgroundColor: 'rgba(15,23,42,0.6)',
+    width: 92,
+    height: 92,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  moonVisual: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    overflow: 'hidden',
-  },
-  moonSurface: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#e5e7eb',
-    shadowColor: '#f8fafc',
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-  },
-  moonShadow: {
-    position: 'absolute',
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    left: -2,
-    top: -2,
-    backgroundColor: 'rgba(15,23,42,0.9)',
-  },
-  moonHighlight: {
-    position: 'absolute',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    right: 10,
-    top: 12,
-    backgroundColor: 'rgba(255,255,255,0.25)',
   },
   moonMetaRow: {
     flexDirection: 'row',
@@ -2031,7 +2000,7 @@ const styles = StyleSheet.create({
   moonMetaValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#f8fafc',
+    color: '#1b2027',
     marginTop: 4,
   },
   moonDivider: {
@@ -2064,7 +2033,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(27,32,39,0.12)',
   },
   mapFullscreenOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -2139,7 +2108,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148,163,184,0.25)',
   },
   mapTimelineText: {
-    color: '#e2e8f0',
+    color: '#1b2027',
     fontSize: 12,
   },
   mapIntensityPanel: {

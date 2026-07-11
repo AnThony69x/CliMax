@@ -60,7 +60,7 @@ export async function setupAndroidChannel(): Promise<void> {
     name: 'Alertas climáticas',
     importance: Notifications.AndroidImportance.MAX,
     vibrationPattern: [0, 250, 250, 250],
-    lightColor: '#38bdf8',
+    lightColor: '#e2622b',
     sound: 'default',
   });
 }

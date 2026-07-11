@@ -12,6 +12,7 @@ import { completeAuthSessionFromUrl } from '../src/core/auth/completeAuthFromUrl
 import { CitiesProvider } from '../src/core/cities/CitiesContext';
 import { installFetchLogger } from '../src/core/network/installFetchLogger';
 import { usePushNotifications } from '../src/core/notifications/usePushNotifications';
+import { WeatherSceneProvider } from '../src/core/weather/WeatherSceneContext';
 import { premiumColors } from '../src/theme/premium';
 
 SplashScreen.preventAutoHideAsync();
@@ -91,6 +92,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      <WeatherSceneProvider>
       <CitiesProvider>
         <AccessProvider>
         <Stack
@@ -131,6 +133,7 @@ export default function RootLayout() {
         <StatusBar style="light" />
         </AccessProvider>
       </CitiesProvider>
+      </WeatherSceneProvider>
     </GestureHandlerRootView>
   );
 }

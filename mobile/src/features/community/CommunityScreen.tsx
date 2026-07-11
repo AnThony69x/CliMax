@@ -1175,27 +1175,27 @@ export default function CommunityScreen() {
     () => ({
       informacion: {
         label: 'Informacion',
-        icon: 'ℹ️',
+        icon: 'information-circle' as const,
         bg: `${ACCENT}2e`,
         border: `${ACCENT}b2`,
-        text: '#e0f2fe',
+        text: premiumColors.accentDeep,
         glow: `${ACCENT}59`,
       },
       alerta: {
         label: 'Alerta',
-        icon: '⚠️',
+        icon: 'warning' as const,
         bg: `${premiumColors.warning}33`,
         border: `${premiumColors.warning}bf`,
-        text: '#fef3c7',
+        text: '#7a5211',
         glow: `${premiumColors.warning}59`,
       },
       grave: {
         label: 'Grave',
-        icon: '🚨',
-        bg: 'rgba(239,68,68,0.2)',
-        border: 'rgba(239,68,68,0.7)',
-        text: '#fee2e2',
-        glow: 'rgba(239,68,68,0.4)',
+        icon: 'alert-circle' as const,
+        bg: 'rgba(182,67,44,0.16)',
+        border: 'rgba(182,67,44,0.6)',
+        text: '#7a2318',
+        glow: 'rgba(182,67,44,0.35)',
       },
     }),
     []
@@ -1299,7 +1299,7 @@ export default function CommunityScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 52}
     >
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
       <View style={styles.bgGlowTop} />
       <View style={styles.bgGlowBottom} />
 
@@ -1615,9 +1615,11 @@ export default function CommunityScreen() {
                           },
                         ]}
                       >
-                        <Text style={styles.feedBadgeIcon}>
-                          {severityMeta[post.severity ?? 'informacion'].icon}
-                        </Text>
+                        <Ionicons
+                          name={severityMeta[post.severity ?? 'informacion'].icon}
+                          size={12}
+                          color={severityMeta[post.severity ?? 'informacion'].text}
+                        />
                         <Text
                           style={[
                             styles.feedBadgeText,
@@ -1644,7 +1646,7 @@ export default function CommunityScreen() {
                         style={({ pressed }) => [styles.postMenuBtn, pressed && { opacity: 0.8 }]}
                         onPress={() => openPostMenu(post)}
                       >
-                        <Ionicons name="ellipsis-horizontal" size={18} color="rgba(226,232,240,0.92)" />
+                        <Ionicons name="ellipsis-horizontal" size={18} color="rgba(27,32,39,0.92)" />
                       </Pressable>
                     </View>
                   </View>
@@ -1679,7 +1681,7 @@ export default function CommunityScreen() {
                       <Ionicons
                         name={currentReactionIcon as any}
                         size={18}
-                        color={likedByPost[post.id] ? premiumColors.danger : 'rgba(226,232,240,0.8)'}
+                        color={likedByPost[post.id] ? premiumColors.danger : 'rgba(27,32,39,0.8)'}
                       />
                       <Text style={styles.socialActionText}>{reactionCountByPost[post.id] ?? 0}</Text>
                     </Pressable>
@@ -1689,7 +1691,7 @@ export default function CommunityScreen() {
                       }
                       style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
                     >
-                      <Ionicons name="chatbubble-outline" size={18} color="rgba(226,232,240,0.88)" />
+                      <Ionicons name="chatbubble-outline" size={18} color="rgba(27,32,39,0.88)" />
                       <Text style={styles.socialActionText}>{totalComments}</Text>
                     </Pressable>
                     {post.user_id !== userId ? (
@@ -1697,7 +1699,7 @@ export default function CommunityScreen() {
                         onPress={() => reportContent('post', post.id)}
                         style={({ pressed }) => [styles.socialActionBtn, pressed && { opacity: 0.8 }]}
                       >
-                        <Ionicons name="flag-outline" size={18} color="rgba(226,232,240,0.88)" />
+                        <Ionicons name="flag-outline" size={18} color="rgba(27,32,39,0.88)" />
                         <Text style={styles.socialActionText}>Reportar</Text>
                       </Pressable>
                     ) : null}
@@ -1726,7 +1728,7 @@ export default function CommunityScreen() {
                         <Ionicons
                           name={openCommentsByPost[post.id] ? 'chevron-up' : 'chevron-down'}
                           size={16}
-                          color="rgba(241,245,249,0.9)"
+                          color="rgba(27,32,39,0.9)"
                         />
                       </View>
                     </Pressable>
@@ -1770,7 +1772,7 @@ export default function CommunityScreen() {
                               onChangeText={(value) => onCommentDraftChange(post.id, value)}
                               onFocus={(event) => keepFocusedInputVisible(event.target)}
                               placeholder="Escribe un comentario"
-                              placeholderTextColor="rgba(255,255,255,0.45)"
+                              placeholderTextColor="rgba(27,32,39,0.45)"
                               multiline
                             />
                             {activeMentionPostId === post.id && mentionSuggestions.length > 0 ? (
@@ -1839,7 +1841,7 @@ export default function CommunityScreen() {
                 style={({ pressed }) => [styles.notificationCloseBtn, pressed && { opacity: 0.75 }]}
                 onPress={() => setNotificationTrayOpen(false)}
               >
-                <Ionicons name="close" size={18} color="#e2e8f0" />
+                <Ionicons name="close" size={18} color="#1b2027" />
               </Pressable>
             </View>
 
@@ -1848,7 +1850,7 @@ export default function CommunityScreen() {
                 <Ionicons
                   name="chatbubble-ellipses-outline"
                   size={13}
-                  color={accountPreferences.communityMentions ? '#0c1222' : 'rgba(226,232,240,0.72)'}
+                  color={accountPreferences.communityMentions ? '#0c1222' : 'rgba(27,32,39,0.72)'}
                 />
                 <Text style={[styles.notificationPrefText, accountPreferences.communityMentions && styles.notificationPrefTextActive]}>
                   Comentarios
@@ -2007,7 +2009,7 @@ export default function CommunityScreen() {
                 style={({ pressed }) => [styles.modalCloseBtn, pressed && { opacity: 0.75 }]}
                 onPress={cerrarComposer}
               >
-                <Ionicons name="close" size={20} color="#FFFFFF" />
+                <Ionicons name="close" size={20} color={premiumColors.ink} />
               </Pressable>
             </View>
 
@@ -2024,7 +2026,7 @@ export default function CommunityScreen() {
                   value={content}
                   onChangeText={setContent}
                   placeholder="Ubicación detectada automáticamente"
-                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  placeholderTextColor="rgba(27,32,39,0.45)"
                   multiline
                   editable={false}
                 />
@@ -2092,8 +2094,9 @@ export default function CommunityScreen() {
                         ]}
                       >
                         <View style={styles.severityChipContent}>
+                          <Ionicons name={meta.icon} size={13} color={meta.text} />
                           <Text style={[styles.severityChipText, { color: meta.text }]}>
-                            {meta.icon} {meta.label}
+                            {meta.label}
                           </Text>
                           {selected ? (
                             <View
@@ -2137,7 +2140,7 @@ export default function CommunityScreen() {
                   onChangeText={setDraftComment}
                   onFocus={keepComposerInputVisible}
                   placeholder="Escribe el pie de foto"
-                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  placeholderTextColor="rgba(27,32,39,0.45)"
                   multiline
                   textAlignVertical="top"
                 />
@@ -2362,9 +2365,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: 'rgba(8,13,28,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.28)',
+    borderColor: 'rgba(226,98,43,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -2378,7 +2381,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: premiumColors.danger,
     borderWidth: 2,
-    borderColor: '#08111f',
+    borderColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
@@ -2439,32 +2442,32 @@ const styles = StyleSheet.create({
   crudWrap: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(9,12,18,0.95)',
+    borderColor: 'rgba(27,32,39,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     padding: 14,
     gap: 8,
   },
   crudTitle: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 26,
     fontWeight: '700',
     textAlign: 'center',
   },
   crudSubtitle: {
-    color: 'rgba(255,255,255,0.68)',
+    color: 'rgba(27,32,39,0.68)',
     fontSize: 13,
     textAlign: 'center',
     marginTop: -4,
     marginBottom: 8,
   },
   stepLabel: {
-    color: '#dbeafe',
+    color: '#c94f1f',
     fontSize: 13,
     fontWeight: '700',
     marginTop: 6,
   },
   label: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 15,
     fontWeight: '700',
     marginTop: 6,
@@ -2480,15 +2483,15 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(27,32,39,0.3)',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 6,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(27,32,39,0.04)',
   },
   emptyPreviewText: {
-    color: 'rgba(255,255,255,0.58)',
+    color: 'rgba(27,32,39,0.58)',
   },
   cameraBtn: {
     backgroundColor: `${ACCENT}33`,
@@ -2499,7 +2502,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   galleryBtn: {
-    backgroundColor: 'rgba(30,41,59,0.88)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.35)',
     paddingVertical: 13,
@@ -2561,8 +2564,8 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: `${ACCENT}3d`,
-    backgroundColor: 'rgba(2,6,18,0.48)',
-    color: '#FFFFFF',
+    backgroundColor: 'rgba(27,32,39,0.05)',
+    color: premiumColors.ink,
     paddingHorizontal: 14,
     paddingVertical: 11,
     textAlignVertical: 'top',
@@ -2575,14 +2578,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: ACCENT,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(27,32,39,0.22)',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
   saveBtnText: {
-    color: '#082f49',
+    color: '#7a2f10',
     fontWeight: '800',
     fontSize: 13,
   },
@@ -2597,7 +2600,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelBtnText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -2613,8 +2616,8 @@ const styles = StyleSheet.create({
   communityPrefsCard: {
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.2)',
-    backgroundColor: 'rgba(8,13,28,0.78)',
+    borderColor: 'rgba(226,98,43,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.78)',
     padding: 14,
     gap: 12,
     ...premiumShadow('medium'),
@@ -2632,7 +2635,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
+    borderColor: 'rgba(226,98,43,0.22)',
     position: 'relative',
   },
   communityPrefsBadge: {
@@ -2644,7 +2647,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: premiumColors.danger,
     borderWidth: 2,
-    borderColor: '#08111f',
+    borderColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
@@ -2676,17 +2679,17 @@ const styles = StyleSheet.create({
     gap: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(27,32,39,0.12)',
+    backgroundColor: 'rgba(27,32,39,0.04)',
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   communityPrefsChipActive: {
     backgroundColor: ACCENT,
-    borderColor: 'rgba(255,255,255,0.34)',
+    borderColor: 'rgba(27,32,39,0.34)',
   },
   communityPrefsChipText: {
-    color: 'rgba(226,232,240,0.78)',
+    color: 'rgba(27,32,39,0.78)',
     fontSize: 11,
     fontWeight: '800',
   },
@@ -2720,7 +2723,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: `${ACCENT}5c`,
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
@@ -2728,7 +2731,7 @@ const styles = StyleSheet.create({
   },
   myPostsBtnActive: {
     backgroundColor: ACCENT,
-    borderColor: 'rgba(255,255,255,0.38)',
+    borderColor: 'rgba(27,32,39,0.38)',
   },
   myPostsBtnText: {
     color: ACCENT,
@@ -2744,7 +2747,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     borderColor: `${ACCENT}5c`,
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2752,10 +2755,10 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   feedSkeletonCard: {
-    backgroundColor: 'rgba(15,23,42,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.55)',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(27,32,39,0.1)',
     padding: 12,
     gap: 10,
   },
@@ -2768,7 +2771,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(27,32,39,0.2)',
   },
   feedSkeletonHeadLines: {
     flex: 1,
@@ -2778,43 +2781,43 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 140,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(27,32,39,0.1)',
   },
   feedSkeletonLineLg: {
     width: '62%',
     height: 8,
     borderRadius: 99,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(27,32,39,0.22)',
   },
   feedSkeletonLineMd: {
     width: '84%',
     height: 7,
     borderRadius: 99,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(27,32,39,0.16)',
   },
   feedSkeletonLineSm: {
     width: '38%',
     height: 7,
     borderRadius: 99,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(27,32,39,0.14)',
   },
   feedSkeletonLineXs: {
     width: '55%',
     height: 7,
     borderRadius: 99,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(27,32,39,0.12)',
   },
   emptyPostsText: {
-    color: 'rgba(255,255,255,0.58)',
+    color: 'rgba(27,32,39,0.58)',
     fontSize: 13,
     textAlign: 'center',
     marginTop: 2,
   },
   postCard: {
-    backgroundColor: 'rgba(8,13,28,0.82)',
+    backgroundColor: 'rgba(255,255,255,0.82)',
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.18)',
+    borderColor: 'rgba(226,98,43,0.18)',
     padding: 16,
     gap: 10,
     ...premiumShadow('medium'),
@@ -2854,12 +2857,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   feedUser: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 13,
   },
   feedUserMeta: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(27,32,39,0.6)',
     fontSize: 11,
   },
   feedBadge: {
@@ -2874,9 +2877,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
-  },
-  feedBadgeIcon: {
-    fontSize: 12,
   },
   feedBadgeText: {
     fontSize: 11,
@@ -2894,12 +2894,12 @@ const styles = StyleSheet.create({
     borderColor: `${premiumColors.warning}73`,
   },
   moderationBadgeText: {
-    color: '#fde68a',
+    color: '#8a651e',
     fontSize: 10,
     fontWeight: '800',
   },
   moderationReasonText: {
-    color: '#fde68a',
+    color: '#8a651e',
     fontSize: 11,
     lineHeight: 16,
     marginTop: 4,
@@ -2908,9 +2908,9 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(27,32,39,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(27,32,39,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2924,13 +2924,13 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   postLabel: {
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(27,32,39,0.6)',
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   postText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 14,
     lineHeight: 20,
   },
@@ -2941,7 +2941,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   postDate: {
-    color: 'rgba(255,255,255,0.48)',
+    color: 'rgba(27,32,39,0.48)',
     fontSize: 11,
   },
   socialBar: {
@@ -2958,7 +2958,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   socialActionText: {
-    color: 'rgba(226,232,240,0.84)',
+    color: 'rgba(27,32,39,0.84)',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -2983,7 +2983,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   smallBtnText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 12,
   },
@@ -3068,7 +3068,7 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: 'rgba(15,23,42,0.94)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderWidth: 2,
     borderColor: `${ACCENT}80`,
     justifyContent: 'center',
@@ -3091,7 +3091,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(27,32,39,0.28)',
   },
   fabMainIconOffset: {
     marginTop: 2,
@@ -3103,7 +3103,7 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: 'rgba(15,23,42,0.98)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderWidth: 1.5,
     borderColor: `${ACCENT}a6`,
     alignItems: 'center',
@@ -3120,7 +3120,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     maxHeight: '88%',
-    backgroundColor: 'rgba(8,14,30,0.98)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     borderWidth: 1,
@@ -3148,7 +3148,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   modalKicker: {
-    color: 'rgba(125,211,252,0.95)',
+    color: 'rgba(226,98,43,0.95)',
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1.1,
@@ -3166,7 +3166,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
   },
   filterCard: {
-    backgroundColor: 'rgba(12,18,34,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: `${ACCENT}47`,
@@ -3180,10 +3180,10 @@ const styles = StyleSheet.create({
   },
   notificationTrayCard: {
     maxHeight: '78%',
-    backgroundColor: 'rgba(8,14,30,0.98)',
+    backgroundColor: 'rgba(255,255,255,0.98)',
     borderRadius: 26,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.28)',
+    borderColor: 'rgba(226,98,43,0.28)',
     padding: 16,
     gap: 14,
     ...premiumShadow('strong'),
@@ -3202,7 +3202,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   notificationTrayKicker: {
-    color: 'rgba(125,211,252,0.95)',
+    color: 'rgba(226,98,43,0.95)',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.2,
@@ -3221,9 +3221,9 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(27,32,39,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(27,32,39,0.1)',
   },
   notificationPrefsRow: {
     flexDirection: 'row',
@@ -3236,17 +3236,17 @@ const styles = StyleSheet.create({
     gap: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(27,32,39,0.12)',
+    backgroundColor: 'rgba(27,32,39,0.04)',
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
   notificationPrefPillActive: {
     backgroundColor: ACCENT,
-    borderColor: 'rgba(255,255,255,0.34)',
+    borderColor: 'rgba(27,32,39,0.34)',
   },
   notificationPrefText: {
-    color: 'rgba(226,232,240,0.78)',
+    color: 'rgba(27,32,39,0.78)',
     fontSize: 11,
     fontWeight: '900',
   },
@@ -3266,7 +3266,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
+    borderColor: 'rgba(226,98,43,0.22)',
     marginBottom: 14,
   },
   notificationEmptyTitle: {
@@ -3277,7 +3277,7 @@ const styles = StyleSheet.create({
   },
   notificationEmptyText: {
     marginTop: 7,
-    color: 'rgba(203,213,225,0.74)',
+    color: 'rgba(27,32,39,0.74)',
     fontSize: 13,
     lineHeight: 19,
     textAlign: 'center',
@@ -3295,8 +3295,8 @@ const styles = StyleSheet.create({
     gap: 12,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.055)',
+    borderColor: 'rgba(27,32,39,0.1)',
+    backgroundColor: 'rgba(27,32,39,0.055)',
     padding: 12,
   },
   notificationItemIcon: {
@@ -3305,7 +3305,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.72)',
     borderWidth: 1,
   },
   notificationItemBody: {
@@ -3330,7 +3330,7 @@ const styles = StyleSheet.create({
   },
   notificationItemMessage: {
     marginTop: 4,
-    color: 'rgba(203,213,225,0.78)',
+    color: 'rgba(27,32,39,0.78)',
     fontSize: 12,
     lineHeight: 17,
   },
@@ -3341,12 +3341,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: `${ACCENT}3d`,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: 'rgba(27,32,39,0.045)',
     padding: 12,
   },
   mineFilterRowActive: {
     backgroundColor: ACCENT,
-    borderColor: 'rgba(255,255,255,0.38)',
+    borderColor: 'rgba(27,32,39,0.38)',
   },
   mineFilterIcon: {
     width: 34,
@@ -3365,12 +3365,12 @@ const styles = StyleSheet.create({
     color: '#0c1222',
   },
   mineFilterSub: {
-    color: 'rgba(203,213,225,0.72)',
+    color: 'rgba(27,32,39,0.72)',
     fontSize: 11,
     marginTop: 2,
   },
   mineFilterSubActive: {
-    color: 'rgba(12,18,34,0.72)',
+    color: 'rgba(255,255,255,0.72)',
   },
   filterRow: {
     flexDirection: 'row',
@@ -3383,7 +3383,7 @@ const styles = StyleSheet.create({
     borderColor: `${ACCENT}59`,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(27,32,39,0.04)',
   },
   filterPillActive: {
     backgroundColor: `${ACCENT}33`,
@@ -3394,7 +3394,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   reactionCard: {
-    backgroundColor: 'rgba(12,18,34,0.96)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: `${ACCENT}47`,
@@ -3430,16 +3430,16 @@ const styles = StyleSheet.create({
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(27,32,39,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
+    borderColor: 'rgba(27,32,39,0.14)',
   },
   modalScrollContent: {
     gap: 12,
     paddingBottom: 14,
   },
   modalSectionCard: {
-    backgroundColor: 'rgba(15,23,42,0.84)',
+    backgroundColor: 'rgba(255,255,255,0.84)',
     borderWidth: 1,
     borderColor: `${ACCENT}3d`,
     borderRadius: 16,
@@ -3459,7 +3459,7 @@ const styles = StyleSheet.create({
     maxHeight: 160,
   },
   locationHint: {
-    color: 'rgba(144,205,253,0.9)',
+    color: 'rgba(226,98,43,0.9)',
     fontSize: 12,
     marginTop: -2,
   },
@@ -3492,7 +3492,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   commentsTitle: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 13,
     fontWeight: '700',
     flex: 1,
@@ -3507,10 +3507,10 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   commentsCount: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 12,
     fontWeight: '700',
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(27,32,39,0.14)',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 999,
@@ -3537,20 +3537,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   commentsEmpty: {
-    color: 'rgba(255,255,255,0.5)',
+    color: 'rgba(27,32,39,0.5)',
     fontSize: 12,
   },
   commentRow: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(27,32,39,0.06)',
     borderRadius: 12,
     padding: 10,
   },
   commentRowOwner: {
     borderWidth: 1,
-    borderColor: 'rgba(144,205,253,0.4)',
-    backgroundColor: 'rgba(144,205,253,0.08)',
+    borderColor: 'rgba(226,98,43,0.4)',
+    backgroundColor: 'rgba(226,98,43,0.08)',
   },
   commentAvatar: {
     width: 26,
@@ -3574,11 +3574,11 @@ const styles = StyleSheet.create({
     marginLeft: 6,
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: 'rgba(27,32,39,0.04)',
     borderRadius: 10,
     padding: 8,
     borderLeftWidth: 2,
-    borderLeftColor: 'rgba(147,197,253,0.55)',
+    borderLeftColor: 'rgba(226,98,43,0.55)',
   },
   replyAvatar: {
     width: 22,
@@ -3602,25 +3602,25 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   commentAuthor: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 12,
   },
   commentAuthorBadge: {
-    backgroundColor: 'rgba(144,205,253,0.22)',
-    borderColor: 'rgba(144,205,253,0.6)',
+    backgroundColor: 'rgba(226,98,43,0.22)',
+    borderColor: 'rgba(226,98,43,0.6)',
     borderWidth: 1,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 999,
   },
   commentAuthorBadgeText: {
-    color: '#dbeafe',
+    color: '#c94f1f',
     fontSize: 10,
     fontWeight: '700',
   },
   commentText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 13,
     lineHeight: 18,
     maxWidth: '100%',
@@ -3636,12 +3636,12 @@ const styles = StyleSheet.create({
     borderColor: `${premiumColors.warning}66`,
   },
   commentModerationBadgeText: {
-    color: '#fde68a',
+    color: '#8a651e',
     fontSize: 10,
     fontWeight: '800',
   },
   commentDate: {
-    color: 'rgba(255,255,255,0.45)',
+    color: 'rgba(27,32,39,0.45)',
     fontSize: 10,
   },
   commentActions: {
@@ -3654,21 +3654,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(27,32,39,0.1)',
   },
   commentActionDanger: {
     backgroundColor: 'rgba(239,68,68,0.2)',
   },
   commentActionText: {
-    color: 'rgba(255,255,255,0.85)',
+    color: 'rgba(27,32,39,0.85)',
     fontSize: 11,
     fontWeight: '600',
   },
   commentTargetBanner: {
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(144,205,253,0.45)',
-    backgroundColor: 'rgba(144,205,253,0.12)',
+    borderColor: 'rgba(226,98,43,0.45)',
+    backgroundColor: 'rgba(226,98,43,0.12)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     flexDirection: 'row',
@@ -3677,12 +3677,12 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   commentTargetText: {
-    color: '#dbeafe',
+    color: '#c94f1f',
     fontSize: 11,
     fontWeight: '600',
   },
   commentTargetCancel: {
-    color: '#93c5fd',
+    color: '#c94f1f',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -3693,9 +3693,9 @@ const styles = StyleSheet.create({
     minHeight: 64,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    color: '#FFFFFF',
+    borderColor: 'rgba(27,32,39,0.2)',
+    backgroundColor: 'rgba(27,32,39,0.06)',
+    color: premiumColors.ink,
     paddingHorizontal: 12,
     paddingVertical: 8,
     textAlignVertical: 'top',
@@ -3705,25 +3705,25 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: `${ACCENT}38`,
-    backgroundColor: 'rgba(15,23,42,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
     overflow: 'hidden',
   },
   mentionItem: {
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: 'rgba(27,32,39,0.08)',
   },
   mentionItemPressed: {
     backgroundColor: `${ACCENT}1a`,
   },
   mentionItemText: {
-    color: '#bae6fd',
+    color: '#c94f1f',
     fontSize: 13,
     fontWeight: '600',
   },
   commentMentionText: {
-    color: '#7dd3fc',
+    color: '#c94f1f',
     fontWeight: '700',
   },
   commentBtn: {
@@ -3734,7 +3734,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   commentBtnText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 12,
   },
@@ -3760,9 +3760,9 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
+    borderColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,

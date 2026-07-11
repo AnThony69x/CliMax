@@ -23,6 +23,9 @@ import { useIntelligentAlerts } from '../../hooks/useIntelligentAlerts';
 import { IntelligentAlertCardImproved } from '../../components/IntelligentAlertCardImproved';
 import { PremiumReveal } from '../../components/PremiumMotion';
 import { premiumColors, premiumShadow } from '../../theme/premium';
+import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
+import { useAccountPreferences } from '../../core/preferences/accountPreferences';
 
 const GLASS_BG     = premiumColors.glass;
 const GLASS_BORDER = premiumColors.glassBorder;
@@ -127,6 +130,9 @@ const ACTION_KEYWORD_TIPS: Array<{
 export default function AlertsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { code: weatherCode, isNight, scene } = useWeatherScene();
+  const preferences = useAccountPreferences();
+  const ACCENT = scene.accent;
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [evidences, setEvidences] = useState<AlertEvidence[]>([]);
   const [sessionReady, setSessionReady] = useState(false);
@@ -438,7 +444,7 @@ export default function AlertsScreen() {
   if (!sessionReady) {
     return (
       <View style={styles.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
         <ActivityIndicator size="large" color={ACCENT} />
       </View>
     );
@@ -446,9 +452,8 @@ export default function AlertsScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.bgGlowTop} />
-      <View style={styles.bgGlowBottom} />
+      <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+      <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -568,7 +573,7 @@ export default function AlertsScreen() {
             {adaptiveSafetyTips.map((tip) => (
               <View key={tip.text} style={styles.safetyCard}>
                 <View style={styles.safetyIconWrap}>
-                  <Ionicons name={tip.iconName} size={21} color="rgba(241,245,249,0.92)" />
+                  <Ionicons name={tip.iconName} size={21} color={ACCENT} />
                 </View>
                 <Text style={styles.safetyText}>{tip.text}</Text>
               </View>
@@ -586,26 +591,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: SURFACE_DEEP,
     overflow: 'hidden',
-  },
-  bgGlowTop: {
-    position: 'absolute',
-    top: -90,
-    left: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraAqua,
-    pointerEvents: 'none',
-  },
-  bgGlowBottom: {
-    position: 'absolute',
-    bottom: -70,
-    right: -90,
-    width: 290,
-    height: 290,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraTeal,
-    pointerEvents: 'none',
   },
   loadingContainer: {
     flex: 1,
@@ -775,12 +760,12 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 22,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     lineHeight: 28,
   },
   primaryDescription: {
     fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
+    color: premiumColors.inkMuted,
     lineHeight: 24,
   },
   primaryMeta: {
@@ -795,12 +780,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     letterSpacing: 1,
-    color: 'rgba(255,255,255,0.4)',
+    color: premiumColors.inkSubtle,
   },
   metaValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: premiumColors.ink,
   },
 
   /* ── Secondary alerts ── */
@@ -832,7 +817,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: premiumColors.ink,
   },
   miniBadge: {
     borderWidth: 1,
@@ -847,7 +832,7 @@ const styles = StyleSheet.create({
   },
   secondaryDescription: {
     fontSize: 14,
-    color: 'rgba(255,255,255,0.6)',
+    color: premiumColors.inkMuted,
     lineHeight: 20,
   },
   detailBtn: {
@@ -863,7 +848,7 @@ const styles = StyleSheet.create({
   detailBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.8)',
+    color: premiumColors.inkMuted,
     letterSpacing: 0.3,
   },
 
@@ -930,7 +915,7 @@ const styles = StyleSheet.create({
   evidenceTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: premiumColors.ink,
   },
   authCard: {
     backgroundColor: GLASS_BG,
@@ -941,7 +926,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   authTitle: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -975,7 +960,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   authGhostBtnText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '600',
   },
   toggleComposerBtn: {
@@ -1006,7 +991,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     backgroundColor: 'rgba(0,0,0,0.12)',
   },
   textArea: {
@@ -1026,11 +1011,11 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   severityOptionActive: {
-    backgroundColor: 'rgba(56,189,248,0.16)',
+    backgroundColor: 'rgba(226,98,43,0.16)',
     borderColor: ACCENT,
   },
   severityOptionText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -1044,7 +1029,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyPreviewText: {
-    color: 'rgba(255,255,255,0.55)',
+    color: premiumColors.inkSubtle,
   },
   previewImage: {
     width: '100%',
@@ -1108,10 +1093,10 @@ const styles = StyleSheet.create({
   galleryTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: premiumColors.ink,
   },
   galleryEmpty: {
-    color: 'rgba(255,255,255,0.6)',
+    color: premiumColors.inkSubtle,
     fontSize: 13,
   },
   evidenceCard: {
@@ -1132,12 +1117,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   evidenceCardTitle: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontWeight: '700',
     fontSize: 14,
   },
   evidenceCardDescription: {
-    color: 'rgba(255,255,255,0.72)',
+    color: premiumColors.inkMuted,
     fontSize: 12,
   },
   evidenceMetaRow: {
@@ -1146,7 +1131,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   evidenceMetaText: {
-    color: 'rgba(255,255,255,0.52)',
+    color: premiumColors.inkSubtle,
     fontSize: 11,
   },
   unreadText: {
@@ -1159,7 +1144,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   smallActionBtn: {
-    backgroundColor: 'rgba(56,189,248,0.14)',
+    backgroundColor: 'rgba(226,98,43,0.14)',
     borderWidth: 1,
     borderColor: ACCENT,
     borderRadius: 8,
@@ -1175,7 +1160,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   smallActionBtnText: {
-    color: '#FFFFFF',
+    color: premiumColors.ink,
     fontSize: 11,
     fontWeight: '700',
   },

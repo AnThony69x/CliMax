@@ -21,14 +21,14 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { premiumColors, premiumShadow } from '../theme/premium';
+import { premiumShadow } from '../theme/premium';
 
 /**
- * Acentos basados en la referencia liquid-glass + paleta CliMax.
- * Mantén el azul del mockup o cambia a `#7CD9A4` para usar el verde de la marca.
+ * Acentos Solsticio: pastilla de cristal clara, ícono activo en el naranja
+ * de marca sobre la burbuja oscura, inactivo en tinta apagada.
  */
-const ACTIVE_ACCENT = premiumColors.accentSoft;
-const INACTIVE = 'rgba(241, 245, 249, 0.9)';
+const ACTIVE_ACCENT = '#fdf6ef';
+const INACTIVE = 'rgba(27, 32, 39, 0.42)';
 
 const PILL_RADIUS = 34;
 const BUBBLE_HEIGHT = 42;
@@ -131,7 +131,7 @@ export function LiquidGlassFloatingTabBar({
     borderColor: interpolateColor(
       ambient.value,
       [0, 1],
-      ['rgba(255,255,255,0.08)', 'rgba(125,211,252,0.24)'],
+      ['rgba(27,32,39,0.08)', 'rgba(226,98,43,0.28)'],
     ),
   }));
 
@@ -214,10 +214,10 @@ export function LiquidGlassFloatingTabBar({
           {/* Capa 1: blur real (equivale a backdrop-filter: blur+saturate) */}
           <BlurView
             intensity={92}
-            tint="dark"
+            tint="light"
             style={StyleSheet.absoluteFill}
           />
-          {/* Capa 2: velo oscuro translúcido (rgba(0,0,0,~0.32)) */}
+          {/* Capa 2: velo claro translúcido (deja ver la escena detrás, pero mantiene la pastilla legible) */}
           <View style={styles.pillDarkVeil} />
           {/* Capa 3: brillo superior (simula gradient diagonal de la guía) */}
           <View style={styles.pillTopHighlight} />
@@ -354,13 +354,13 @@ const styles = StyleSheet.create({
     minHeight: 64,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
-    backgroundColor: 'rgba(8,13,28,0.4)',
+    borderColor: 'rgba(255,255,255,0.38)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
   },
-  /** Velo oscuro liviano: deja ver la escena de clima detrás del blur */
+  /** Velo claro muy liviano: deja ver la escena de clima detrás del blur */
   pillDarkVeil: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 18, 0.28)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     pointerEvents: 'none',
   },
   /** Brillo sutil arriba para emular el gradient blanco translúcido */
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     height: '55%',
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     borderTopLeftRadius: PILL_RADIUS,
     borderTopRightRadius: PILL_RADIUS,
     pointerEvents: 'none',
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: PILL_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(27, 32, 39, 0.08)',
     pointerEvents: 'none',
   },
   tabsRow: {
@@ -405,13 +405,13 @@ const styles = StyleSheet.create({
   },
   activeBubbleTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(125,211,252,0.105)',
+    backgroundColor: '#1b2027',
   },
   activeBubbleRim: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: BUBBLE_RADIUS,
     borderWidth: 1,
-    borderColor: 'rgba(186,230,253,0.34)',
+    borderColor: 'rgba(226,98,43,0.45)',
   },
   /** Reflejo superior estilo "gota mojada" más sutil */
   activeBubbleGlossTop: {
@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     right: 10,
     height: BUBBLE_HEIGHT * 0.40,
     borderRadius: BUBBLE_RADIUS,
-    backgroundColor: 'rgba(255, 255, 255, 0.055)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabContent: {
     alignItems: 'center',
@@ -433,9 +433,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginTop: 2,
     letterSpacing: 0,
-    textShadowColor: 'rgba(0,0,0,0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
   labelCompact: {
     fontSize: 10.5,

@@ -115,9 +115,9 @@ const styles = StyleSheet.create({
     color: premiumColors.ink,
   },
   outlineText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
   },
   ghostText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
   },
 });

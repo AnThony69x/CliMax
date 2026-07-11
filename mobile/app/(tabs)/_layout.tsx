@@ -20,14 +20,13 @@ export default function TabLayout() {
   const showUserCommunity = communityEnabled || isAdmin || isOperator;
   const showUserAlerts = alertsEnabled && !isAdmin && !isOperator;
   const showProfessional = professionalEnabled && !isAdmin && !isOperator;
-  const showSubscriptions = !professionalEnabled && !isAdmin && !isOperator;
   const showOperatorTab = isOperator;
   const userRoutes = [
     'index',
     'search',
     communityEnabled ? 'community' : null,
     alertsEnabled ? 'alerts' : null,
-    professionalEnabled ? 'professional' : 'subscriptions',
+    professionalEnabled ? 'professional' : null,
     'explore',
   ].filter((route): route is string => Boolean(route));
   const visibleRouteNames = isAdmin
@@ -134,11 +133,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="subscriptions"
         options={{
-          title: 'Planes',
-          href: showSubscriptions ? undefined : null,
-          tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="workspace-premium" size={size} color={color} />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen

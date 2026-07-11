@@ -20,7 +20,7 @@ export function Input({ label, error, style, ...props }: InputProps) {
           error && styles.inputError,
           style,
         ]}
-        placeholderTextColor="rgba(148,163,184,0.68)"
+        placeholderTextColor="rgba(27,32,39,0.4)"
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         {...props}
@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     backgroundColor: premiumColors.glassStrong,
   },
   inputError: {
-    borderColor: 'rgba(251,113,133,0.72)',
+    borderColor: 'rgba(182,67,44,0.72)',
   },
   error: {
     fontSize: 12,

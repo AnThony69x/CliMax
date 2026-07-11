@@ -1,26 +1,36 @@
 import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 
+/**
+ * Dirección "Solsticio": editorial y claro. El acento FIJO de marca (botones,
+ * íconos, tarjetas activas — todo lo que no es la escena de clima en sí) es
+ * el verde-azulado. El naranja cálido queda reservado como color dinámico de
+ * `weatherScenes.ts` para cuando el clima real es soleado — no es el acento
+ * general de la app.
+ * `ink`, `surface` y `glass*` ya no son "casi blanco sobre casi negro" — son
+ * "casi negro sobre piedra clara", así que cualquier pantalla que siga
+ * usando estos tokens hereda el nuevo look sin más cambios.
+ */
 export const premiumColors = {
-  ink: '#f8fafc',
-  inkMuted: 'rgba(226,232,240,0.78)',
-  inkSubtle: 'rgba(148,163,184,0.92)',
-  surface: '#050914',
-  surfaceElevated: 'rgba(12,18,34,0.82)',
-  surfaceStrong: 'rgba(8,13,28,0.94)',
-  glass: 'rgba(255,255,255,0.05)',
-  glassStrong: 'rgba(255,255,255,0.09)',
-  glassBorder: 'rgba(255,255,255,0.22)',
-  glassBorderStrong: 'rgba(125,211,252,0.4)',
-  glassBorderHi: 'rgba(255,255,255,0.34)',
-  accent: '#38bdf8',
-  accentSoft: '#7dd3fc',
-  accentDeep: '#082f49',
-  success: '#34d399',
-  warning: '#fbbf24',
-  danger: '#fb7185',
-  auroraAqua: 'rgba(56,189,248,0.24)',
-  auroraTeal: 'rgba(45,212,191,0.12)',
-  auroraGold: 'rgba(251,191,36,0.08)',
+  ink: '#1b2027',
+  inkMuted: 'rgba(27,32,39,0.66)',
+  inkSubtle: 'rgba(27,32,39,0.48)',
+  surface: '#eef0f2',
+  surfaceElevated: 'rgba(255,255,255,0.92)',
+  surfaceStrong: 'rgba(255,255,255,0.98)',
+  glass: 'rgba(27,32,39,0.035)',
+  glassStrong: 'rgba(27,32,39,0.06)',
+  glassBorder: 'rgba(27,32,39,0.12)',
+  glassBorderStrong: 'rgba(31,111,107,0.35)',
+  glassBorderHi: 'rgba(27,32,39,0.2)',
+  accent: '#1f6f6b',
+  accentSoft: '#a9d4cf',
+  accentDeep: '#0d2e2b',
+  success: '#3f8f5c',
+  warning: '#c98a2e',
+  danger: '#b6432c',
+  auroraAqua: 'rgba(31,111,107,0.16)',
+  auroraTeal: 'rgba(31,111,107,0.12)',
+  auroraGold: 'rgba(226,98,43,0.12)',
 };
 
 export const premiumRadii = {

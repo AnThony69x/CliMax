@@ -181,7 +181,7 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
-    backgroundColor: '#030712',
+    backgroundColor: premiumColors.surface,
     justifyContent: 'center',
     overflow: 'hidden',
     zIndex: 999,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     width: 1,
     height: 34,
     borderRadius: 1,
-    backgroundColor: 'rgba(125,211,252,0.46)',
+    backgroundColor: 'rgba(31,111,107,0.32)',
     transform: [{ rotate: '18deg' }],
   },
   content: {
@@ -229,14 +229,14 @@ const styles = StyleSheet.create({
     width: 142,
     height: 142,
     borderRadius: 71,
-    backgroundColor: 'rgba(56,189,248,0.32)',
+    backgroundColor: 'rgba(226,98,43,0.28)',
   },
   orbit: {
     position: 'absolute',
     width: 76,
     height: 2,
     borderRadius: premiumRadii.pill,
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    backgroundColor: 'rgba(226,98,43,0.65)',
   },
   logoCard: {
     width: 96,
@@ -250,7 +250,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   eyebrow: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 11,
     fontWeight: '900',
     letterSpacing: 1.7,
@@ -272,7 +272,7 @@ const styles = StyleSheet.create({
     width: 172,
     height: 6,
     borderRadius: premiumRadii.pill,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(27,32,39,0.1)',
     marginTop: premiumSpacing.xl,
     overflow: 'hidden',
   },

@@ -7,6 +7,9 @@ import { PremiumReveal } from '../../components/PremiumMotion';
 import { clearToken } from '../../core/auth/authStorage';
 import { signOut } from '../../core/auth/supabaseClient';
 import { premiumColors, premiumRadii, premiumShadow, premiumType } from '../../theme/premium';
+import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
+import { useAccountPreferences } from '../../core/preferences/accountPreferences';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -23,6 +26,8 @@ type SettingItem = {
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { code: weatherCode, isNight, scene } = useWeatherScene();
+  const preferences = useAccountPreferences();
   const [notifications, setNotifications] = useState(true);
   const [location, setLocation] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -73,7 +78,7 @@ export default function SettingsScreen() {
   const renderSetting = (item: SettingItem) => (
     <View key={item.id} style={styles.settingItem}>
       <View style={styles.settingIcon}>
-        <Ionicons name={item.icon} size={20} color={premiumColors.accentSoft} />
+        <Ionicons name={item.icon} size={20} color={scene.accent} />
       </View>
       <View style={styles.settingContent}>
         <Text style={styles.settingLabel}>{item.label}</Text>
@@ -99,7 +104,7 @@ export default function SettingsScreen() {
       onPress={item.onPress}
     >
       <View style={styles.settingIcon}>
-        <Ionicons name={item.icon} size={20} color={premiumColors.accentSoft} />
+        <Ionicons name={item.icon} size={20} color={scene.accent} />
       </View>
       <View style={styles.settingContent}>
         <Text style={styles.settingLabel}>{item.label}</Text>
@@ -111,9 +116,8 @@ export default function SettingsScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={styles.glowTop} />
-      <View style={styles.glowBottom} />
+      <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+      <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -159,24 +163,6 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: premiumColors.surface, overflow: 'hidden' },
-  glowTop: {
-    position: 'absolute',
-    top: -110,
-    left: -100,
-    width: 340,
-    height: 340,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraAqua,
-  },
-  glowBottom: {
-    position: 'absolute',
-    bottom: -90,
-    right: -100,
-    width: 320,
-    height: 320,
-    borderRadius: 999,
-    backgroundColor: premiumColors.auroraGold,
-  },
   scroll: { paddingHorizontal: 20, gap: 22 },
   header: { gap: 7 },
   eyebrow: premiumType.eyebrow,
@@ -199,10 +185,10 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     gap: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: 'rgba(27,32,39,0.08)',
   },
   settingItemPressed: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: 'rgba(27,32,39,0.045)',
     transform: [{ scale: 0.995 }],
   },
   settingIcon: {

@@ -155,7 +155,7 @@ function AccessDenied({ title }: { title: string }) {
   return (
     <View style={styles.screen}>
       <View style={styles.centerCard}>
-        <Ionicons name="lock-closed-outline" size={34} color={premiumColors.accentSoft} />
+        <Ionicons name="lock-closed-outline" size={34} color={premiumColors.accent} />
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.muted}>Tu cuenta no tiene permisos para ver esta seccion.</Text>
       </View>
@@ -296,8 +296,8 @@ export function AdminPanelScreen() {
         <RefreshControl
           refreshing={loading}
           onRefresh={load}
-          tintColor={premiumColors.accentSoft}
-          colors={[premiumColors.accentSoft]}
+          tintColor={premiumColors.accent}
+          colors={[premiumColors.accent]}
         />
       }
     >
@@ -331,7 +331,7 @@ export function AdminPanelScreen() {
           <Text style={styles.sectionTitle}>Funciones de administrador</Text>
           <Text style={styles.muted}>Accesos directos para controlar la app.</Text>
         </View>
-        {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+        {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
       </View>
       <View style={styles.quickGrid}>
         <Pressable
@@ -339,7 +339,7 @@ export function AdminPanelScreen() {
           onPress={() => setSection('usuarios')}
         >
           <View style={styles.quickIcon}>
-            <Ionicons name="people-outline" size={22} color={premiumColors.accentSoft} />
+            <Ionicons name="people-outline" size={22} color={premiumColors.accent} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.quickTitle}>Configurar usuarios</Text>
@@ -352,7 +352,7 @@ export function AdminPanelScreen() {
           onPress={() => setSection('metricas')}
         >
           <View style={styles.quickIcon}>
-            <Ionicons name="stats-chart-outline" size={22} color={premiumColors.accentSoft} />
+            <Ionicons name="stats-chart-outline" size={22} color={premiumColors.accent} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.quickTitle}>Metricas</Text>
@@ -365,7 +365,7 @@ export function AdminPanelScreen() {
           onPress={() => setSection('auditoria')}
         >
           <View style={styles.quickIcon}>
-            <Ionicons name="document-text-outline" size={22} color={premiumColors.accentSoft} />
+            <Ionicons name="document-text-outline" size={22} color={premiumColors.accent} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.quickTitle}>Auditoria</Text>
@@ -378,7 +378,7 @@ export function AdminPanelScreen() {
           onPress={() => router.push('/(tabs)/operator' as any)}
         >
           <View style={styles.quickIcon}>
-            <Ionicons name="shield-checkmark-outline" size={22} color={premiumColors.accentSoft} />
+            <Ionicons name="shield-checkmark-outline" size={22} color={premiumColors.accent} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.quickTitle}>Moderacion</Text>
@@ -425,10 +425,10 @@ export function AdminPanelScreen() {
               <Text style={styles.sectionTitle}>Accesos de usuarios</Text>
               <Text style={styles.muted}>Gestiona permisos, planes y sector profesional.</Text>
             </View>
-            {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+            {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
           <View style={styles.infoBanner}>
-            <Ionicons name="options-outline" size={18} color={premiumColors.accentSoft} />
+            <Ionicons name="options-outline" size={18} color={premiumColors.accent} />
             <Text style={styles.infoBannerText}>
               Toca un usuario para desplegar sus opciones de rol, plan y control de cuenta.
             </Text>
@@ -461,7 +461,7 @@ export function AdminPanelScreen() {
               <Text style={styles.sectionTitle}>Costos y Stripe</Text>
               <Text style={styles.muted}>Gestiona precios simulados y price IDs de Stripe test.</Text>
             </View>
-            {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+            {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
           {billingPlans.map((item) => (
             <PlanAdminCard key={item.key} plan={item} onSave={saveBillingPlan} />
@@ -476,7 +476,7 @@ export function AdminPanelScreen() {
               <Text style={styles.sectionTitle}>Auditoria reciente</Text>
               <Text style={styles.muted}>{auditCount} acciones registradas.</Text>
             </View>
-            {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+            {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
           {!loading && auditLogs.length === 0 ? <EmptyState icon="document-text-outline" title="Sin auditoria" text="Las acciones de roles, planes y moderacion apareceran aqui." /> : null}
           {auditLogs.slice(0, 50).map((log) => (
@@ -578,8 +578,8 @@ export function OperatorPanelScreen() {
         <RefreshControl
           refreshing={loading}
           onRefresh={load}
-          tintColor={premiumColors.accentSoft}
-          colors={[premiumColors.accentSoft]}
+          tintColor={premiumColors.accent}
+          colors={[premiumColors.accent]}
         />
       }
     >
@@ -629,7 +629,7 @@ export function OperatorPanelScreen() {
             setCommunityFilter('publicaciones');
           }}
         >
-          <Ionicons name="notifications-outline" size={19} color="#fde68a" />
+          <Ionicons name="notifications-outline" size={19} color="#8a651e" />
           <Text style={styles.reportBannerText}>
             Hay {reports.length} reporte{reports.length === 1 ? '' : 's'} abierto{reports.length === 1 ? '' : 's'} por revisar.
           </Text>
@@ -643,7 +643,7 @@ export function OperatorPanelScreen() {
               <Text style={styles.sectionTitle}>Moderacion</Text>
               <Text style={styles.muted}>Aprueba, rechaza, oculta o remueve contenido reportado.</Text>
             </View>
-            {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+            {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
           <CommunityFilters
             value={communityFilter}
@@ -661,7 +661,7 @@ export function OperatorPanelScreen() {
                   {post.image_url ? <Image source={{ uri: post.image_url }} style={styles.moderationImage} /> : null}
                   <View style={styles.userHeader}>
                     <View style={styles.avatar}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={20} color={premiumColors.accentSoft} />
+                      <Ionicons name="chatbubble-ellipses-outline" size={20} color={premiumColors.accent} />
                     </View>
                     <View style={styles.userIdentity}>
                       <Text style={styles.cardTitle}>{post.severity ?? 'informacion'}</Text>
@@ -714,7 +714,7 @@ export function OperatorPanelScreen() {
               <Text style={styles.sectionTitle}>Usuarios</Text>
               <Text style={styles.muted}>Vista solo lectura para apoyo operativo.</Text>
             </View>
-            {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+            {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
           <UserFilters
             roleFilter={roleFilter}
@@ -885,12 +885,12 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
         labels={{ month: 'Mensual', year: 'Anual' }}
         onChange={setBillingInterval}
       />
-      {loading ? <ActivityIndicator color={premiumColors.accentSoft} /> : null}
+      {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
       {plans.map((item) => (
         <View key={item.key} style={[styles.card, plan === item.key && styles.cardActive]}>
           <View style={styles.userHeader}>
             <View style={styles.avatar}>
-              <Ionicons name={item.key === 'professional' ? 'briefcase-outline' : item.key === 'premium' ? 'star-outline' : 'leaf-outline'} size={20} color={premiumColors.accentSoft} />
+              <Ionicons name={item.key === 'professional' ? 'briefcase-outline' : item.key === 'premium' ? 'star-outline' : 'leaf-outline'} size={20} color={premiumColors.accent} />
             </View>
             <View style={styles.userIdentity}>
               <Text style={styles.cardTitle}>{item.name}</Text>
@@ -1089,7 +1089,7 @@ function AdminUserCard({
             <Ionicons
               name={expanded ? 'chevron-up' : 'chevron-down'}
               size={18}
-              color={premiumColors.accentSoft}
+              color={premiumColors.accent}
             />
           </View>
         </View>
@@ -1214,7 +1214,7 @@ function PlanAdminCard({
     <View style={styles.card}>
       <View style={styles.userHeader}>
         <View style={styles.avatar}>
-          <Ionicons name={plan.key === 'professional' ? 'briefcase-outline' : plan.key === 'premium' ? 'star-outline' : 'leaf-outline'} size={20} color={premiumColors.accentSoft} />
+          <Ionicons name={plan.key === 'professional' ? 'briefcase-outline' : plan.key === 'premium' ? 'star-outline' : 'leaf-outline'} size={20} color={premiumColors.accent} />
         </View>
         <View style={styles.userIdentity}>
           <Text style={styles.cardTitle}>{plan.name}</Text>
@@ -1235,7 +1235,7 @@ function MetricTile({ label, value, icon }: { label: string; value: number; icon
   return (
     <View style={styles.metricTile}>
       <View style={styles.metricTileIcon}>
-        <Ionicons name={icon} size={18} color={premiumColors.accentSoft} />
+        <Ionicons name={icon} size={18} color={premiumColors.accent} />
       </View>
       <Text style={styles.metricTileValue}>{value}</Text>
       <Text style={styles.metricTileLabel}>{label}</Text>
@@ -1248,7 +1248,7 @@ function AuditLogCard({ log }: { log: AuditLog }) {
     <View style={styles.card}>
       <View style={styles.userHeader}>
         <View style={styles.avatar}>
-          <Ionicons name="document-text-outline" size={20} color={premiumColors.accentSoft} />
+          <Ionicons name="document-text-outline" size={20} color={premiumColors.accent} />
         </View>
         <View style={styles.userIdentity}>
           <Text style={styles.cardTitle}>{log.action}</Text>
@@ -1282,7 +1282,7 @@ function SummaryCard({
   label: string;
   tone: 'accent' | 'success' | 'warning';
 }) {
-  const color = tone === 'success' ? premiumColors.success : tone === 'warning' ? premiumColors.warning : premiumColors.accentSoft;
+  const color = tone === 'success' ? premiumColors.success : tone === 'warning' ? premiumColors.warning : premiumColors.accent;
 
   return (
     <View style={styles.summaryCard}>
@@ -1298,7 +1298,7 @@ function SummaryCard({
 function StatusChip({ label, icon }: { label: string; icon: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={styles.statusChip}>
-      <Ionicons name={icon} size={13} color={premiumColors.accentSoft} />
+      <Ionicons name={icon} size={13} color={premiumColors.accent} />
       <Text style={styles.statusChipText}>{label}</Text>
     </View>
   );
@@ -1529,9 +1529,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: premiumRadii.xl,
-    backgroundColor: 'rgba(255,255,255,0.075)',
+    backgroundColor: 'rgba(27,32,39,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(27,32,39,0.12)',
     padding: 14,
   },
   heroStatMain: {
@@ -1608,7 +1608,7 @@ const styles = StyleSheet.create({
     borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(125,211,252,0.12)',
+    backgroundColor: 'rgba(243,201,168,0.16)',
   },
   metricTileValue: {
     color: premiumColors.ink,
@@ -1672,8 +1672,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   quickCardActive: {
-    borderColor: premiumColors.accentSoft,
-    backgroundColor: 'rgba(56,189,248,0.14)',
+    borderColor: premiumColors.accent,
+    backgroundColor: 'rgba(226,98,43,0.14)',
   },
   quickIcon: {
     width: 42,
@@ -1681,7 +1681,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(125,211,252,0.12)',
+    backgroundColor: 'rgba(243,201,168,0.16)',
   },
   quickTitle: {
     color: premiumColors.ink,
@@ -1703,7 +1703,7 @@ const styles = StyleSheet.create({
     ...premiumShadow('soft'),
   },
   cardActive: {
-    borderColor: premiumColors.accentSoft,
+    borderColor: premiumColors.accent,
   },
   reportedCard: {
     borderColor: 'rgba(251,191,36,0.55)',
@@ -1734,12 +1734,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(125,211,252,0.16)',
+    backgroundColor: 'rgba(243,201,168,0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.24)',
+    borderColor: 'rgba(243,201,168,0.3)',
   },
   avatarText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 14,
     fontWeight: '900',
   },
@@ -1754,9 +1754,9 @@ const styles = StyleSheet.create({
     borderRadius: premiumRadii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(125,211,252,0.1)',
+    backgroundColor: 'rgba(243,201,168,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.2)',
+    borderColor: 'rgba(243,201,168,0.26)',
   },
   expandHint: {
     color: premiumColors.inkSubtle,
@@ -1764,7 +1764,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   userEmail: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1778,7 +1778,7 @@ const styles = StyleSheet.create({
     ...premiumShadow('medium'),
   },
   metricValue: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 34,
     fontWeight: '900',
   },
@@ -1792,7 +1792,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   badgeText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -1809,9 +1809,9 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
     borderRadius: premiumRadii.lg,
-    backgroundColor: 'rgba(56,189,248,0.1)',
+    backgroundColor: 'rgba(226,98,43,0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.24)',
+    borderColor: 'rgba(243,201,168,0.3)',
   },
   infoBannerText: {
     flex: 1,
@@ -1842,7 +1842,7 @@ const styles = StyleSheet.create({
   },
   reportBannerText: {
     flex: 1,
-    color: '#fde68a',
+    color: '#8a651e',
     fontSize: 13,
     fontWeight: '900',
     lineHeight: 18,
@@ -1863,8 +1863,8 @@ const styles = StyleSheet.create({
     gap: 6,
     borderRadius: premiumRadii.pill,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.24)',
-    backgroundColor: 'rgba(125,211,252,0.1)',
+    borderColor: 'rgba(243,201,168,0.3)',
+    backgroundColor: 'rgba(243,201,168,0.14)',
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1885,9 +1885,9 @@ const styles = StyleSheet.create({
     gap: 8,
     padding: 10,
     borderRadius: premiumRadii.lg,
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    backgroundColor: 'rgba(27,32,39,0.035)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(27,32,39,0.08)',
   },
   rowWrap: {
     flexDirection: 'row',
@@ -1906,7 +1906,7 @@ const styles = StyleSheet.create({
   },
   actionActive: {
     backgroundColor: premiumColors.accent,
-    borderColor: premiumColors.accentSoft,
+    borderColor: premiumColors.accent,
   },
   actionDanger: {
     borderColor: 'rgba(251,113,133,0.5)',

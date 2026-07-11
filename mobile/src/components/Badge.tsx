@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(251,113,133,0.38)',
   },
   info: {
-    backgroundColor: 'rgba(56,189,248,0.12)',
+    backgroundColor: 'rgba(226,98,43,0.12)',
     borderColor: premiumColors.glassBorderStrong,
   },
   text: {
@@ -72,6 +72,6 @@ const styles = StyleSheet.create({
     color: premiumColors.danger,
   },
   infoText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
   },
 });

@@ -6,11 +6,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_URL } from '../../core/api/weatherApi';
 import type { Alert } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow, premiumType } from '../../theme/premium';
+import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
+import { useAccountPreferences } from '../../core/preferences/accountPreferences';
 
 export default function AlertDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { code: weatherCode, isNight, scene } = useWeatherScene();
+  const preferences = useAccountPreferences();
   const [alert, setAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -46,7 +51,7 @@ export default function AlertDetailScreen() {
     switch (severity) {
       case 'critical': return { bg: 'rgba(251,113,133,0.14)', border: 'rgba(251,113,133,0.4)', text: premiumColors.danger };
       case 'warning':  return { bg: 'rgba(251,191,36,0.14)', border: 'rgba(251,191,36,0.4)', text: premiumColors.warning };
-      default:         return { bg: `${premiumColors.accent}24`, border: `${premiumColors.accent}59`, text: premiumColors.accentSoft };
+      default:         return { bg: `${scene.accent}24`, border: `${scene.accent}59`, text: scene.accent };
     }
   };
 
@@ -61,8 +66,9 @@ export default function AlertDetailScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <ActivityIndicator size="large" color={premiumColors.accent} />
+        <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+        <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
+        <ActivityIndicator size="large" color={scene.accent} />
       </View>
     );
   }
@@ -70,7 +76,8 @@ export default function AlertDetailScreen() {
   if (!alert) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+        <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
         <Text style={styles.errorText}>Alerta no encontrada</Text>
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Volver</Text>
@@ -82,14 +89,16 @@ export default function AlertDetailScreen() {
   const severityStyles = getSeverityStyle(alert.severity);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: Math.max(insets.bottom, 16) + 28 }}
-    >
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+    <View style={styles.container}>
+      <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+      <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: insets.top + 14, paddingBottom: Math.max(insets.bottom, 16) + 28 }}
+      >
       <View style={styles.header}>
         <Pressable style={styles.backNav} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={18} color={premiumColors.accentSoft} />
+          <Ionicons name="chevron-back" size={18} color={scene.accent} />
           <Text style={styles.backText}>Volver</Text>
         </Pressable>
       </View>
@@ -141,16 +150,18 @@ export default function AlertDetailScreen() {
           <Text style={styles.markReadText}>Marcar como leída</Text>
         </Pressable>
       )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: 20, backgroundColor: premiumColors.surface },
+  container: { flex: 1, backgroundColor: premiumColors.surface, overflow: 'hidden' },
+  scroll: { flex: 1 },
   centered: { justifyContent: 'center', alignItems: 'center' },
   header: { marginBottom: 16 },
   backNav: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, alignSelf: 'flex-start' },
-  backText: { fontSize: 16, color: premiumColors.accentSoft, fontWeight: '600' },
+  backText: { fontSize: 16, color: premiumColors.accent, fontWeight: '600' },
   severityBadge: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
@@ -188,6 +199,6 @@ const styles = StyleSheet.create({
     borderColor: premiumColors.glassBorderStrong,
     borderRadius: premiumRadii.sm,
   },
-  backButtonText: { color: premiumColors.accentSoft, fontSize: 16 },
+  backButtonText: { color: premiumColors.accent, fontSize: 16 },
   errorText: { fontSize: 16, color: premiumColors.danger },
 });

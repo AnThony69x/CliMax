@@ -32,6 +32,8 @@ import { clearToken } from '../../core/auth/authStorage';
 import { getSession, signOut, supabase } from '../../core/auth/supabaseClient';
 import type { User } from '../../types';
 import { premiumColors, premiumShadow } from '../../theme/premium';
+import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
+import { WeatherSceneBackground } from '../../components/weather/WeatherSceneBackground';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -75,6 +77,8 @@ const DEFAULT_ACCOUNT_PREFERENCES: AccountPreferences = {
 export default function ProfileScreen() {
   const router  = useRouter();
   const insets  = useSafeAreaInsets();
+  const { code: weatherCode, isNight, scene } = useWeatherScene();
+  const ACCENT = scene.accent;
 
   const [profile,         setProfile]         = useState<User | null>(null);
   const [loading,         setLoading]         = useState(true);
@@ -359,8 +363,8 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={s.loadingContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-        <View style={s.glow1} />
+        <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+        <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
         <ActivityIndicator size="large" color={ACCENT} />
       </View>
     );
@@ -370,7 +374,7 @@ export default function ProfileScreen() {
   if (!profile) {
     return (
       <View style={s.guestScreen}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
         <AuthWeatherBubbles />
         <View style={s.guestGlow1} />
         <View style={s.guestGlow2} />
@@ -434,9 +438,8 @@ export default function ProfileScreen() {
   ];
   return (
     <View style={s.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <View style={s.glow1} />
-      <View style={s.glow2} />
+      <StatusBar barStyle={scene.ink === 'dark' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+      <WeatherSceneBackground code={weatherCode} isNight={isNight} particlesEnabled={!preferences.dataSaver} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -478,7 +481,7 @@ export default function ProfileScreen() {
           >
             {editing ? (
               <>
-                <Ionicons name="chevron-up" size={16} color="#e2e8f0" style={{ marginRight: 8 }} />
+                <Ionicons name="chevron-up" size={16} color="#1b2027" style={{ marginRight: 8 }} />
                 <Text style={s.btnGhostText}>Ocultar edición</Text>
               </>
             ) : (
@@ -516,13 +519,24 @@ export default function ProfileScreen() {
           <View style={s.glassCard}>
             <Pressable
               style={({ pressed }) => [s.menuRow, pressed && s.menuRowPressed]}
+              onPress={() => router.push('/(tabs)/subscriptions' as any)}
+            >
+              <View style={s.menuIconWrap}>
+                <Ionicons name="star-outline" size={20} color="#1b2027" />
+              </View>
+              <Text style={s.menuLabel}>Suscripción</Text>
+              <Ionicons name="chevron-forward" size={20} color="rgba(27,32,39,0.28)" />
+            </Pressable>
+            <View style={s.menuDivider} />
+            <Pressable
+              style={({ pressed }) => [s.menuRow, pressed && s.menuRowPressed]}
               onPress={() => setAccountPanel('preferences')}
             >
               <View style={s.menuIconWrap}>
-                <Ionicons name="settings-outline" size={20} color="#e2e8f0" />
+                <Ionicons name="settings-outline" size={20} color="#1b2027" />
               </View>
               <Text style={s.menuLabel}>Ajustes</Text>
-              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.28)" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(27,32,39,0.28)" />
             </Pressable>
             <View style={s.menuDivider} />
             <Pressable
@@ -530,10 +544,10 @@ export default function ProfileScreen() {
               onPress={() => setAccountPanel('security')}
             >
               <View style={s.menuIconWrap}>
-                <Ionicons name="shield-checkmark-outline" size={20} color="#e2e8f0" />
+                <Ionicons name="shield-checkmark-outline" size={20} color="#1b2027" />
               </View>
               <Text style={s.menuLabel}>Seguridad y privacidad</Text>
-              <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.28)" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(27,32,39,0.28)" />
             </Pressable>
             <View style={s.logoutDivider} />
             <Pressable
@@ -541,10 +555,10 @@ export default function ProfileScreen() {
               onPress={handleLogout}
             >
               <View style={[s.menuIconWrap, s.menuIconWrapDanger]}>
-                <Ionicons name="log-out-outline" size={20} color="#fecaca" />
+                <Ionicons name="log-out-outline" size={20} color={premiumColors.danger} />
               </View>
               <Text style={s.menuLabelDanger}>Cerrar sesión</Text>
-              <Ionicons name="chevron-forward" size={20} color="rgba(254,202,202,0.3)" />
+              <Ionicons name="chevron-forward" size={20} color="rgba(182,67,44,0.3)" />
             </Pressable>
           </View>
         </View>
@@ -614,7 +628,7 @@ export default function ProfileScreen() {
                     style={({ pressed }) => [s.modalCloseBtn, pressed && { opacity: 0.7 }]}
                     accessibilityLabel="Cerrar"
                   >
-                    <Ionicons name="close" size={22} color="rgba(226,232,240,0.9)" />
+                    <Ionicons name="close" size={22} color="rgba(27,32,39,0.85)" />
                   </Pressable>
                 </View>
 
@@ -655,14 +669,14 @@ export default function ProfileScreen() {
                     value={name}
                     onChangeText={setName}
                     placeholder="Tu nombre visible"
-                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    placeholderTextColor="rgba(27,32,39,0.32)"
                     selectionColor={ACCENT}
                   />
                 </View>
 
                 <View style={s.editStaticBlock}>
                   <View style={s.editStaticHeader}>
-                    <Ionicons name="mail-outline" size={17} color="rgba(56,189,248,0.85)" />
+                    <Ionicons name="mail-outline" size={17} color="rgba(226,98,43,0.85)" />
                     <Text style={s.editStaticLabel}>Correo</Text>
                   </View>
                   <Text style={s.editStaticValue} numberOfLines={2}>{profile.email || '—'}</Text>
@@ -670,7 +684,7 @@ export default function ProfileScreen() {
 
                 <View style={[s.editStaticBlock, { borderBottomWidth: 0 }]}>
                   <View style={s.editStaticHeader}>
-                    <Ionicons name="calendar-outline" size={17} color="rgba(56,189,248,0.85)" />
+                    <Ionicons name="calendar-outline" size={17} color="rgba(226,98,43,0.85)" />
                     <Text style={s.editStaticLabel}>Miembro desde</Text>
                   </View>
                   <Text style={s.editStaticValueMuted}>{memberSince ?? '—'}</Text>
@@ -752,7 +766,7 @@ export default function ProfileScreen() {
                   style={({ pressed }) => [s.modalCloseBtn, pressed && { opacity: 0.7 }]}
                   accessibilityLabel="Cerrar"
                 >
-                  <Ionicons name="close" size={22} color="rgba(226,232,240,0.9)" />
+                  <Ionicons name="close" size={22} color="rgba(27,32,39,0.85)" />
                 </Pressable>
               </View>
 
@@ -899,13 +913,13 @@ function PanelActionRow({
   return (
     <Pressable style={({ pressed }) => [s.preferenceRow, pressed && s.menuRowPressed]} onPress={onPress}>
       <View style={[s.preferenceIcon, danger && s.menuIconWrapDanger]}>
-        <Ionicons name={icon} size={19} color={danger ? '#fecaca' : ACCENT} />
+        <Ionicons name={icon} size={19} color={danger ? premiumColors.danger : ACCENT} />
       </View>
       <View style={s.preferenceCopy}>
-        <Text style={[s.preferenceTitle, danger && { color: '#fecaca' }]}>{title}</Text>
+        <Text style={[s.preferenceTitle, danger && { color: premiumColors.danger }]}>{title}</Text>
         <Text style={s.preferenceDescription}>{description}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={18} color="rgba(226,232,240,0.45)" />
+      <Ionicons name="chevron-forward" size={18} color="rgba(27,32,39,0.4)" />
     </Pressable>
   );
 }
@@ -952,14 +966,11 @@ const s = StyleSheet.create({
   },
   loadingContainer:{ flex: 1, backgroundColor: SURFACE, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
 
-  glow1: { position: 'absolute', top: -100, left: -100, width: 340, height: 340, borderRadius: 999, backgroundColor: premiumColors.auroraAqua },
-  glow2: { position: 'absolute', bottom: -60, right: -80, width: 280, height: 280, borderRadius: 999, backgroundColor: premiumColors.auroraTeal },
-
   scroll: { paddingHorizontal: 20, gap: 20 },
 
   /* ── Hero ── */
   heroCard: {
-    backgroundColor: 'rgba(15,23,42,0.78)',
+    backgroundColor: 'rgba(255,255,255,0.85)',
     borderRadius: 28, borderWidth: 1,
     borderColor: `${ACCENT}38`,
     paddingVertical: 30, paddingHorizontal: 20,
@@ -969,7 +980,7 @@ const s = StyleSheet.create({
   avatarRing: {
     width: 112, height: 112, borderRadius: 56,
     borderWidth: 2.5, borderColor: `${ACCENT}80`,
-    padding: 3, backgroundColor: 'rgba(8,47,73,0.5)',
+    padding: 3, backgroundColor: 'rgba(226,98,43,0.1)',
     justifyContent: 'center', alignItems: 'center',
     marginBottom: 2,
   },
@@ -992,7 +1003,7 @@ const s = StyleSheet.create({
     borderRadius: 999, borderWidth: 1,
     borderColor: `${ACCENT}3d`, marginTop: 2,
   },
-  memberBadgeText: { fontSize: 12, fontWeight: '600', color: 'rgba(241,245,249,0.9)' },
+  memberBadgeText: { fontSize: 12, fontWeight: '600', color: premiumColors.inkMuted },
   btnPrimary: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     backgroundColor: ACCENT, borderRadius: 14,
@@ -1003,7 +1014,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14,
+    backgroundColor: 'rgba(27,32,39,0.05)', borderRadius: 14,
     borderWidth: 1, borderColor: GLASS_BD,
     paddingHorizontal: 20, paddingVertical: 11,
     minHeight: 44,
@@ -1044,7 +1055,7 @@ const s = StyleSheet.create({
     alignSelf: 'center',
     width: '100%',
     maxWidth: 420,
-    backgroundColor: 'rgba(12,18,34,0.82)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     borderRadius: 26,
     borderWidth: 1,
     borderColor: `${ACCENT}47`,
@@ -1060,9 +1071,9 @@ const s = StyleSheet.create({
   modalCloseBtn: {
     padding: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(27,32,39,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(27,32,39,0.08)',
     marginLeft: 8,
   },
   editPanelHeader: {
@@ -1095,7 +1106,7 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: `${ACCENT}73`,
     padding: 3,
-    backgroundColor: 'rgba(8,47,73,0.35)',
+    backgroundColor: 'rgba(226,98,43,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1104,7 +1115,7 @@ const s = StyleSheet.create({
     height: 88,
     borderRadius: 44,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    borderColor: 'rgba(27,32,39,0.12)',
   },
   editPhotoLabel: {
     fontSize: 12,
@@ -1120,10 +1131,10 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   editNameInput: {
-    backgroundColor: 'rgba(0,0,0,0.22)',
+    backgroundColor: 'rgba(27,32,39,0.05)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(27,32,39,0.12)',
     paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 16,
@@ -1134,7 +1145,7 @@ const s = StyleSheet.create({
     gap: 8,
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: 'rgba(27,32,39,0.08)',
     marginHorizontal: -2,
     paddingHorizontal: 2,
     paddingBottom: 12,
@@ -1180,7 +1191,7 @@ const s = StyleSheet.create({
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   statCard: {
     width: STAT_W,
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.82)',
     borderRadius: 22, borderWidth: 1,
     borderColor: `${ACCENT}29`,
     paddingVertical: 18, paddingHorizontal: 12,
@@ -1222,9 +1233,9 @@ const s = StyleSheet.create({
   postsEmptyDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', textAlign: 'center', lineHeight: 20 },
 
   postCard: {
-    backgroundColor: 'rgba(15,23,42,0.72)',
+    backgroundColor: 'rgba(255,255,255,0.82)',
     borderRadius: 22, borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.10)',
+    borderColor: 'rgba(27,32,39,0.1)',
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
@@ -1243,7 +1254,7 @@ const s = StyleSheet.create({
     borderRadius: 999, borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
   },
-  postTimeBadgeText: { fontSize: 12, fontWeight: '600', color: premiumColors.inkMuted },
+  postTimeBadgeText: { fontSize: 12, fontWeight: '600', color: '#fdf9f3' },
   postNoImageHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 16, paddingTop: 16, paddingBottom: 4,
@@ -1259,7 +1270,7 @@ const s = StyleSheet.create({
     maxWidth: 460,
     maxHeight: Dimensions.get('window').height * 0.9,
     alignSelf: 'center',
-    backgroundColor: 'rgba(12,18,34,0.88)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderRadius: 26,
     borderWidth: 1,
     borderColor: `${ACCENT}3d`,
@@ -1282,7 +1293,7 @@ const s = StyleSheet.create({
     width: '100%',
     maxWidth: 440,
     maxHeight: Dimensions.get('window').height * 0.9,
-    backgroundColor: 'rgba(12,18,34,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.94)',
     borderRadius: 26,
     borderWidth: 1,
     borderColor: `${ACCENT}47`,
@@ -1294,8 +1305,8 @@ const s = StyleSheet.create({
   accountPanelGroup: {
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.045)',
+    borderColor: 'rgba(27,32,39,0.1)',
+    backgroundColor: 'rgba(27,32,39,0.035)',
     overflow: 'hidden',
   },
   preferenceRow: {
@@ -1305,7 +1316,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.08)',
+    borderBottomColor: 'rgba(27,32,39,0.08)',
   },
   preferenceIcon: {
     width: 40,
@@ -1313,7 +1324,7 @@ const s = StyleSheet.create({
     borderRadius: 13,
     backgroundColor: `${ACCENT}1a`,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
+    borderColor: 'rgba(226,98,43,0.26)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1364,7 +1375,7 @@ const s = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: `${ACCENT}1f`,
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.22)',
+    borderColor: 'rgba(226,98,43,0.26)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1402,13 +1413,13 @@ const s = StyleSheet.create({
   /* ── Menu rows ── */
   menuRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 6, borderRadius: 14, gap: 12 },
   menuRowLogout:   { marginTop: 2 },
-  menuRowPressed:  { backgroundColor: 'rgba(255,255,255,0.06)' },
-  menuIconWrap:    { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.06)', justifyContent: 'center', alignItems: 'center' },
+  menuRowPressed:  { backgroundColor: 'rgba(27,32,39,0.045)' },
+  menuIconWrap:    { width: 42, height: 42, borderRadius: 13, backgroundColor: 'rgba(27,32,39,0.045)', justifyContent: 'center', alignItems: 'center' },
   menuIconWrapDanger: { backgroundColor: 'rgba(239,68,68,0.12)' },
   menuLabel:       { flex: 1, fontSize: 15, fontWeight: '500', color: premiumColors.ink },
-  menuLabelDanger: { flex: 1, fontSize: 15, fontWeight: '700', color: '#fecaca' },
+  menuLabelDanger: { flex: 1, fontSize: 15, fontWeight: '700', color: premiumColors.danger },
   menuDivider:     { height: StyleSheet.hairlineWidth, backgroundColor: GLASS_BD, marginLeft: 58 },
-  logoutDivider:   { height: 1, backgroundColor: 'rgba(255,255,255,0.06)', marginVertical: 8, marginHorizontal: 4 },
+  logoutDivider:   { height: 1, backgroundColor: 'rgba(27,32,39,0.06)', marginVertical: 8, marginHorizontal: 4 },
 
   /* ── Guest ── */
   guestScroll:      { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40, gap: 28, zIndex: 2 },
@@ -1416,7 +1427,7 @@ const s = StyleSheet.create({
   guestTextWrap:    { alignItems: 'center', gap: 10 },
   guestTitle:       { fontSize: 26, fontWeight: '800', color: premiumColors.ink, letterSpacing: -0.4, textAlign: 'center' },
   guestSubtitle:    { fontSize: 14, color: 'rgba(148,163,184,0.8)', textAlign: 'center', lineHeight: 21 },
-  guestCard:        { backgroundColor: 'rgba(8,16,42,0.82)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
+  guestCard:        { backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
   guestOption:      { gap: 8 },
   guestOptionTitle: { fontSize: 16, fontWeight: '700', color: premiumColors.ink },
   guestOptionDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', lineHeight: 19 },

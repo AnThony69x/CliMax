@@ -302,17 +302,17 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
   if (checking) {
     return (
       <View style={styles.splash}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
         <Image source={LOGO} style={styles.splashLogo} resizeMode="contain" accessibilityLabel="CliMax" />
         <Text style={styles.splashTitle}>CliMax</Text>
-        <ActivityIndicator color="#38bdf8" style={{ marginTop: 20 }} />
+        <ActivityIndicator color={premiumColors.accent} style={{ marginTop: 20 }} />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
       <AuthWeatherBubbles />
 
@@ -351,15 +351,15 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
 
               <View style={styles.valuePills}>
                 <View style={styles.valuePill}>
-                  <Ionicons name="sparkles" size={13} color={premiumColors.accentSoft} />
+                  <Ionicons name="sparkles" size={13} color={premiumColors.accent} />
                   <Text style={styles.valuePillText}>Alertas IA</Text>
                 </View>
                 <View style={styles.valuePill}>
-                  <Ionicons name="location" size={13} color={premiumColors.accentSoft} />
+                  <Ionicons name="location" size={13} color={premiumColors.accent} />
                   <Text style={styles.valuePillText}>Clima local</Text>
                 </View>
                 <View style={styles.valuePill}>
-                  <Ionicons name="shield-checkmark" size={13} color={premiumColors.accentSoft} />
+                  <Ionicons name="shield-checkmark" size={13} color={premiumColors.accent} />
                   <Text style={styles.valuePillText}>Prevención</Text>
                 </View>
               </View>
@@ -414,7 +414,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
                       style={({ pressed }) => [styles.forgotBtn, pressed && { opacity: 0.72 }]}
                     >
                       {isSendingReset ? (
-                        <ActivityIndicator size="small" color={premiumColors.accentSoft} />
+                        <ActivityIndicator size="small" color={premiumColors.accent} />
                       ) : (
                         <Text style={styles.forgotText}>Olvidaste tu contrasena?</Text>
                       )}
@@ -449,7 +449,7 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
                   isSubmitting && styles.submitBtnDisabled,
                 ]}
               >
-                {isSubmitting && <ActivityIndicator size="small" color="#082f49" style={{ marginRight: 8 }} />}
+                {isSubmitting && <ActivityIndicator size="small" color={premiumColors.accentDeep} style={{ marginRight: 8 }} />}
                 <Text style={styles.submitBtnText}>
                   {isSubmitting
                     ? (isLogin ? 'Iniciando sesión...' : 'Registrando...')
@@ -553,8 +553,8 @@ const styles = StyleSheet.create({
     borderRadius: premiumRadii.xxl,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.24)',
-    backgroundColor: 'rgba(8,16,42,0.86)',
+    borderColor: 'rgba(226,98,43,0.28)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   cardInner: {
     padding: 28,
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   forgotText: {
-    color: premiumColors.accentSoft,
+    color: premiumColors.accent,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -618,9 +618,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: premiumRadii.pill,
-    backgroundColor: 'rgba(56,189,248,0.09)',
+    backgroundColor: 'rgba(226,98,43,0.09)',
     borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.2)',
+    borderColor: 'rgba(226,98,43,0.24)',
   },
   valuePillText: {
     color: premiumColors.inkMuted,
@@ -639,8 +639,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.3)',
   },
-  submitBtnPressed: { backgroundColor: '#0284c7' },
-  submitBtnDisabled: { backgroundColor: 'rgba(51,65,85,0.8)' },
+  submitBtnPressed: { backgroundColor: '#c94f1f' },
+  submitBtnDisabled: { backgroundColor: 'rgba(27,32,39,0.15)' },
   submitBtnText: {
     color: premiumColors.accentDeep,
     fontSize: 16,
@@ -656,7 +656,7 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(27,32,39,0.12)',
   },
   dividerText: {
     color: 'rgba(148,163,184,0.6)',
@@ -666,7 +666,7 @@ const styles = StyleSheet.create({
   /* Toggle modo */
   toggleMode: { alignItems: 'center', paddingVertical: 4 },
   toggleModeGray: { color: 'rgba(148,163,184,0.85)', fontSize: 15 },
-  toggleModeBlue: { color: premiumColors.accentSoft, fontSize: 15, fontWeight: '700' },
+  toggleModeBlue: { color: premiumColors.accent, fontSize: 15, fontWeight: '700' },
 
   /* Invitado */
   guestBtn: { alignItems: 'center', paddingVertical: 4 },
