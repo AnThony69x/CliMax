@@ -346,6 +346,7 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     pointerEvents: 'box-none',
+    borderRadius: PILL_RADIUS,
     ...premiumShadow('strong'),
   },
   pill: {

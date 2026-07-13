@@ -999,8 +999,13 @@ function WeatherSlide({
           <GlassCard style={styles.summaryCard}>
             <View style={styles.summaryHeader}>
               <Text style={styles.summaryTitle}>Funciones Premium</Text>
-              <View style={styles.summaryChip}>
-                <Text style={styles.summaryChipText}>Bloqueado</Text>
+              <View
+                style={[
+                  styles.summaryChip,
+                  { backgroundColor: `${scene.accent}26`, borderColor: `${scene.accent}59` },
+                ]}
+              >
+                <Text style={[styles.summaryChipText, { color: scene.accent }]}>Bloqueado</Text>
               </View>
             </View>
             <Text style={styles.summaryText}>

@@ -1,8 +1,17 @@
-import { MaterialIcons } from '@expo/vector-icons';
 import { TransitionPresets } from '@react-navigation/bottom-tabs';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
+import {
+  Home,
+  Search,
+  Users,
+  Bell,
+  ChartLine,
+  ShieldUser,
+  Sliders,
+  User,
+} from 'reicon-react-native';
 
 import LiquidGlassFloatingTabBar from '../../src/components/LiquidGlassFloatingTabBar';
 import { useAccess } from '../../src/core/access/AccessContext';
@@ -66,7 +75,7 @@ export default function TabLayout() {
         options={{
           title: 'Inicio',
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="home" size={size} color={color} />
+            <Home size={size} color={color} weight="Filled" />
           ),
         }}
       />
@@ -76,7 +85,7 @@ export default function TabLayout() {
           title: 'Buscar',
           href: showUserSearch ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="search" size={size} color={color} />
+            <Search size={size} color={color} />
           ),
         }}
       />
@@ -86,7 +95,7 @@ export default function TabLayout() {
           title: 'Comunidad',
           href: showUserCommunity ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="groups" size={size} color={color} />
+            <Users size={size} color={color} />
           ),
         }}
       />
@@ -96,7 +105,7 @@ export default function TabLayout() {
           title: 'Alertas',
           href: showUserAlerts ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="notifications" size={size} color={color} />
+            <Bell size={size} color={color} />
           ),
         }}
       />
@@ -106,7 +115,7 @@ export default function TabLayout() {
           title: 'Pro',
           href: showProfessional ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="analytics" size={size} color={color} />
+            <ChartLine size={size} color={color} />
           ),
         }}
       />
@@ -116,7 +125,7 @@ export default function TabLayout() {
           title: 'Moderar',
           href: showOperatorTab ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="admin-panel-settings" size={size} color={color} />
+            <ShieldUser size={size} color={color} />
           ),
         }}
       />
@@ -126,7 +135,7 @@ export default function TabLayout() {
           title: 'Admin',
           href: isAdmin ? undefined : null,
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="tune" size={size} color={color} />
+            <Sliders size={size} color={color} />
           ),
         }}
       />
@@ -141,7 +150,7 @@ export default function TabLayout() {
         options={{
           title: 'Perfil',
           tabBarIcon: ({ color, size }) => (
-            <MaterialIcons name="person" size={size} color={color} />
+            <User size={size} color={color} />
           ),
         }}
       />
