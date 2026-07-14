@@ -12,7 +12,10 @@
       "Bash(git push *)",
       "Bash(git commit --amend -m '@ *)",
       "Bash(git commit *)",
-      "PowerShell(git add *)"
+      "PowerShell(git add *)",
+      "PowerShell(git commit *)",
+      "Bash(npx tsc *)",
+      "Bash(node *)"
     ]
   }
 }
