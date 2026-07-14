@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(node -e \"try { require\\('glob'\\); console.log\\('glob disponible'\\); } catch\\(e\\) { console.log\\('glob NO disponible'\\); })",
+      "Bash(node -e \"console.log\\(new URL\\('..', import.meta.url\\).pathname\\)\")",
+      "Bash(node -e \"const {join}=require\\('path'\\); console.log\\(join\\(__dirname, '..'\\)\\)\")",
+      "Bash(node scripts/verify-cross-platform.mjs)",
+      "Bash(git add *)",
+      "Bash(git commit -m '@ *)",
+      "Bash(git push *)",
+      "Bash(git commit --amend -m '@ *)",
+      "Bash(git commit *)",
+      "PowerShell(git add *)"
     ]
   }
 }

@@ -39,4 +39,5 @@ docker-compose.override.yml
 .cursorrules
 
 # claude 
-.claude/*
+.claude/
+settings.local.json 

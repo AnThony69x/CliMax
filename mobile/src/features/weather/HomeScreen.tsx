@@ -1518,8 +1518,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 6,
-  },
+    ...Platform.select<ViewStyle>({
+      ios: {
+        elevation: 6,
+      },
+      android: {
+        // Sin elevation — el botón tiene borderRadius: 999 (círculo)
+        // y la elevation en Android es rectangular, no respeta el radio.
+        // Las shadow* props de iOS son ignoradas en Android.
+      },
+    }),
 
   headerBlock: {
     paddingHorizontal: 6,
@@ -1630,6 +1638,14 @@ const styles = StyleSheet.create({
     borderTopColor: GLASS_BORDER_HI,
     backgroundColor: GLASS_BG,
     ...premiumShadow('medium'),
+    ...Platform.select<ViewStyle>({
+      android: {
+        // Sin elevation — el card tiene borderRadius y la elevation
+        // en Android es rectangular, no respeta el radio. Es el mismo
+        // patrón que usamos en las pantallas de auth.
+        elevation: 0,
+      },
+    }),
     overflow: 'hidden',
   },
   glassTopHighlight: {
