@@ -17,6 +17,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAccess } from '../../core/access/AccessContext';
@@ -1528,6 +1529,7 @@ const styles = StyleSheet.create({
         // Las shadow* props de iOS son ignoradas en Android.
       },
     }),
+  },
 
   headerBlock: {
     paddingHorizontal: 6,
