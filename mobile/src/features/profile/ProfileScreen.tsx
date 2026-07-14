@@ -1066,7 +1066,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.45,
     shadowRadius: 30,
-    elevation: 22,
+    ...Platform.select({ ios: { elevation: 22 }, android: { elevation: 6 } }),
   },
   modalCloseBtn: {
     padding: 10,
@@ -1279,7 +1279,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.4,
     shadowRadius: 28,
-    elevation: 20,
+    ...Platform.select({ ios: { elevation: 20 }, android: { elevation: 6 } }),
     gap: 12,
   },
   postsModalList: {
@@ -1399,7 +1399,7 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22, shadowRadius: 20, elevation: 6,
+    shadowOpacity: 0.22, shadowRadius: 20, ...Platform.select({ ios: { elevation: 6 }, android: { elevation: 3 } }),
   },
 
   /* ── Info rows ── */
@@ -1427,7 +1427,7 @@ const s = StyleSheet.create({
   guestTextWrap:    { alignItems: 'center', gap: 10 },
   guestTitle:       { fontSize: 26, fontWeight: '800', color: premiumColors.ink, letterSpacing: -0.4, textAlign: 'center' },
   guestSubtitle:    { fontSize: 14, color: 'rgba(148,163,184,0.8)', textAlign: 'center', lineHeight: 21 },
-  guestCard:        { backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
+  guestCard:        { backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, ...Platform.select({ ios: { elevation: 12 }, android: { elevation: 5 } }) },
   guestOption:      { gap: 8 },
   guestOptionTitle: { fontSize: 16, fontWeight: '700', color: premiumColors.ink },
   guestOptionDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', lineHeight: 19 },

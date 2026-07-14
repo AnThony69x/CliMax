@@ -1478,8 +1478,9 @@ const styles = StyleSheet.create({
     left: -120,
     width: 360,
     height: 360,
-    borderRadius: 999,
+    borderRadius: 360,
     backgroundColor: premiumColors.auroraAqua,
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -1487,8 +1488,9 @@ const styles = StyleSheet.create({
     right: -120,
     width: 360,
     height: 360,
-    borderRadius: 999,
+    borderRadius: 360,
     backgroundColor: premiumColors.auroraTeal,
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   slideRoot: {
     width: SCREEN_WIDTH,

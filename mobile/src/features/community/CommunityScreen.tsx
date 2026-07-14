@@ -2318,10 +2318,11 @@ const styles = StyleSheet.create({
     left: -100,
     width: 340,
     height: 340,
-    borderRadius: 999,
+    borderRadius: 340,
     backgroundColor: premiumColors.auroraAqua,
     zIndex: 0,
     pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -2329,10 +2330,11 @@ const styles = StyleSheet.create({
     right: -100,
     width: 300,
     height: 300,
-    borderRadius: 999,
+    borderRadius: 300,
     backgroundColor: premiumColors.auroraTeal,
     zIndex: 0,
     pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   container: {
     flexGrow: 1,
@@ -2402,7 +2404,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.45,
     shadowRadius: 12,
-    elevation: 8,
+    ...Platform.select({ ios: { elevation: 8 }, android: { elevation: 4 } }),
   },
   titleIconWrap: {
     width: 48,
@@ -3077,7 +3079,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.45,
     shadowRadius: 16,
-    elevation: 10,
+    ...Platform.select({ ios: { elevation: 10 }, android: { elevation: 5 } }),
   },
   fabOuterPressed: {
     opacity: 0.92,
@@ -3131,7 +3133,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.35,
     shadowRadius: 22,
-    elevation: 16,
+    ...Platform.select({ ios: { elevation: 16 }, android: { elevation: 6 } }),
   },
   modalHandle: {
     alignSelf: 'center',
