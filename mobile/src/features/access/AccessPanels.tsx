@@ -899,7 +899,7 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
             {plan === item.key ? <StatusChip label="Actual" icon="checkmark-circle-outline" /> : null}
           </View>
           <Text style={styles.metricSub}>
-            {formatMoney(billingInterval === 'year' ? item.yearly_price_cents : item.monthly_price_cents, item.currency)} / {billingInterval === 'year' ? 'ano' : 'mes'}
+            {formatMoney(billingInterval === 'year' ? item.yearly_price_cents : item.monthly_price_cents, item.currency)} / {billingInterval === 'year' ? 'año' : 'mes'}
           </Text>
           <View style={styles.featureList}>
             {featuresForPlan(item.key).map((feature) => (
