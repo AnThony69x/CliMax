@@ -245,9 +245,6 @@ function moonPhaseData(date = new Date()) {
 
 /** Icono de “posición actual” (GPS): mira de puntería, sin pin de mapa. */
 function gpsLocationIconProps() {
-  if (Platform.OS === 'ios') {
-    return { name: 'locate' as const, size: 22 };
-  }
   return { name: 'locate-outline' as const, size: 22 };
 }
 
