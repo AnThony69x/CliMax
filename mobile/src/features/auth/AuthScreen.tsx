@@ -687,5 +687,5 @@ const styles = StyleSheet.create({
 
   /* Invitado */
   guestBtn: { alignItems: 'center', paddingVertical: 4 },
-  guestText: { color: 'rgba(148,163,184,0.5)', fontSize: 13 },
+  guestText: { color: 'rgba(148,163,184,0.8)', fontSize: 13 },
 });

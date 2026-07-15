@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, {
@@ -606,7 +607,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 10,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 3 },
+      android: { elevation: 0 },
+    }),
   },
   headerTextCol: { flex: 1, gap: 4, minWidth: 0 },
   labelCaps: {
@@ -648,7 +652,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
-    elevation: 4,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 4 },
+      android: { elevation: 0 },
+    }),
   },
   searchRowOpen: {
     borderBottomLeftRadius: 0,
@@ -764,7 +771,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 14,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 3 },
+      android: { elevation: 0 },
+    }),
   },
   weatherCardBadge: {
     position: 'absolute',
@@ -914,7 +924,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 4,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 4 },
+      android: { elevation: 0 },
+    }),
   },
   deleteActionIcon: {
     alignItems: 'center',
