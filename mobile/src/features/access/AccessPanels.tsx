@@ -3,7 +3,7 @@ import * as ExpoLinking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useAccess } from '../../core/access/AccessContext';
 import {
   API_BASE_URL,
@@ -1936,6 +1936,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     backgroundColor: premiumColors.glass,
+    ...Platform.select({ android: { underlineColorAndroid: 'transparent' as const } }),
   },
   featureList: {
     gap: 8,
