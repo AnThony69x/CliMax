@@ -1683,7 +1683,7 @@ export default function HomeScreen() {
 
       {/* Indicadores de puntos */}
       {allSlides.length > 1 && (
-        <View style={[styles.dotsCapsuleWrap, { paddingBottom: Math.max(insets.bottom, 8) + 6 }]}>
+        <View style={[styles.dotsCapsuleWrap, { bottom: Math.max(insets.bottom, 8) + 100 }]}>
           <View style={styles.dotsCapsule}>
           {allSlides.map((_, i) => (
             <Pressable
@@ -2446,10 +2446,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   dotsCapsuleWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     paddingTop: 6,
     backgroundColor: 'transparent',
     zIndex: 5,
+    pointerEvents: 'box-none',
   },
   dotsCapsule: {
     flexDirection: 'row',
