@@ -1,18 +1,27 @@
-# CliMax - arranca backend Laravel + 2 instancias de Expo (Expo Go y Dev Client).
+# CliMax - arranca backend Laravel + instancias de Expo.
 #
-# Uso:
-#   .\run-dev.ps1                # LAN normal (escanear desde misma WiFi)
-#   .\run-dev.ps1 -Tunnel        # tunnel mode (funciona desde cualquier red, mas lento)
-#   .\run-dev.ps1 -SkipBackend   # no levanta Laravel (si ya esta corriendo)
+# Uso interactivo (recomendado):
+#   .\run-dev.ps1                  # abre menu para elegir que encender
 #
-# Ventanas que abre:
-#   1. Laravel    -> http://0.0.0.0:8000
-#   2. Expo Go    -> puerto 8001 (QR para Expo Go del App Store / Play Store)
-#   3. Dev Client -> puerto 8002 (QR para el APK CliMax instalado en tu phone)
+# Uso directo (flags):
+#   .\run-dev.ps1 -All             # Todo (Laravel + Expo Go + Dev Client)
+#   .\run-dev.ps1 -Backend         # Solo Laravel
+#   .\run-dev.ps1 -ExpoGo          # Solo Expo Go
+#   .\run-dev.ps1 -DevClient       # Solo Dev Client
+#   .\run-dev.ps1 -Backend -ExpoGo # Laravel + Expo Go
+#   .\run-dev.ps1 -Tunnel          # cualquier opcion + tunnel
+#
+# Opciones combinables:
+#   -Tunnel   -> tunnel mode (funciona desde cualquier red, mas lento)
+#   -SkipBackend -> no levanta Laravel (combinado con -All)
 
 param(
   [switch]$Tunnel,
-  [switch]$SkipBackend
+  [switch]$SkipBackend,
+  [switch]$All,
+  [switch]$Backend,
+  [switch]$ExpoGo,
+  [switch]$DevClient
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,9 +70,79 @@ function Get-LanIPv4Address {
   return 'localhost'
 }
 
-Write-Host 'Limpiando puertos 8000/8001/8002 si quedaron zombies...' -ForegroundColor DarkCyan
-$portsToFree = @(8001, 8002)
-if (-not $SkipBackend) { $portsToFree = @(8000) + $portsToFree }
+# ── Determinar que encender ──────────────────
+function Show-Menu {
+  Clear-Host
+  Write-Host ''
+  Write-Host '  +----------------------------------+' -ForegroundColor Cyan
+  Write-Host '  |       CliMax - Dev Menu           |' -ForegroundColor Cyan
+  Write-Host '  |-----------------------------------|' -ForegroundColor Cyan
+  Write-Host '  |  1)  Todo (Laravel + Expo Go +    |' -ForegroundColor White
+  Write-Host '  |       Dev Client)                 |' -ForegroundColor White
+  Write-Host '  |  2)  Solo Laravel (backend)       |' -ForegroundColor White
+  Write-Host '  |  3)  Solo Expo Go (mobile)        |' -ForegroundColor White
+  Write-Host '  |  4)  Solo Dev Client (mobile)     |' -ForegroundColor White
+  Write-Host '  |  5)  Laravel + Expo Go            |' -ForegroundColor White
+  Write-Host '  |  6)  Laravel + Dev Client         |' -ForegroundColor White
+  Write-Host '  |  7)  Expo Go + Dev Client         |' -ForegroundColor White
+  Write-Host '  |  0)  Salir                        |' -ForegroundColor White
+  Write-Host '  +-----------------------------------+' -ForegroundColor Cyan
+  Write-Host ''
+}
+
+$shouldRunBackend = $false
+$shouldRunExpoGo = $false
+$shouldRunDevClient = $false
+$hasFlags = $All -or $Backend -or $ExpoGo -or $DevClient
+
+# Backward compat: -SkipBackend solo = Expo Go + Dev Client
+if ($SkipBackend -and -not $hasFlags) { $shouldRunExpoGo = $true; $shouldRunDevClient = $true; $hasFlags = $true }
+
+if ($hasFlags) {
+  # Modo flags
+  if ($All -or $Backend) { $shouldRunBackend = $true }
+  if ($ExpoGo) { $shouldRunExpoGo = $true }
+  if ($DevClient) { $shouldRunDevClient = $true }
+  if ($All) {
+    $shouldRunExpoGo = $true
+    $shouldRunDevClient = $true
+  }
+  if ($SkipBackend) { $shouldRunBackend = $false }
+} else {
+  # Sin flags: menu interactivo
+  do {
+    Show-Menu
+    $choice = Read-Host '  ─> Opcion'
+    switch ($choice) {
+      '1' { $shouldRunBackend = $true; $shouldRunExpoGo = $true; $shouldRunDevClient = $true; $ok = $true }
+      '2' { $shouldRunBackend = $true; $ok = $true }
+      '3' { $shouldRunExpoGo = $true; $ok = $true }
+      '4' { $shouldRunDevClient = $true; $ok = $true }
+      '5' { $shouldRunBackend = $true; $shouldRunExpoGo = $true; $ok = $true }
+      '6' { $shouldRunBackend = $true; $shouldRunDevClient = $true; $ok = $true }
+      '7' { $shouldRunExpoGo = $true; $shouldRunDevClient = $true; $ok = $true }
+      '0' { Write-Host '  Chao!'; exit 0 }
+      default { Write-Host '  Opcion invalida, intenta de nuevo.' -ForegroundColor Red; Start-Sleep 1 }
+    }
+  } until ($ok)
+
+  # Preguntar tunnel
+  Write-Host ''
+  $tunnelResp = Read-Host '  Usar tunnel? (s/N)'
+  if ($tunnelResp -eq 's' -or $tunnelResp -eq 'S') { $Tunnel = $true }
+}
+
+Write-Host ''
+Write-Host "  Arrancando: $(if ($shouldRunBackend) { 'Laravel' }) $(if ($shouldRunExpoGo) { 'Expo Go' }) $(if ($shouldRunDevClient) { 'Dev Client' })" -ForegroundColor Yellow
+if ($Tunnel) { Write-Host '  Modo tunnel ACTIVO' -ForegroundColor Yellow }
+Start-Sleep 1
+
+# ── Limpiar puertos ──
+Write-Host 'Limpiando puertos si quedaron zombies...' -ForegroundColor DarkCyan
+$portsToFree = @()
+if ($shouldRunExpoGo) { $portsToFree += 8001 }
+if ($shouldRunDevClient) { $portsToFree += 8002 }
+if ($shouldRunBackend) { $portsToFree += 8000 }
 foreach ($p in $portsToFree) { Stop-PortIfBusy -Port $p }
 
 $tunnelFlag = if ($Tunnel) { ' --tunnel' } else { '' }
@@ -71,7 +150,7 @@ $lanIp = Get-LanIPv4Address
 $apiUrl = "http://$lanIp:8000/api"
 $expoEnvPrefix = "`$expoTemp = '$mobileTempDir'; New-Item -ItemType Directory -Force -Path `$expoTemp | Out-Null; `$env:TEMP = `$expoTemp; `$env:TMP = `$expoTemp; `$env:EXPO_PUBLIC_API_URL = '$apiUrl';"
 
-if (-not $SkipBackend) {
+if ($shouldRunBackend) {
   Write-Host 'Iniciando Laravel (0.0.0.0:8000)...' -ForegroundColor Cyan
   Start-Process powershell -WorkingDirectory $backendDir -ArgumentList @(
     '-NoExit',
@@ -80,26 +159,31 @@ if (-not $SkipBackend) {
   )
 }
 
-Write-Host "Iniciando Expo Go (puerto 8001$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Green
-Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
-  '-NoExit',
-  '-Command',
-  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Go :8001'; $expoEnvPrefix Write-Host 'Modo Expo Go: escanea este QR con la app Expo Go (Play Store / App Store)' -ForegroundColor Yellow; npx expo start --go --port 8001$tunnelFlag --clear"
-)
+if ($shouldRunExpoGo) {
+  Write-Host "Iniciando Expo Go (puerto 8001$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Green
+  Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
+    '-NoExit',
+    '-Command',
+    "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Go :8001'; $expoEnvPrefix Write-Host 'Modo Expo Go: escanea este QR con la app Expo Go (Play Store / App Store)' -ForegroundColor Yellow; npx expo start --go --port 8001$tunnelFlag --clear"
+  )
+}
 
-Write-Host "Iniciando Expo Dev Client (puerto 8002$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Magenta
-Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
-  '-NoExit',
-  '-Command',
-  "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Dev Client :8002'; $expoEnvPrefix Write-Host 'Modo Dev Client: escanea este QR con el APK CliMax (development build)' -ForegroundColor Yellow; npx expo start --dev-client --port 8002$tunnelFlag --clear"
-)
+if ($shouldRunDevClient) {
+  Write-Host "Iniciando Expo Dev Client (puerto 8002$(if ($Tunnel) { ' + tunnel' } else { '' }))..." -ForegroundColor Magenta
+  Start-Process powershell -WorkingDirectory $mobileDir -ArgumentList @(
+    '-NoExit',
+    '-Command',
+    "`$Host.UI.RawUI.WindowTitle = 'CliMax - Expo Dev Client :8002'; $expoEnvPrefix Write-Host 'Modo Dev Client: escanea este QR con el APK CliMax (development build)' -ForegroundColor Yellow; npx expo start --dev-client --port 8002$tunnelFlag --clear"
+  )
+}
 
 Write-Host ''
-Write-Host 'Listo: 3 ventanas abiertas.' -ForegroundColor White
-Write-Host '  - Laravel       :8000 (API)'
+$count = @($shouldRunBackend, $shouldRunExpoGo, $shouldRunDevClient).Where({ $_ }).Count
+Write-Host "Listo: $count ventanas abiertas." -ForegroundColor White
+if ($shouldRunBackend)  { Write-Host "  - Laravel       :8000 (API)" }
+if ($shouldRunExpoGo)   { Write-Host "  - Expo Go       :8001 (QR para Expo Go store app)" }
+if ($shouldRunDevClient) { Write-Host "  - Dev Client    :8002 (QR para CliMax APK)" }
 Write-Host "  - Mobile API URL: $apiUrl"
-Write-Host '  - Expo Go       :8001 (QR para Expo Go store app)'
-Write-Host '  - Dev Client    :8002 (QR para CliMax APK)'
 if ($Tunnel) {
   Write-Host '  Modo tunnel ACTIVO: bundles enrutados por servidores Expo (mas lento, pero funciona en redes con isolation).' -ForegroundColor Yellow
 }

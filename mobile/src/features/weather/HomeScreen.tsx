@@ -436,7 +436,10 @@ function WeatherSlide({
    */
   const hasWeather = !!slide.weather;
   const displayAccent = hasWeather ? scene.accent : ACCENT;
-  const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#fdf9f3' : '#1b2027') : '#1b2027';
+  const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#1b2027' : '#fdf9f3') : '#1b2027';
+  const heroPrimaryText = hasWeather ? (scene.ink === 'dark' ? 'rgba(27,32,39,0.9)' : 'rgba(253,249,243,0.92)') : 'rgba(27,32,39,0.9)';
+  const heroMutedText = hasWeather ? (scene.ink === 'dark' ? 'rgba(148,163,184,0.95)' : 'rgba(253,249,243,0.7)') : 'rgba(148,163,184,0.95)';
+  const glassBg = hasWeather ? (scene.ink === 'dark' ? 'rgba(27,32,39,0.05)' : 'rgba(253,249,243,0.10)') : 'rgba(27,32,39,0.05)';
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -618,7 +621,7 @@ function WeatherSlide({
         >
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
-              <Text style={styles.headerTime}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={[styles.headerTime, { color: heroPrimaryText }]}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
               {isGPS ? (
                 <View style={styles.headerLocationRow}>
                   <Ionicons name="location" size={16} color={displayAccent} />
@@ -653,7 +656,7 @@ function WeatherSlide({
               <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
             </View>
           </View>
-          <Text style={styles.conditionHero}>{info.label}</Text>
+          <Text style={[styles.conditionHero, { color: heroMutedText }]}>{info.label}</Text>
 
           {slide.status === 'loading' && !isGPS && (
             <ActivityIndicator color={displayAccent} style={styles.heroLoader} />
@@ -661,12 +664,12 @@ function WeatherSlide({
           {slide.updatedAt ? (
             <View style={styles.updatedRow}>
               <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
-              <Text style={styles.updatedAt}>Actualizado · {slide.updatedAt}</Text>
+              <Text style={[styles.updatedAt, { color: heroMutedText }]}>Actualizado · {slide.updatedAt}</Text>
             </View>
           ) : null}
         </Animated.View>
 
-        <GlassCard style={styles.summaryCard}>
+        <GlassCard style={[styles.summaryCard, { backgroundColor: glassBg }]}>
           <View style={styles.summaryHeader}>
             <Text style={styles.summaryTitle}>Resumen inteligente</Text>
             <View
@@ -696,7 +699,7 @@ function WeatherSlide({
         {canUseAdvancedWeather ? (
           <>
         {preferences.weeklySummary ? (
-          <GlassCard style={styles.weeklySummaryCard}>
+          <GlassCard style={[styles.weeklySummaryCard, { backgroundColor: glassBg }]}>
             <View style={styles.summaryHeader}>
               <Text style={styles.summaryTitle}>Resumen semanal</Text>
               <View
@@ -724,7 +727,7 @@ function WeatherSlide({
           </GlassCard>
         ) : null}
 
-        <GlassCard style={styles.hourlyCard}>
+        <GlassCard style={[styles.hourlyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionEyebrow}>Pronostico por horas</Text>
             <Text style={styles.sectionTitle}>Por hora</Text>
@@ -760,7 +763,7 @@ function WeatherSlide({
           </ScrollView>
         </GlassCard>
 
-        <GlassCard style={styles.weeklyCard}>
+        <GlassCard style={[styles.weeklyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionEyebrow}>Pronostico extendido</Text>
             <Text style={styles.sectionTitle}>10 dias</Text>
@@ -786,7 +789,7 @@ function WeatherSlide({
         </GlassCard>
 
         <Pressable onPress={() => setMapExpanded(true)}>
-          <GlassCard style={styles.mapCard}>
+          <GlassCard style={[styles.mapCard, { backgroundColor: glassBg }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionEyebrow}>Mapa de calor</Text>

@@ -16,10 +16,10 @@ export default function AlertDetailScreen() {
   const insets = useSafeAreaInsets();
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
-  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
-  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : premiumColors.inkSubtle;
-  const headerMutedStrong = scene.ink === 'dark' ? 'rgba(253,249,243,0.88)' : premiumColors.inkMuted;
-  const dividerColor = scene.ink === 'dark' ? 'rgba(253,249,243,0.12)' : premiumColors.glassBorder;
+  const headerInk = scene.ink === 'dark' ? '#1b2027' : '#fdf9f3';
+  const headerMuted = scene.ink === 'dark' ? premiumColors.inkSubtle : 'rgba(253,249,243,0.78)';
+  const headerMutedStrong = scene.ink === 'dark' ? premiumColors.inkMuted : 'rgba(253,249,243,0.88)';
+  const dividerColor = scene.ink === 'dark' ? premiumColors.glassBorder : 'rgba(253,249,243,0.12)';
   const [alert, setAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(true);
 

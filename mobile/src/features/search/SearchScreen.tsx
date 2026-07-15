@@ -72,8 +72,8 @@ export default function SearchScreen() {
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
   const ACCENT = scene.accent;
-  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
-  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : 'rgba(27,32,39,0.75)';
+  const headerInk = scene.ink === 'dark' ? '#1b2027' : '#fdf9f3';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(27,32,39,0.75)' : 'rgba(253,249,243,0.78)';
 
   const [query, setQuery]             = useState('');
   const [results, setResults]         = useState<City[]>([]);

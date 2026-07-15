@@ -28,8 +28,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
-  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
-  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : premiumColors.inkSubtle;
+  const headerInk = scene.ink === 'dark' ? '#1b2027' : '#fdf9f3';
+  const headerMuted = scene.ink === 'dark' ? premiumColors.inkSubtle : 'rgba(253,249,243,0.78)';
   const [notifications, setNotifications] = useState(true);
   const [location, setLocation] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
