@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Dimensions,
   Easing,
   NativeScrollEvent,
@@ -78,7 +79,6 @@ type SlideData = {
   message: string;
 };
 
-const SURFACE_DEEPER = premiumColors.surface;
 const ACCENT = premiumColors.accent;
 const GLASS_BG = 'rgba(27,32,39,0.05)';
 const GLASS_BORDER = premiumColors.glassBorder;
@@ -400,6 +400,15 @@ function GlassCard({
   style?: any;
   intensity?: number;
 }) {
+  if (Platform.OS === 'android') {
+    // Android: superficie sólida sin BlurView (mala calidad en Android).
+    // el caller pasa glassBg dinámico como backgroundColor en style.
+    return (
+      <View style={[styles.glassCardAndroid, ...(Array.isArray(style) ? style : [style])]}>
+        <View style={styles.glassInner}>{children}</View>
+      </View>
+    );
+  }
   return (
     <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       <View style={styles.glassTopHighlight} pointerEvents="none" />
@@ -439,8 +448,46 @@ function WeatherSlide({
   const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#1b2027' : '#fdf9f3') : '#1b2027';
   const heroPrimaryText = hasWeather ? (scene.ink === 'dark' ? 'rgba(27,32,39,0.9)' : 'rgba(253,249,243,0.92)') : 'rgba(27,32,39,0.9)';
   const heroMutedText = hasWeather ? (scene.ink === 'dark' ? 'rgba(148,163,184,0.95)' : 'rgba(253,249,243,0.7)') : 'rgba(148,163,184,0.95)';
-  const glassBg = hasWeather ? (scene.ink === 'dark' ? 'rgba(27,32,39,0.05)' : 'rgba(253,249,243,0.10)') : 'rgba(27,32,39,0.05)';
+  const glassBg = hasWeather
+    ? (scene.ink === 'dark'
+        ? (Platform.OS === 'android' ? 'rgba(255,255,255,0.92)' : 'rgba(27,32,39,0.05)')
+        : `rgba(253,249,243,${Platform.OS === 'android' ? '0.30' : '0.10'})`)
+    : 'rgba(27,32,39,0.05)';
+  /* Colores de contenido dentro de las cards — adaptados a la escena
+   * para que texto y fondos interiores sean legibles tanto de día como de noche.
+   * Mismo patrón que login: fondo de card sólido + colores adaptativos. */
+  const isDarkInk = scene.ink === 'dark';
+  const cardTitleColor = isDarkInk ? '#1b2027' : 'rgba(253,249,243,0.92)';
+  const cardBodyColor = isDarkInk ? 'rgba(27,32,39,0.88)' : 'rgba(253,249,243,0.82)';
+  const cardSubtleColor = isDarkInk ? 'rgba(148,163,184,0.95)' : 'rgba(253,249,243,0.6)';
+  const cardSubBg = isDarkInk ? 'rgba(27,32,39,0.07)' : 'rgba(253,249,243,0.15)';
+  const cardSubBorder = isDarkInk ? 'rgba(27,32,39,0.1)' : 'rgba(253,249,243,0.2)';
+  const cardInk = isDarkInk ? '#1b2027' : 'rgba(253,249,243,0.92)';
   const refreshing = isGPS && slide.status === 'loading';
+  const shimmerOpacity = useRef(new Animated.Value(0.2)).current;
+
+  useEffect(() => {
+    if (slide.weather) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.45,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.15,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [slide.weather, shimmerOpacity]);
+
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
   const mapScale = useRef(new Animated.Value(0)).current;
@@ -579,6 +626,17 @@ function WeatherSlide({
     }).start();
   }, [mapExpanded, mapScale]);
 
+  /* BackHandler: cerrar mapa con botón físico en Android */
+  useEffect(() => {
+    if (!mapExpanded) return;
+    const onBackPress = () => {
+      setMapExpanded(false);
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [mapExpanded]);
+
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 120],
     outputRange: [1, 0.85],
@@ -636,42 +694,55 @@ function WeatherSlide({
             ) : null}
           </View>
 
-          <Text
-            style={[styles.cityName, { color: displayInkColor }]}
-            numberOfLines={2}
-          >
-            {slide.cityName}
-          </Text>
-          <View style={styles.heroRow}>
-            <View style={styles.tempCenterRow}>
-              <Text style={[styles.temperatureHero, { color: displayInkColor }]}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
-              <Text style={[styles.temperatureDegree, { color: displayAccent }]}>°</Text>
-            </View>
-            <View
-              style={[
-                styles.heroIconWrap,
-                { backgroundColor: `${displayAccent}1f`, borderColor: `${displayAccent}40` },
-              ]}
-            >
-              <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
-            </View>
-          </View>
-          <Text style={[styles.conditionHero, { color: heroMutedText }]}>{info.label}</Text>
-
-          {slide.status === 'loading' && !isGPS && (
-            <ActivityIndicator color={displayAccent} style={styles.heroLoader} />
+          {!slide.weather ? (
+            <Animated.View style={[styles.skeletonContainer, { opacity: shimmerOpacity }]}>
+              <Text
+                style={[styles.cityName, { color: displayInkColor }]}
+                numberOfLines={2}
+              >
+                {slide.cityName}
+              </Text>
+              <View style={styles.skeletonHeroRow}>
+                <View style={[styles.skeletonTemp, { backgroundColor: `${displayAccent}26` }]} />
+                <View style={[styles.skeletonIconWrap, { backgroundColor: `${displayAccent}18`, borderColor: `${displayAccent}30` }]} />
+              </View>
+              <View style={[styles.skeletonCondition, { backgroundColor: `${displayAccent}22` }]} />
+              {!isGPS && (
+                <View style={styles.skeletonLoaderRow}>
+                  <ActivityIndicator size="small" color={displayAccent} />
+                </View>
+              )}
+            </Animated.View>
+          ) : (
+            <>
+              <Text
+                style={[styles.cityName, { color: displayInkColor }]}
+                numberOfLines={2}
+              >
+                {slide.cityName}
+              </Text>
+              <View style={styles.heroRow}>
+                <View style={styles.tempCenterRow}>
+                  <Text style={[styles.temperatureHero, { color: displayInkColor }]}>{Math.round(slide.weather.temperature)}</Text>
+                  <Text style={[styles.temperatureDegree, { color: displayAccent }]}>°</Text>
+                </View>
+                <View
+                  style={[
+                    styles.heroIconWrap,
+                    { backgroundColor: `${displayAccent}1f`, borderColor: `${displayAccent}40` },
+                  ]}
+                >
+                  <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
+                </View>
+              </View>
+              <Text style={[styles.conditionHero, { color: heroMutedText }]}>{info.label}</Text>
+            </>
           )}
-          {slide.updatedAt ? (
-            <View style={styles.updatedRow}>
-              <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
-              <Text style={[styles.updatedAt, { color: heroMutedText }]}>Actualizado · {slide.updatedAt}</Text>
-            </View>
-          ) : null}
         </Animated.View>
 
         <GlassCard style={[styles.summaryCard, { backgroundColor: glassBg }]}>
           <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>Resumen inteligente</Text>
+            <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Resumen inteligente</Text>
             <View
               style={[
                 styles.summaryChip,
@@ -681,17 +752,17 @@ function WeatherSlide({
               <Text style={[styles.summaryChipText, { color: scene.accent }]}>Actual</Text>
             </View>
           </View>
-          <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
+          <Text style={[styles.summaryText, { color: cardBodyColor }]}>{buildSummary(slide.weather)}</Text>
           <View style={styles.summaryFooter}>
             <View style={[styles.summaryPill, { backgroundColor: `${scene.accent}1f` }]}>
               <Ionicons name="speedometer-outline" size={14} color={scene.accent} />
-              <Text style={styles.summaryPillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+              <Text style={[styles.summaryPillText, { color: cardInk }]}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
             </View>
-            <View style={styles.summaryPillSoft}>
-              <Text style={styles.summaryPillTextSoft}>Max {formatTempRounded(slide.weather?.tempMax)}°</Text>
+            <View style={[styles.summaryPillSoft, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
+              <Text style={[styles.summaryPillTextSoft, { color: cardSubtleColor }]}>Max {formatTempRounded(slide.weather?.tempMax)}°</Text>
             </View>
-            <View style={styles.summaryPillSoft}>
-              <Text style={styles.summaryPillTextSoft}>Min {formatTempRounded(slide.weather?.tempMin)}°</Text>
+            <View style={[styles.summaryPillSoft, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
+              <Text style={[styles.summaryPillTextSoft, { color: cardSubtleColor }]}>Min {formatTempRounded(slide.weather?.tempMin)}°</Text>
             </View>
           </View>
         </GlassCard>
@@ -701,7 +772,7 @@ function WeatherSlide({
         {preferences.weeklySummary ? (
           <GlassCard style={[styles.weeklySummaryCard, { backgroundColor: glassBg }]}>
             <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Resumen semanal</Text>
+              <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Resumen semanal</Text>
               <View
                 style={[
                   styles.summaryChip,
@@ -711,16 +782,16 @@ function WeatherSlide({
                 <Text style={[styles.summaryChipText, { color: scene.accent }]}>Activo</Text>
               </View>
             </View>
-            <Text style={styles.summaryText}>
+            <Text style={[styles.summaryText, { color: cardBodyColor }]}>
               Esta semana se mueve entre {weekly[0]?.min ?? '--'}° y {weekly[0]?.max ?? '--'}° hoy,
               con tendencia de lluvia cercana al {weekly[0]?.rainChance ?? 0}%.
             </Text>
             <View style={styles.weeklySummaryGrid}>
               {weekly.slice(0, 4).map((day) => (
-                <View key={day.key} style={styles.weeklySummaryItem}>
+                <View key={day.key} style={[styles.weeklySummaryItem, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
                   <Text style={[styles.weeklySummaryDay, { color: scene.accent }]}>{day.label}</Text>
-                  <Text style={styles.weeklySummaryTemp}>{day.min}°/{day.max}°</Text>
-                  <Text style={styles.weeklySummaryRain}>{day.rainChance}% lluvia</Text>
+                  <Text style={[styles.weeklySummaryTemp, { color: cardInk }]}>{day.min}°/{day.max}°</Text>
+                  <Text style={[styles.weeklySummaryRain, { color: cardSubtleColor }]}>{day.rainChance}% lluvia</Text>
                 </View>
               ))}
             </View>
@@ -729,8 +800,8 @@ function WeatherSlide({
 
         <GlassCard style={[styles.hourlyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionEyebrow}>Pronostico por horas</Text>
-            <Text style={styles.sectionTitle}>Por hora</Text>
+            <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Pronostico por horas</Text>
+            <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>Por hora</Text>
           </View>
           <ScrollView
             horizontal
@@ -743,20 +814,21 @@ function WeatherSlide({
                 key={slot.key}
                 style={[
                   styles.hourCard,
+                  { backgroundColor: cardSubBg, borderColor: cardSubBorder },
                   slot.isNow && [
                     styles.hourCardActive,
                     { backgroundColor: `${scene.accent}2e`, borderColor: `${scene.accent}59` },
                   ],
                 ]}
               >
-                <Text style={[styles.hourLabel, slot.isNow && styles.hourLabelActive]}>{slot.label}</Text>
+                <Text style={[styles.hourLabel, { color: cardSubtleColor }, slot.isNow && { color: cardInk }]}>{slot.label}</Text>
                 <MaterialCommunityIcons
                   name={slot.icon as any}
                   size={22}
-                  color={slot.isNow ? '#1b2027' : 'rgba(27,32,39,0.85)'}
+                  color={cardInk}
                   style={styles.hourIcon}
                 />
-                <Text style={styles.hourTemp}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
+                <Text style={[styles.hourTemp, { color: cardInk }]}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
                 <Text style={[styles.hourRain, { color: scene.accent }]}>{slot.rainChance}%</Text>
               </View>
             ))}
@@ -765,35 +837,41 @@ function WeatherSlide({
 
         <GlassCard style={[styles.weeklyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionEyebrow}>Pronostico extendido</Text>
-            <Text style={styles.sectionTitle}>10 dias</Text>
+            <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Pronostico extendido</Text>
+            <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>10 dias</Text>
           </View>
           {weekly.map((day) => (
             <View key={day.key} style={styles.weekRow}>
-              <Text style={styles.weekDay}>{day.label}</Text>
+              <Text style={[styles.weekDay, { color: cardInk }]}>{day.label}</Text>
               <MaterialCommunityIcons
                 name={day.icon as any}
                 size={18}
-                color="rgba(27,32,39,0.85)"
+                color={cardSubtleColor}
                 style={styles.weekIcon}
               />
               <Text style={[styles.weekRain, { color: scene.accent }]}>{day.rainChance}%</Text>
-              <Text style={styles.weekTempMin}>{day.min}°</Text>
-              <View style={styles.weekRangeBar}>
+              <Text style={[styles.weekTempMin, { color: cardSubtleColor }]}>{day.min}°</Text>
+              <View style={[styles.weekRangeBar, { backgroundColor: cardSubBg }]}>
                 <View style={styles.weekRangeFill} />
                 <View style={styles.weekRangeMarker} />
               </View>
-              <Text style={styles.weekTempMax}>{day.max}°</Text>
+              <Text style={[styles.weekTempMax, { color: cardInk }]}>{day.max}°</Text>
             </View>
           ))}
         </GlassCard>
 
-        <Pressable onPress={() => setMapExpanded(true)}>
+        <Pressable
+          onPress={() => setMapExpanded(true)}
+          style={({ pressed }) => [
+            Platform.OS !== 'android' && pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+          ]}
+          android_ripple={{ color: 'rgba(31,111,107,0.12)', borderless: false }}
+        >
           <GlassCard style={[styles.mapCard, { backgroundColor: glassBg }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
-                <Text style={styles.sectionTitle}>Radar de precipitacion</Text>
+                <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Mapa de calor</Text>
+                <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>Radar de precipitacion</Text>
               </View>
               <Ionicons name="expand" size={18} color={scene.accent} />
             </View>
@@ -894,7 +972,11 @@ function WeatherSlide({
                 </View>
                 <View style={styles.mapFabColumn} pointerEvents="auto">
                   <Pressable
-                    style={styles.mapFab}
+                    style={({ pressed }) => [
+                      styles.mapFab,
+                      Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                    ]}
+                    android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
                     onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
                   >
                     <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
@@ -915,12 +997,12 @@ function WeatherSlide({
         </Pressable>
 
         <View style={styles.infoGrid}>
-          <GlassCard style={styles.infoCardWide}>
+          <GlassCard style={[styles.infoCardWide, { backgroundColor: glassBg }]}>
             <View style={styles.moonHeader}>
               <View>
-                <Text style={styles.infoTitle}>Luna</Text>
-                <Text style={styles.infoValue}>{moon.label}</Text>
-                <Text style={styles.infoHint}>{moon.illumination}% iluminada</Text>
+                <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Luna</Text>
+                <Text style={[styles.infoValue, { color: cardInk }]}>{moon.label}</Text>
+                <Text style={[styles.infoHint, { color: cardSubtleColor }]}>{moon.illumination}% iluminada</Text>
               </View>
               <View style={styles.moonImageWrap}>
                 <MoonPhaseGlobe size={68} phaseFraction={moon.phaseFraction} />
@@ -928,81 +1010,81 @@ function WeatherSlide({
             </View>
             <View style={styles.moonMetaRow}>
               <View style={styles.moonMetaItem}>
-                <Text style={styles.moonMetaLabel}>Prox. luna llena</Text>
-                <Text style={styles.moonMetaValue}>{moon.daysToFull} dias</Text>
+                <Text style={[styles.moonMetaLabel, { color: cardSubtleColor }]}>Prox. luna llena</Text>
+                <Text style={[styles.moonMetaValue, { color: cardInk }]}>{moon.daysToFull} dias</Text>
               </View>
-              <View style={styles.moonDivider} />
+              <View style={[styles.moonDivider, { backgroundColor: cardSubBorder }]} />
               <View style={styles.moonMetaItem}>
-                <Text style={styles.moonMetaLabel}>Prox. luna nueva</Text>
-                <Text style={styles.moonMetaValue}>{moon.daysToNew} dias</Text>
+                <Text style={[styles.moonMetaLabel, { color: cardSubtleColor }]}>Prox. luna nueva</Text>
+                <Text style={[styles.moonMetaValue, { color: cardInk }]}>{moon.daysToNew} dias</Text>
               </View>
             </View>
           </GlassCard>
 
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Sensacion termica</Text>
-            <Text style={styles.infoValue}>{formatTempRounded(slide.weather?.feelsLike)}°</Text>
-            <Text style={styles.infoHint}>Basado en humedad y viento.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Sensacion termica</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{formatTempRounded(slide.weather?.feelsLike)}°</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Basado en humedad y viento.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Indice UV</Text>
-            <Text style={styles.infoValue}>{slide.weather?.uvIndex ?? '--'}</Text>
-            <View style={styles.uvBar}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Indice UV</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.uvIndex ?? '--'}</Text>
+            <View style={[styles.uvBar, { backgroundColor: cardSubBg }]}>
               <View
                 style={[
                   styles.uvBarFill,
-                  { width: `${Math.min(100, (slide.weather?.uvIndex ?? 0) * 10)}%` },
+                  { backgroundColor: scene.accent, width: `${Math.min(100, (slide.weather?.uvIndex ?? 0) * 10)}%` },
                 ]}
               />
             </View>
-            <Text style={styles.infoHint}>Proteccion recomendada.</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Proteccion recomendada.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Viento</Text>
-            <Text style={styles.infoValue}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
-            <Text style={styles.infoHint}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Viento</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>
               Rafagas {slide.weather?.windGusts ?? '--'} km/h · {formatWindDirection(slide.weather?.windDirection)}
             </Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Precipitacion</Text>
-            <Text style={styles.infoValue}>{slide.weather?.precipitationSum ?? '--'} mm</Text>
-            <Text style={styles.infoHint}>Prob. max {slide.weather?.precipitationProbability ?? '--'}%.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Precipitacion</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.precipitationSum ?? '--'} mm</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Prob. max {slide.weather?.precipitationProbability ?? '--'}%.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Amanecer</Text>
-            <Text style={styles.infoValue}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Amanecer</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>
               {slide.weather?.sunrise
                 ? new Date(slide.weather.sunrise).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : '--'}
             </Text>
-            <Text style={styles.infoHint}>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>
               Atardecer {slide.weather?.sunset
                 ? new Date(slide.weather.sunset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                 : '--'}
             </Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Humedad</Text>
-            <Text style={styles.infoValue}>{slide.weather?.humidity ?? '--'}%</Text>
-            <Text style={styles.infoHint}>Nivel de humedad actual.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Humedad</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.humidity ?? '--'}%</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Nivel de humedad actual.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Visibilidad</Text>
-            <Text style={styles.infoValue}>{formatVisibilityKm(slide.weather?.visibility)} km</Text>
-            <Text style={styles.infoHint}>Condicion de horizonte.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Visibilidad</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{formatVisibilityKm(slide.weather?.visibility)} km</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Condicion de horizonte.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Presion</Text>
-            <Text style={styles.infoValue}>{slide.weather?.pressure ?? '--'} hPa</Text>
-            <Text style={styles.infoHint}>Nivel atmosferico actual.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Presion</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.pressure ?? '--'} hPa</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Nivel atmosferico actual.</Text>
           </GlassCard>
         </View>
           </>
         ) : (
-          <GlassCard style={styles.summaryCard}>
+          <GlassCard style={[styles.summaryCard, { backgroundColor: glassBg }]}>
             <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Funciones Premium</Text>
+              <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Funciones Premium</Text>
               <View
                 style={[
                   styles.summaryChip,
@@ -1012,14 +1094,32 @@ function WeatherSlide({
                 <Text style={[styles.summaryChipText, { color: scene.accent }]}>Bloqueado</Text>
               </View>
             </View>
-            <Text style={styles.summaryText}>
+            <Text style={[styles.summaryText, { color: cardBodyColor }]}>
               Suscribete para ver pronostico por horas, 10 dias, radar, indice UV,
               humedad, presion y comparativas climaticas.
             </Text>
           </GlassCard>
         )}
 
-        {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
+        {slide.message ? (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={22} color={premiumColors.danger} />
+            <Text style={styles.errorCardText}>{slide.message}</Text>
+            {onRefresh && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.errorRetryBtn,
+                  Platform.OS !== 'android' && pressed && { opacity: 0.85 },
+                ]}
+                android_ripple={{ color: 'rgba(31,111,107,0.2)', borderless: false }}
+                onPress={onRefresh}
+              >
+                <Ionicons name="refresh-outline" size={16} color={premiumColors.accent} />
+                <Text style={styles.errorRetryText}>Reintentar</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
       </Animated.ScrollView>
 
       {canUseAdvancedWeather && mapExpanded && (
@@ -1143,24 +1243,56 @@ function WeatherSlide({
               </View>
               <View style={styles.mapFabColumnFullscreen} pointerEvents="auto">
                 <Pressable
-                  style={styles.mapFab}
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
                   onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
                 >
                   <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={focusOnLocation}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={focusOnLocation}
+                >
                   <Ionicons name="locate-outline" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={zoomIn}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={zoomIn}
+                >
                   <Ionicons name="add" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={zoomOut}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={zoomOut}
+                >
                   <Ionicons name="remove" size={18} color="#e2e8f0" />
                 </Pressable>
               </View>
             </View>
           </View>
-          <Pressable style={styles.mapCloseBtn} onPress={() => setMapExpanded(false)}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapCloseBtn,
+              Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+            ]}
+            android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 20 }}
+            onPress={() => setMapExpanded(false)}
+          >
             <Ionicons name="close" size={18} color="#e2e8f0" />
           </Pressable>
         </Animated.View>
@@ -1401,7 +1533,12 @@ export default function HomeScreen() {
       {/* Botón eliminar ciudad (solo en slides no-GPS) */}
       {!isActiveGPS && activeSlide && (
         <Pressable
-          style={[styles.removeBtn, { top: insets.top + 10 }]}
+          style={({ pressed }) => [
+            styles.removeBtn,
+            { top: insets.top + 10 },
+            Platform.OS !== 'android' && pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
+          ]}
+          android_ripple={{ color: 'rgba(182,67,44,0.25)', borderless: true, radius: 22 }}
           accessibilityRole="button"
           accessibilityLabel="Quitar ciudad guardada"
           onPress={() => {
@@ -1453,10 +1590,12 @@ export default function HomeScreen() {
           {allSlides.map((_, i) => (
             <Pressable
               key={i}
-              style={[
+              style={({ pressed }) => [
                 styles.dot,
                 i === activeIndex && [styles.dotActive, { backgroundColor: activeScene.accent }],
+                Platform.OS !== 'android' && pressed && { opacity: 0.7 },
               ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 10 }}
               onPress={() => {
                 setActiveIndex(i);
                 scrollRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
@@ -1473,7 +1612,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SURFACE_DEEPER,
     overflow: 'hidden',
   },
   bgGlowTop: {
@@ -1484,6 +1622,8 @@ const styles = StyleSheet.create({
     height: 360,
     borderRadius: 360,
     backgroundColor: premiumColors.auroraAqua,
+    zIndex: 0,
+    pointerEvents: 'none',
     ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlowBottom: {
@@ -1494,6 +1634,8 @@ const styles = StyleSheet.create({
     height: 360,
     borderRadius: 360,
     backgroundColor: premiumColors.auroraTeal,
+    zIndex: 0,
+    pointerEvents: 'none',
     ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   slideRoot: {
@@ -1615,19 +1757,72 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: '500',
   },
-  heroLoader: {
+  skeletonContainer: {
+    gap: 0,
+  },
+  skeletonHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 16,
+  },
+  skeletonTemp: {
+    width: 120,
+    height: 82,
+    borderRadius: 18,
+  },
+  skeletonIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  skeletonCondition: {
+    width: '42%',
+    height: 18,
+    borderRadius: 8,
     marginTop: 12,
   },
-  updatedRow: {
+  skeletonLoaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    gap: 8,
+  },
+  errorCard: {
+    marginTop: 16,
+    marginHorizontal: 0,
+    padding: 18,
+    borderRadius: premiumRadii.lg,
+    backgroundColor: 'rgba(182,67,44,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(182,67,44,0.2)',
+    alignItems: 'center',
+    gap: 10,
+  },
+  errorCardText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: premiumColors.danger,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  errorRetryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: premiumRadii.md,
+    backgroundColor: `${premiumColors.accent}1a`,
+    borderWidth: 1,
+    borderColor: `${premiumColors.accent}38`,
   },
-  updatedAt: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(148,163,184,0.95)',
+  errorRetryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: premiumColors.accent,
   },
   errorText: {
     marginTop: 14,
@@ -1652,6 +1847,13 @@ const styles = StyleSheet.create({
       },
     }),
     overflow: 'hidden',
+  },
+  glassCardAndroid: {
+    borderRadius: premiumRadii.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+    backgroundColor: GLASS_BG,
   },
   glassTopHighlight: {
     position: 'absolute',
@@ -1722,6 +1924,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
+    borderWidth: 1,
   },
   summaryPillTextSoft: {
     fontSize: 12,
@@ -1806,10 +2009,6 @@ const styles = StyleSheet.create({
   hourLabel: {
     fontSize: 12,
     color: 'rgba(27,32,39,0.7)',
-  },
-  hourLabelActive: {
-    color: '#1b2027',
-    fontWeight: '600',
   },
   hourIcon: {
     marginVertical: 8,
@@ -2136,7 +2335,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148,163,184,0.25)',
   },
   mapTimelineText: {
-    color: '#1b2027',
+    color: '#e2e8f0',
     fontSize: 12,
   },
   mapIntensityPanel: {
@@ -2156,6 +2355,7 @@ const styles = StyleSheet.create({
   },
   dotsCapsule: {
     flexDirection: 'row',
+   
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 16,
