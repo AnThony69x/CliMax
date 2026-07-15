@@ -22,6 +22,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decode } from 'base64-arraybuffer';
@@ -1239,7 +1240,11 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25, shadowRadius: 16, elevation: 5,
+    shadowOpacity: 0.25, shadowRadius: 16,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 5 },
+      android: { elevation: 0 },
+    }),
   },
   postCardPressed: {
     opacity: 0.9,

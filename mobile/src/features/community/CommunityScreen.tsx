@@ -43,6 +43,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
@@ -2530,7 +2531,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.45,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 2 },
+      android: { elevation: 0 },
+    }),
   },
   severityChipActive: {
     transform: [{ scale: 1.02 }],
@@ -2878,7 +2882,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    ...Platform.select({ ios: { elevation: 2 }, android: { elevation: 0 } }),
   },
   feedBadgeText: {
     fontSize: 11,
