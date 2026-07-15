@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ExpoLinking from 'expo-linking';
+import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -27,6 +28,8 @@ import {
 } from '../../core/api/weatherApi';
 import type { AccountModerationStatus, ModerationStatus } from '../../core/api/weatherApi';
 import { getAccessToken } from '../../core/auth/supabaseClient';
+import { useCities } from '../../core/cities/CitiesContext';
+import { applyLocationPrecision, useAccountPreferences } from '../../core/preferences/accountPreferences';
 import { premiumColors, premiumRadii, premiumShadow, premiumType } from '../../theme/premium';
 
 type AdminUser = {
@@ -734,25 +737,76 @@ export function OperatorPanelScreen() {
 
 export function ProfessionalPanelScreen() {
   const { plan, professionalSector, hasEntitlement } = useAccess();
+  const { savedCities } = useCities();
+  const accountPreferences = useAccountPreferences();
   const [lat, setLat] = useState('-2.170998');
   const [lon, setLon] = useState('-79.922359');
   const [range, setRange] = useState<(typeof RANGE_OPTIONS)[number]>('365d');
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationLabel, setLocationLabel] = useState('Selecciona una zona');
+  const [hasSelectedLocation, setHasSelectedLocation] = useState(false);
   const allowed = hasEntitlement('weather.history.extended');
 
-  const loadSummary = async () => {
+  const loadSummaryForCoords = async (queryLat: number, queryLon: number) => {
+    if (!Number.isFinite(queryLat) || !Number.isFinite(queryLon)) {
+      Alert.alert('Historial climatico', 'Ingresa coordenadas validas para consultar.');
+      return;
+    }
     setLoading(true);
     try {
       const token = await getAccessToken();
       if (!token) return;
-      const payload = await fetchWeatherHistorySummary(Number(lat), Number(lon), range, token);
+      const payload = await fetchWeatherHistorySummary(queryLat, queryLon, range, token);
       setSummary(payload.data);
     } catch (error) {
       Alert.alert('Historial climatico', error instanceof Error ? error.message : 'No se pudo cargar el historial.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleUseCurrentLocation = async (options?: { autoLoad?: boolean }) => {
+    setLocating(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Ubicacion', 'Permiso de ubicacion denegado.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const safeCoords = applyLocationPrecision(
+        position.coords.latitude,
+        position.coords.longitude,
+        accountPreferences.preciseLocation
+      );
+      setLat(String(safeCoords.latitude));
+      setLon(String(safeCoords.longitude));
+      setLocationLabel('Mi ubicacion');
+      setHasSelectedLocation(true);
+      if (options?.autoLoad) {
+        await loadSummaryForCoords(safeCoords.latitude, safeCoords.longitude);
+      }
+    } catch {
+      Alert.alert('Ubicacion', 'No se pudo obtener la ubicacion actual.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const loadSummary = async () => {
+    await loadSummaryForCoords(Number(lat), Number(lon));
+  };
+
+  const handleSelectSavedCity = async (city: { name: string; lat: number; lon: number }) => {
+    setLat(String(city.lat));
+    setLon(String(city.lon));
+    setLocationLabel(city.name);
+    setHasSelectedLocation(true);
+    await loadSummaryForCoords(city.lat, city.lon);
   };
 
   if (!allowed) {
@@ -777,14 +831,36 @@ export function ProfessionalPanelScreen() {
       </Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Zona de analisis</Text>
-        <TextInput value={lat} onChangeText={setLat} keyboardType="numeric" style={styles.input} placeholder="Latitud" placeholderTextColor={premiumColors.inkMuted} />
-        <TextInput value={lon} onChangeText={setLon} keyboardType="numeric" style={styles.input} placeholder="Longitud" placeholderTextColor={premiumColors.inkMuted} />
+        <Text style={styles.muted}>{locationLabel}</Text>
+        <View style={styles.rowWrap}>
+          <Action
+            label={locating ? 'Localizando...' : 'Mi ubicacion'}
+            active={locationLabel === 'Mi ubicacion'}
+            disabled={locating}
+            onPress={() => handleUseCurrentLocation({ autoLoad: true })}
+          />
+          {savedCities.map((city) => (
+            <Action
+              key={city.id}
+              label={city.name}
+              active={locationLabel === city.name}
+              onPress={() => handleSelectSavedCity(city)}
+            />
+          ))}
+        </View>
+        {savedCities.length === 0 ? (
+          <Text style={styles.muted}>Agrega ciudades desde Buscar para consultarlas aqui.</Text>
+        ) : null}
         <View style={styles.rowWrap}>
           {RANGE_OPTIONS.map((item) => (
             <Action key={item} label={item} active={range === item} onPress={() => setRange(item)} />
           ))}
         </View>
-        <Action label={loading ? 'Cargando...' : 'Consultar resumen'} onPress={loadSummary} />
+        <Action
+          label={loading ? 'Cargando...' : 'Consultar con rango'}
+          disabled={!hasSelectedLocation || loading}
+          onPress={loadSummary}
+        />
       </View>
       {summary ? (
         <View style={styles.metricCard}>
