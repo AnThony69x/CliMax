@@ -72,6 +72,8 @@ export default function SearchScreen() {
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
   const ACCENT = scene.accent;
+  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : 'rgba(27,32,39,0.75)';
 
   const [query, setQuery]             = useState('');
   const [results, setResults]         = useState<City[]>([]);
@@ -272,8 +274,8 @@ export default function SearchScreen() {
           </LinearGradient>
           <View style={styles.headerTextCol}>
             <Text style={[styles.labelCaps, { color: ACCENT }]}>Explorar</Text>
-            <Text style={styles.title}>Buscar ciudad</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.title, { color: headerInk }]}>Buscar ciudad</Text>
+            <Text style={[styles.headerSubtitle, { color: headerMuted }]}>
               Añade ciudades al inicio para ver su clima al deslizar.
             </Text>
           </View>

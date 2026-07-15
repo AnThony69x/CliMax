@@ -436,7 +436,7 @@ function WeatherSlide({
    */
   const hasWeather = !!slide.weather;
   const displayAccent = hasWeather ? scene.accent : ACCENT;
-  const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#1b2027' : '#fdf9f3') : '#1b2027';
+  const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#fdf9f3' : '#1b2027') : '#1b2027';
   const refreshing = isGPS && slide.status === 'loading';
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;

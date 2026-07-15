@@ -133,6 +133,8 @@ export default function AlertsScreen() {
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
   const ACCENT = scene.accent;
+  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : premiumColors.inkSubtle;
   const [alerts, setAlerts] = useState<WeatherAlert[]>([]);
   const [evidences, setEvidences] = useState<AlertEvidence[]>([]);
   const [sessionReady, setSessionReady] = useState(false);
@@ -469,8 +471,8 @@ export default function AlertsScreen() {
         <PremiumReveal style={styles.header}>
           <View style={styles.headerTopRow}>
             <View style={styles.headerTitleBlock}>
-              <Text style={styles.eyebrow}>Panel</Text>
-              <Text style={styles.title}>Alertas meteorológicas</Text>
+              <Text style={[styles.eyebrow, { color: headerMuted }]}>Panel</Text>
+              <Text style={[styles.title, { color: headerInk }]}>Alertas meteorológicas</Text>
             </View>
             {unreadCount > 0 ? (
               <View style={styles.unreadPill}>
@@ -478,7 +480,7 @@ export default function AlertsScreen() {
               </View>
             ) : null}
           </View>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.subtitle, { color: headerMuted }]}>
             {unreadCount > 0
               ? `${unreadCount} alerta${unreadCount > 1 ? 's' : ''} sin leer`
               : 'Sin alertas pendientes'}

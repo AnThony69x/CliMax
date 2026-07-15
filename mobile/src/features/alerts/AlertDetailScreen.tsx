@@ -16,6 +16,10 @@ export default function AlertDetailScreen() {
   const insets = useSafeAreaInsets();
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
+  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : premiumColors.inkSubtle;
+  const headerMutedStrong = scene.ink === 'dark' ? 'rgba(253,249,243,0.88)' : premiumColors.inkMuted;
+  const dividerColor = scene.ink === 'dark' ? 'rgba(253,249,243,0.12)' : premiumColors.glassBorder;
   const [alert, setAlert] = useState<Alert | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -109,34 +113,34 @@ export default function AlertDetailScreen() {
         </Text>
       </View>
 
-      <Text style={styles.title}>{alert.title}</Text>
+      <Text style={[styles.title, { color: headerInk }]}>{alert.title}</Text>
 
       {alert.location && (
         <View style={styles.locationRow}>
-          <Ionicons name="location-outline" size={14} color={premiumColors.inkSubtle} />
-          <Text style={styles.locationText}>{alert.location}</Text>
+          <Ionicons name="location-outline" size={14} color={headerMuted} />
+          <Text style={[styles.locationText, { color: headerMuted }]}>{alert.location}</Text>
         </View>
       )}
 
-      <Text style={styles.dateLabel}>
+      <Text style={[styles.dateLabel, { color: headerMuted }]}>
         {new Date(alert.created_at).toLocaleDateString('es-ES', {
           weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
           hour: '2-digit', minute: '2-digit',
         })}
       </Text>
 
-      <View style={styles.divider} />
-      <Text style={styles.sectionTitle}>Descripción</Text>
-      <Text style={styles.description}>{alert.description}</Text>
+      <View style={[styles.divider, { backgroundColor: dividerColor }]} />
+      <Text style={[styles.sectionTitle, { color: headerInk }]}>Descripción</Text>
+      <Text style={[styles.description, { color: headerMutedStrong }]}>{alert.description}</Text>
 
       {alert.recommendations && alert.recommendations.length > 0 && (
         <>
-          <View style={styles.divider} />
-          <Text style={styles.sectionTitle}>Recomendaciones</Text>
+          <View style={[styles.divider, { backgroundColor: dividerColor }]} />
+          <Text style={[styles.sectionTitle, { color: headerInk }]}>Recomendaciones</Text>
           {alert.recommendations.map((rec, index) => (
             <View key={index} style={styles.recommendationItem}>
               <Text style={styles.recommendationBullet}>•</Text>
-              <Text style={styles.recommendationText}>{rec}</Text>
+              <Text style={[styles.recommendationText, { color: headerMutedStrong }]}>{rec}</Text>
             </View>
           ))}
         </>

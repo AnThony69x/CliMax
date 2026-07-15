@@ -28,6 +28,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
+  const headerInk = scene.ink === 'dark' ? '#fdf9f3' : '#1b2027';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(253,249,243,0.78)' : premiumColors.inkSubtle;
   const [notifications, setNotifications] = useState(true);
   const [location, setLocation] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -126,9 +128,9 @@ export default function SettingsScreen() {
         ]}
       >
         <PremiumReveal style={styles.header}>
-          <Text style={styles.eyebrow}>Preferencias</Text>
-          <Text style={styles.title}>Configuración</Text>
-          <Text style={styles.subtitle}>Ajusta notificaciones, privacidad y experiencia visual.</Text>
+          <Text style={[styles.eyebrow, { color: headerMuted }]}>Preferencias</Text>
+          <Text style={[styles.title, { color: headerInk }]}>Configuración</Text>
+          <Text style={[styles.subtitle, { color: headerMuted }]}>Ajusta notificaciones, privacidad y experiencia visual.</Text>
         </PremiumReveal>
 
         <PremiumReveal delay={80} style={styles.section}>
