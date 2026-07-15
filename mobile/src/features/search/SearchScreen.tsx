@@ -33,13 +33,16 @@ import { useAccountPreferences } from '../../core/preferences/accountPreferences
 import { getWeatherScene, WEATHER_SCENES } from '../../theme/weatherScenes';
 import { weatherIconInfo } from '../../theme/weatherIcons';
 
-const GLASS_BG     = premiumColors.glass;
-const GLASS_BORDER = premiumColors.glassBorder;
 const SURFACE_DEEP = premiumColors.surface;
 const ACCENT       = premiumColors.accent;
 const DEBOUNCE_MS  = 350;
 const SWIPE_HINT_KEY = '@climax/search/swipe-hint-shown';
 const MONO_FONT = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' });
+const SEARCH_SURFACE = '#F8FAFC';
+const SEARCH_BORDER = '#E2E8F0';
+const SEARCH_INK = '#111827';
+const SEARCH_MUTED = '#64748B';
+const SEARCH_ICON_GRADIENT = ['#64748B', '#334155'] as const;
 
 type CityWeather = {
   temp: number;
@@ -287,7 +290,7 @@ export default function SearchScreen() {
         <View style={styles.searchWrapper}>
           <View style={[styles.searchRow, showSuggestions && styles.searchRowOpen]}>
             <LinearGradient
-              colors={[ACCENT, scene.accentSoft]}
+              colors={SEARCH_ICON_GRADIENT}
               start={{ x: 0.1, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.searchIconBadge}
@@ -299,20 +302,22 @@ export default function SearchScreen() {
               value={query}
               onChangeText={setQuery}
               placeholder="Busca una ciudad..."
-              placeholderTextColor="rgba(148,163,184,0.75)"
+              placeholderTextColor={SEARCH_MUTED}
               onSubmitEditing={searchCity}
               onFocus={handleFocus}
               onBlur={handleBlur}
               returnKeyType="search"
               selectionColor={ACCENT}
               autoCorrect={false}
+              underlineColorAndroid="transparent"
+              textAlignVertical="center"
             />
             {loadingSug && (
               <ActivityIndicator size="small" color={ACCENT} style={{ marginRight: 4 }} />
             )}
             {query.length > 0 && !loadingSug && (
               <Pressable onPress={clearSearch} style={styles.clearBtn}>
-                <Ionicons name="close" size={16} color="rgba(27,32,39,0.4)" />
+                <Ionicons name="close" size={16} color={SEARCH_MUTED} />
               </Pressable>
             )}
           </View>
@@ -645,16 +650,16 @@ const styles = StyleSheet.create({
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(15,23,42,0.65)',
+    backgroundColor: SEARCH_SURFACE,
     borderWidth: 1,
-    borderColor: `${ACCENT}38`,
+    borderColor: SEARCH_BORDER,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 12,
     gap: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 16,
     ...Platform.select<ViewStyle>({
       ios: { elevation: 4 },
@@ -664,7 +669,7 @@ const styles = StyleSheet.create({
   searchRowOpen: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    borderBottomColor: `${ACCENT}1f`,
+    borderBottomColor: 'rgba(15,23,42,0.08)',
   },
   searchIconBadge: {
     width: 36,
@@ -676,7 +681,8 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 16,
-    color: premiumColors.ink,
+    fontWeight: '500',
+    color: SEARCH_INK,
     minWidth: 0,
   },
   clearBtn: { padding: 4 },
@@ -748,18 +754,21 @@ const styles = StyleSheet.create({
     textTransform: 'none',
   },
   stateBox: {
-    backgroundColor: GLASS_BG,
+    backgroundColor: SEARCH_SURFACE,
     borderRadius: premiumRadii.xl,
     borderWidth: 1,
-    borderColor: GLASS_BORDER,
+    borderColor: SEARCH_BORDER,
     padding: 28,
     alignItems: 'center',
     gap: 14,
     ...premiumShadow('medium'),
+    ...Platform.select<ViewStyle>({
+      android: { elevation: 0 },
+    }),
   },
   stateText: {
     fontSize: 14,
-    color: 'rgba(148,163,184,0.95)',
+    color: SEARCH_MUTED,
     textAlign: 'center',
     lineHeight: 21,
   },
