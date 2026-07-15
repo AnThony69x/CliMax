@@ -15,7 +15,10 @@
       "PowerShell(git add *)",
       "PowerShell(git commit *)",
       "Bash(npx tsc *)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "PowerShell(git push *)",
+      "Bash(git log *)",
+      "Bash(powershell -NoProfile -NonInteractive -Command -)"
     ]
   }
 }

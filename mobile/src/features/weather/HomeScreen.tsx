@@ -66,6 +66,8 @@ type WeatherState = {
   windDirection?: number | null;
   sunrise?: string | null;
   sunset?: string | null;
+  timezone?: string | null;
+  utcOffsetSeconds?: number | null;
 };
 
 type SlideData = {
@@ -126,6 +128,72 @@ function formatWindDirection(deg: number | null | undefined) {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
   const index = Math.round((deg % 360) / 45) % 8;
   return directions[index];
+}
+
+/**
+ * Devuelve el "ahora" de una ciudad según su offset UTC en segundos.
+ * Si el offset es null, usa la hora local del dispositivo.
+ */
+function getCityLocalNow(offsetSeconds: number | null | undefined): {
+  hours: number;
+  minutes: number;
+  timeString: string;
+  date: Date;
+} {
+  if (offsetSeconds == null) {
+    const d = new Date();
+    return {
+      hours: d.getHours(),
+      minutes: d.getMinutes(),
+      timeString: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: d,
+    };
+  }
+  // UTC timestamp + offset = ciudad-local en ms
+  const localMs = Date.now() + offsetSeconds * 1000;
+  const d = new Date(localMs);
+  return {
+    hours: d.getUTCHours(),
+    minutes: d.getUTCMinutes(),
+    timeString: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`,
+    date: d,
+  };
+}
+
+/**
+ * Dado un string de hora de Open-Meteo ("2026-07-14T12:00") en hora local de la
+ * ciudad y su offset UTC en segundos, devuelve el timestamp UTC y la hora local.
+ */
+function parseLocalSlot(timeStr: string, offsetSeconds: number | null | undefined): {
+  utcMs: number;
+  hour: number;
+  minute: number;
+} {
+  const [datePart, timePart] = timeStr.split('T');
+  const [hStr, mStr] = timePart.split(':');
+  const hour = Number(hStr);
+  const minute = Number(mStr);
+  const [year, month, day] = datePart.split('-').map(Number);
+  // Crear timestamp UTC asumiendo que la hora es local de la ciudad,
+  // luego restar el offset para obtener el instante UTC real.
+  const utcMs = offsetSeconds != null
+    ? Date.UTC(year, month - 1, day, hour, minute) - offsetSeconds * 1000
+    : new Date(timeStr).getTime();
+  return { utcMs, hour, minute };
+}
+
+/**
+ * Parsea un string ISO sin timezone ("2026-07-14T06:30") usando el offset de
+ * la ciudad, devolviendo el timestamp UTC (ms) o null si no se puede parsear.
+ */
+function parseLocalDateString(dateStr: string, offsetSeconds: number | null | undefined): number | null {
+  const [datePart, timePart] = dateStr.split('T');
+  if (!datePart || !timePart) return null;
+  const [hour, minute] = timePart.split(':').map(Number);
+  const [year, month, day] = datePart.split('-').map(Number);
+  if ([year, month, day, hour, minute].some((n) => isNaN(n))) return null;
+  if (offsetSeconds == null) return new Date(dateStr).getTime();
+  return Date.UTC(year, month - 1, day, hour, minute) - offsetSeconds * 1000;
 }
 
 function buildSummary(weather: WeatherState | null) {
@@ -199,6 +267,8 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
   const precipitationSumRaw = daily?.precipitation_sum?.[0];
   const precipitationProbRaw = daily?.precipitation_probability_max?.[0];
   const gustsMaxRaw = daily?.wind_gusts_10m_max?.[0];
+  const timezone = typeof data?.timezone === 'string' ? data.timezone : null;
+  const utcOffsetSeconds = typeof data?.utc_offset_seconds === 'number' ? data.utc_offset_seconds : null;
   return {
     temperature: current.temperature_2m,
     weatherCode: current.weather_code,
@@ -237,6 +307,8 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
     windDirection: typeof current.wind_direction_10m === 'number' ? current.wind_direction_10m : null,
     sunrise: typeof sunriseRaw === 'string' ? sunriseRaw : null,
     sunset: typeof sunsetRaw === 'string' ? sunsetRaw : null,
+    timezone,
+    utcOffsetSeconds,
   };
 }
 
@@ -293,19 +365,19 @@ type WeeklyItem = {
   icon: string;
 };
 
-function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | null {
+function buildHourlyFromWeather(weather: WeatherState | null, offsetSeconds?: number | null): HourlyItem[] | null {
   if (!weather?.hourlyTimes || !weather.hourlyTemps || !weather.hourlyCodes) return null;
-  const now = new Date();
   const items: HourlyItem[] = [];
   for (let i = 0; i < weather.hourlyTimes.length; i += 1) {
-    const time = new Date(weather.hourlyTimes[i]);
-    if (time < now) continue;
-    const label = items.length === 0 ? 'Ahora' : `${time.getHours()}:00`;
+    const { utcMs, hour } = parseLocalSlot(weather.hourlyTimes[i], offsetSeconds ?? weather.utcOffsetSeconds);
+    // Comparar contra el instante UTC real actual
+    if (utcMs < Date.now()) continue;
+    const label = items.length === 0 ? 'Ahora' : `${hour}:00`;
     const temp = weather.hourlyTemps[i] ?? null;
     const rainChance = weather.hourlyRain?.[i] ?? 0;
     const icon = weatherInfo(
       weather.hourlyCodes[i],
-      isTimeNight(time, weather.sunrise, weather.sunset)
+      hour < 5 || hour >= 19
     ).icon;
     items.push({
       key: `${label}-${i}`,
@@ -320,12 +392,17 @@ function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | nu
   return items.length ? items : null;
 }
 
-function buildWeeklyFromWeather(weather: WeatherState | null): WeeklyItem[] | null {
+function buildWeeklyFromWeather(weather: WeatherState | null, offsetSeconds?: number | null): WeeklyItem[] | null {
   if (!weather?.dailyTimes || !weather.dailyMin || !weather.dailyMax) return null;
   const days = weather.dailyTimes;
   const items: WeeklyItem[] = [];
   for (let i = 0; i < days.length && items.length < 8; i += 1) {
-    const date = new Date(days[i]);
+    // Ajustar la fecha al mediodía local de la ciudad para que el día de la
+    // semana sea correcto independientemente de la zona horaria del usuario.
+    const dateParsed = days[i].split('-').map(Number);
+    const date = offsetSeconds != null && dateParsed.length === 3
+      ? new Date(Date.UTC(dateParsed[0], dateParsed[1] - 1, dateParsed[2], 12) - offsetSeconds * 1000)
+      : new Date(days[i]);
     const label = date
       .toLocaleDateString('es-ES', { weekday: 'short' })
       .replace('.', '')
@@ -434,7 +511,27 @@ function WeatherSlide({
   const insets = useSafeAreaInsets();
   const { hasEntitlement } = useAccess();
   const canUseAdvancedWeather = hasEntitlement('weather.comparisons');
-  const isNight = isNightNow(slide.weather?.sunrise, slide.weather?.sunset);
+  /* Detección de día/noche por ubicación: parsea amanecer/atardecer usando
+   * el offset de la ciudad para evitar que new Date() los interprete en la
+   * zona horaria del usuario. */
+  const cityOffset = slide.weather?.utcOffsetSeconds ?? null;
+  const isNight = (() => {
+    const sunrise = slide.weather?.sunrise;
+    const sunset = slide.weather?.sunset;
+    if (sunrise && sunset) {
+      const sunriseMs = parseLocalDateString(sunrise, cityOffset);
+      const sunsetMs = parseLocalDateString(sunset, cityOffset);
+      if (sunriseMs != null && sunsetMs != null && !isNaN(sunriseMs) && !isNaN(sunsetMs)) {
+        const nowMs = Date.now();
+        return nowMs < sunriseMs || nowMs >= sunsetMs;
+      }
+    }
+    if (cityOffset != null) {
+      const localH = ((new Date().getUTCHours() * 60 + Math.floor(cityOffset / 60)) / 60 + 24) % 24;
+      return localH < 5 || localH >= 19;
+    }
+    return isNightNow(null, null);
+  })();
   const info = weatherInfo(slide.weather?.weatherCode, isNight);
   const scene = WEATHER_SCENES[getWeatherScene(slide.weather?.weatherCode, isNight)];
   /**
@@ -488,6 +585,7 @@ function WeatherSlide({
     return () => anim.stop();
   }, [slide.weather, shimmerOpacity]);
 
+  const cityNow = getCityLocalNow(cityOffset);
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
   const mapScale = useRef(new Animated.Value(0)).current;
@@ -496,21 +594,21 @@ function WeatherSlide({
   const [mapRegion, setMapRegion] = useState(WORLD_REGION);
   const hourly = useMemo(() => {
     return (
-      buildHourlyFromWeather(slide.weather) ||
+      buildHourlyFromWeather(slide.weather, cityOffset) ||
       buildHourlyForecast(slide.weather?.temperature ?? null, slide.weather?.weatherCode)
     );
-  }, [slide.weather]);
+  }, [slide.weather, cityOffset]);
   const weekly = useMemo(() => {
     return (
-      buildWeeklyFromWeather(slide.weather) ||
+      buildWeeklyFromWeather(slide.weather, cityOffset) ||
       buildWeeklyForecast(
         slide.weather?.tempMin ?? null,
         slide.weather?.tempMax ?? null,
         slide.weather?.weatherCode
       )
     );
-  }, [slide.weather]);
-  const moon = useMemo(() => moonPhaseData(), []);
+  }, [slide.weather, cityOffset]);
+  const moon = useMemo(() => moonPhaseData(cityNow.date), [cityNow.date]);
   const [mapMode, setMapMode] = useState<'radar' | 'temp'>('radar');
   const [radarFrames, setRadarFrames] = useState<string[]>([]);
   const [radarIndex, setRadarIndex] = useState(0);
@@ -679,7 +777,7 @@ function WeatherSlide({
         >
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
-              <Text style={[styles.headerTime, { color: heroPrimaryText }]}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={[styles.headerTime, { color: heroPrimaryText }]}>{cityNow.timeString}</Text>
               {isGPS ? (
                 <View style={styles.headerLocationRow}>
                   <Ionicons name="location" size={16} color={displayAccent} />
@@ -1055,12 +1153,12 @@ function WeatherSlide({
             <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Amanecer</Text>
             <Text style={[styles.infoValue, { color: cardInk }]}>
               {slide.weather?.sunrise
-                ? new Date(slide.weather.sunrise).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                ? (slide.weather.sunrise.split('T')[1] ?? '').slice(0, 5)
                 : '--'}
             </Text>
             <Text style={[styles.infoHint, { color: cardSubtleColor }]}>
               Atardecer {slide.weather?.sunset
-                ? new Date(slide.weather.sunset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                ? (slide.weather.sunset.split('T')[1] ?? '').slice(0, 5)
                 : '--'}
             </Text>
           </GlassCard>
