@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class WeatherFetcherService
 {
+    private const RAW_CACHE_TTL_MINUTES = 10;
+
     /**
      * Trae el clima actual desde Open-Meteo y normaliza al esquema interno.
      * Devuelve null si la API falla.
@@ -34,8 +37,16 @@ class WeatherFetcherService
      * Devuelve el JSON crudo de Open-Meteo (manteniendo retrocompatibilidad
      * con lo que ClimaController::getClima ya retornaba al cliente).
      */
-    public function fetchRaw(float $latitude, float $longitude): ?array
+    public function fetchRaw(float $latitude, float $longitude, bool $forceRefresh = false): ?array
     {
+        $cacheKey = $this->rawCacheKey($latitude, $longitude);
+        if (! $forceRefresh && Cache::has($cacheKey)) {
+            $cached = Cache::get($cacheKey);
+            if (is_array($cached)) {
+                return $cached;
+            }
+        }
+
         $baseUrl = config('services.weather.base_url', 'https://api.open-meteo.com/v1/forecast');
         $verify = config('services.weather.verify', false);
         $timeout = (int) config('services.weather.timeout', 8);
@@ -105,6 +116,21 @@ class WeatherFetcherService
         }
 
         $data = $response->json();
-        return is_array($data) ? $data : null;
+        if (! is_array($data)) {
+            return null;
+        }
+
+        Cache::put($cacheKey, $data, now()->addMinutes(self::RAW_CACHE_TTL_MINUTES));
+
+        return $data;
+    }
+
+    private function rawCacheKey(float $latitude, float $longitude): string
+    {
+        return sprintf(
+            'weather:raw:v1:%s:%s',
+            number_format(round($latitude, 2), 2, '.', ''),
+            number_format(round($longitude, 2), 2, '.', '')
+        );
     }
 }

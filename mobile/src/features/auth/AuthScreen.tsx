@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -25,7 +26,7 @@ import {
   signInWithPassword,
   signUp,
 } from '../../core/auth/supabaseClient';
-import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
+import { premiumColors, premiumRadii } from '../../theme/premium';
 
 const LOGO = require('../../../assets/images/icon.png');
 
@@ -63,6 +64,7 @@ function AuthField({
           style={fieldStyles.input}
           placeholderTextColor="rgba(148,163,184,0.5)"
           secureTextEntry={secureTextEntry && !isRevealed}
+          underlineColorAndroid="transparent"
           {...props}
         />
         {showToggle && (
@@ -105,6 +107,7 @@ const fieldStyles = StyleSheet.create({
     fontSize: 15,
     color: premiumColors.ink,
     paddingVertical: 13,
+    textAlignVertical: 'center',
   },
   toggleBtn: { padding: 4 },
   errorText: {
@@ -519,10 +522,11 @@ const styles = StyleSheet.create({
     left: -100,
     width: 400,
     height: 400,
-    borderRadius: 999,
+    borderRadius: 400,
     backgroundColor: premiumColors.auroraAqua,
     zIndex: 0,
     pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlow2: {
     position: 'absolute',
@@ -530,10 +534,11 @@ const styles = StyleSheet.create({
     right: -80,
     width: 300,
     height: 300,
-    borderRadius: 999,
+    borderRadius: 300,
     backgroundColor: premiumColors.auroraTeal,
     zIndex: 0,
     pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
 
   scroll: {
@@ -547,7 +552,19 @@ const styles = StyleSheet.create({
   /* Card */
   cardShadow: {
     borderRadius: premiumRadii.xxl,
-    ...premiumShadow('strong'),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.38,
+        shadowRadius: 30,
+      },
+      android: {
+        // Sin elevation — en Android la sombra de elevation es siempre
+        // rectangular y no sigue el borderRadius del card.
+        // El borde + fondo blanco dan suficiente profundidad visual.
+      },
+    }),
   },
   blurCard: {
     borderRadius: premiumRadii.xxl,
@@ -670,5 +687,5 @@ const styles = StyleSheet.create({
 
   /* Invitado */
   guestBtn: { alignItems: 'center', paddingVertical: 4 },
-  guestText: { color: 'rgba(148,163,184,0.5)', fontSize: 13 },
+  guestText: { color: 'rgba(148,163,184,0.8)', fontSize: 13 },
 });

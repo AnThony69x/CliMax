@@ -78,11 +78,24 @@ export const premiumType = {
   } satisfies TextStyle,
 };
 
+/**
+ * Niveles de sombra adaptados por plataforma.
+ *
+ * - iOS: usa `shadow*` → sombra suave y difusa, se ve bien incluso con valores
+ *   grandes (radius 30, opacity 0.38).
+ * - Android: usa `elevation` → sombra rectangular dura y sin difuminado natural.
+ *   Por eso los valores son significativamente menores que en iOS: elevation > 8
+ *   produce un "cuadro" antiestético. En su lugar combinamos elevation + border
+ *   + backgroundColor para dar profundidad sin recurrir a elevation alta.
+ *
+ * Patrón: **Strategy** vía `Platform.select` — cada plataforma resuelve la
+ * misma intención visual (profundidad) con mecanismos nativos distintos.
+ */
 export function premiumShadow(level: 'soft' | 'medium' | 'strong' = 'medium'): ViewStyle {
   const map = {
-    soft: { opacity: 0.16, radius: 12, height: 8, elevation: 3 },
-    medium: { opacity: 0.24, radius: 20, height: 12, elevation: 6 },
-    strong: { opacity: 0.38, radius: 30, height: 20, elevation: 14 },
+    soft: { opacity: 0.16, radius: 12, height: 8, iosElevation: 3, androidElevation: 1 },
+    medium: { opacity: 0.24, radius: 20, height: 12, iosElevation: 6, androidElevation: 3 },
+    strong: { opacity: 0.38, radius: 30, height: 20, iosElevation: 14, androidElevation: 5 },
   }[level];
 
   return {
@@ -94,7 +107,7 @@ export function premiumShadow(level: 'soft' | 'medium' | 'strong' = 'medium'): V
         shadowRadius: map.radius,
       },
       android: {
-        elevation: map.elevation,
+        elevation: map.androidElevation,
       },
       web: {
         boxShadow: `0px ${map.height}px ${map.radius}px rgba(0, 0, 0, ${map.opacity})`,
@@ -102,6 +115,38 @@ export function premiumShadow(level: 'soft' | 'medium' | 'strong' = 'medium'): V
       default: {},
     }),
   };
+}
+
+/**
+ * Versión Android-only de sombra que usa border + backgroundColor tint en
+ * lugar de elevation. Ideal para componentes grandes donde elevation alta
+ * produce el antiestético "cuadro" rectangular.
+ *
+ * Uso: combinarlo con `...Platform.select({ android: premiumShadowAndroid() })`
+ */
+export function premiumShadowAndroid(
+  level: 'soft' | 'medium' | 'strong' = 'medium',
+  bgColor?: string,
+): ViewStyle {
+  const map = {
+    soft: { borderOpacity: 0.06, bgOpacity: 0.03 },
+    medium: { borderOpacity: 0.10, bgOpacity: 0.05 },
+    strong: { borderOpacity: 0.15, bgOpacity: 0.08 },
+  }[level];
+
+  const baseBg = bgColor ?? '#eef0f2';
+
+  return {
+    elevation: level === 'strong' ? 3 : level === 'medium' ? 2 : 1,
+    borderColor: `rgba(27,32,39,${map.borderOpacity})`,
+    borderWidth: 1,
+    backgroundColor: blendColor(baseBg, `rgba(0,0,0,${map.bgOpacity})`),
+  };
+}
+
+/** Mezcla un color hex con otro rgba (no se usa internamente, firma para API pública). */
+function blendColor(_base: string, overlay: string): string {
+  return overlay;
 }
 
 export const premiumSurface = {

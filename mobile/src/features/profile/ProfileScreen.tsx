@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { decode } from 'base64-arraybuffer';
@@ -43,6 +44,7 @@ const GLASS_BD  = premiumColors.glassBorder;
 const ACCENT    = premiumColors.accent;
 const ACCENT_DK = premiumColors.accentDeep;
 const PROFILE_FETCH_TIMEOUT_MS = 12000;
+const PROFILE_STATS_TTL_MS = 60 * 1000;
 
 async function fetchProfileWithTimeout(url: string, init: RequestInit) {
   const controller = new AbortController();
@@ -89,6 +91,8 @@ export default function ProfileScreen() {
   const [stats,           setStats]           = useState<Stats>({ posts: 0, reports: 0, cities: 0, daysActive: 0 });
   const [accountPanel,    setAccountPanel]    = useState<AccountPanel>(null);
   const [preferences,     setPreferences]     = useState<AccountPreferences>(DEFAULT_ACCOUNT_PREFERENCES);
+  const statsRequestRef = useRef<Promise<void> | null>(null);
+  const lastStatsRefreshAtRef = useRef(0);
 
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => {
@@ -115,8 +119,10 @@ export default function ProfileScreen() {
       const userId = (session.user as any).id as string;
       const createdAt = (session.user as any).created_at as string | undefined;
 
-      void loadStats(userId, createdAt);
-      await loadProfile(session);
+      await Promise.allSettled([
+        loadStats(userId, createdAt),
+        loadProfile(session),
+      ]);
     } catch (e) {
       console.warn('bootstrapProfile', e);
       setLoading(false);
@@ -125,11 +131,12 @@ export default function ProfileScreen() {
 
   const refreshProfileActivity = async () => {
     try {
+      if (Date.now() - lastStatsRefreshAtRef.current < PROFILE_STATS_TTL_MS) return;
       const session = await getSession();
       if (!session?.user) return;
       const userId = (session.user as any).id as string;
       const createdAt = (session.user as any).created_at as string | undefined;
-      void loadStats(userId, createdAt);
+      await loadStats(userId, createdAt);
     } catch (e) {
       console.warn('refreshProfileActivity', e);
     }
@@ -137,18 +144,28 @@ export default function ProfileScreen() {
 
   /* ── load stats ── */
   const loadStats = async (userId: string, createdAt?: string) => {
-    const [postsRes, reportsRes, locRes] = await Promise.allSettled([
-      supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      supabase.from('weather_alert_reports').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      supabase.from('locations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-    ]);
-    const posts    = postsRes.status   === 'fulfilled' ? (postsRes.value.count   ?? 0) : 0;
-    const reports  = reportsRes.status === 'fulfilled' ? (reportsRes.value.count ?? 0) : 0;
-    const cities   = locRes.status     === 'fulfilled' ? (locRes.value.count     ?? 0) : 0;
-    const daysActive = createdAt
-      ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
-      : 1;
-    setStats({ posts, reports, cities, daysActive });
+    if (statsRequestRef.current) return statsRequestRef.current;
+
+    const request = (async () => {
+      const [postsRes, reportsRes, locRes] = await Promise.allSettled([
+        supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('weather_alert_reports').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('locations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      ]);
+      const posts    = postsRes.status   === 'fulfilled' ? (postsRes.value.count   ?? 0) : 0;
+      const reports  = reportsRes.status === 'fulfilled' ? (reportsRes.value.count ?? 0) : 0;
+      const cities   = locRes.status     === 'fulfilled' ? (locRes.value.count     ?? 0) : 0;
+      const daysActive = createdAt
+        ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
+        : 1;
+      setStats({ posts, reports, cities, daysActive });
+      lastStatsRefreshAtRef.current = Date.now();
+    })().finally(() => {
+      statsRequestRef.current = null;
+    });
+
+    statsRequestRef.current = request;
+    return request;
   };
 
   /* ── helpers Supabase ── */
@@ -1066,7 +1083,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 20 },
     shadowOpacity: 0.45,
     shadowRadius: 30,
-    elevation: 22,
+    ...Platform.select({ ios: { elevation: 22 }, android: { elevation: 6 } }),
   },
   modalCloseBtn: {
     padding: 10,
@@ -1239,7 +1256,11 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25, shadowRadius: 16, elevation: 5,
+    shadowOpacity: 0.25, shadowRadius: 16,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 5 },
+      android: { elevation: 0 },
+    }),
   },
   postCardPressed: {
     opacity: 0.9,
@@ -1279,7 +1300,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 18 },
     shadowOpacity: 0.4,
     shadowRadius: 28,
-    elevation: 20,
+    ...Platform.select({ ios: { elevation: 20 }, android: { elevation: 6 } }),
     gap: 12,
   },
   postsModalList: {
@@ -1399,7 +1420,7 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.22, shadowRadius: 20, elevation: 6,
+    shadowOpacity: 0.22, shadowRadius: 20, ...Platform.select({ ios: { elevation: 6 }, android: { elevation: 3 } }),
   },
 
   /* ── Info rows ── */
@@ -1427,7 +1448,7 @@ const s = StyleSheet.create({
   guestTextWrap:    { alignItems: 'center', gap: 10 },
   guestTitle:       { fontSize: 26, fontWeight: '800', color: premiumColors.ink, letterSpacing: -0.4, textAlign: 'center' },
   guestSubtitle:    { fontSize: 14, color: 'rgba(148,163,184,0.8)', textAlign: 'center', lineHeight: 21 },
-  guestCard:        { backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 12 },
+  guestCard:        { backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 28, borderWidth: 1, borderColor: GLASS_BD, padding: 24, gap: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.5, shadowRadius: 24, ...Platform.select({ ios: { elevation: 12 }, android: { elevation: 5 } }) },
   guestOption:      { gap: 8 },
   guestOptionTitle: { fontSize: 16, fontWeight: '700', color: premiumColors.ink },
   guestOptionDesc:  { fontSize: 13, color: 'rgba(148,163,184,0.75)', lineHeight: 19 },

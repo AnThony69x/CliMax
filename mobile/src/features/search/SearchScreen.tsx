@@ -14,6 +14,7 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, {
@@ -23,6 +24,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_URL } from '../../core/api/weatherApi';
 import { useCities } from '../../core/cities/CitiesContext';
+import { fetchWeatherForCoords } from '../../core/weather/weatherDataCache';
 import type { City } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
@@ -48,9 +50,10 @@ type CityWeather = {
 
 async function fetchCityWeather(city: City): Promise<CityWeather> {
   try {
-    const res = await fetch(`${API_URL}/clima?lat=${city.lat}&lon=${city.lon}`);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await fetchWeatherForCoords<{
+      current?: { temperature_2m: number; weather_code: number };
+      daily?: Record<string, number[] | undefined>;
+    }>({ latitude: city.lat, longitude: city.lon });
     const current = data?.current;
     if (!current) return null;
     const daily = data?.daily as Record<string, number[] | undefined> | undefined;
@@ -71,6 +74,8 @@ export default function SearchScreen() {
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
   const ACCENT = scene.accent;
+  const headerInk = scene.ink === 'dark' ? '#1b2027' : '#fdf9f3';
+  const headerMuted = scene.ink === 'dark' ? 'rgba(27,32,39,0.75)' : 'rgba(253,249,243,0.78)';
 
   const [query, setQuery]             = useState('');
   const [results, setResults]         = useState<City[]>([]);
@@ -271,8 +276,8 @@ export default function SearchScreen() {
           </LinearGradient>
           <View style={styles.headerTextCol}>
             <Text style={[styles.labelCaps, { color: ACCENT }]}>Explorar</Text>
-            <Text style={styles.title}>Buscar ciudad</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.title, { color: headerInk }]}>Buscar ciudad</Text>
+            <Text style={[styles.headerSubtitle, { color: headerMuted }]}>
               Añade ciudades al inicio para ver su clima al deslizar.
             </Text>
           </View>
@@ -606,7 +611,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 10,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 3 },
+      android: { elevation: 0 },
+    }),
   },
   headerTextCol: { flex: 1, gap: 4, minWidth: 0 },
   labelCaps: {
@@ -648,7 +656,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 16,
-    elevation: 4,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 4 },
+      android: { elevation: 0 },
+    }),
   },
   searchRowOpen: {
     borderBottomLeftRadius: 0,
@@ -764,7 +775,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 14,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 3 },
+      android: { elevation: 0 },
+    }),
   },
   weatherCardBadge: {
     position: 'absolute',
@@ -914,7 +928,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 4,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 4 },
+      android: { elevation: 0 },
+    }),
   },
   deleteActionIcon: {
     alignItems: 'center',

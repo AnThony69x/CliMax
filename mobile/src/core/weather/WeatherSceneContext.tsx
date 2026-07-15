@@ -1,10 +1,10 @@
 import * as Location from 'expo-location';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { API_URL } from '../api/weatherApi';
+import { fetchWeatherForCoords } from './weatherDataCache';
 import { getWeatherScene, isNightNow, WEATHER_SCENES, type SceneTokens } from '../../theme/weatherScenes';
 
-const POLL_MS = 5 * 60 * 1000;
+const POLL_MS = 10 * 60 * 1000;
 
 type WeatherSceneContextValue = {
   code: number | undefined;
@@ -20,9 +20,9 @@ function currentFallback(): WeatherSceneContextValue {
 const WeatherSceneContext = createContext<WeatherSceneContextValue>(currentFallback());
 
 /**
- * Fuente única del "tema vivo" de la app: el mismo cielo/acento que usa
- * HomeScreen para su slide de GPS, calculado una vez aquí y compartido por
- * todas las pantallas (sin duplicar el polling detallado de HomeScreen).
+ * Tema vivo global para pantallas fuera del carrusel principal. Mantiene su
+ * propia lectura ligera de ubicación/clima y el backend evita golpes repetidos
+ * a Open-Meteo mediante cache.
  */
 export function WeatherSceneProvider({ children }: { children: React.ReactNode }) {
   const [value, setValue] = useState<WeatherSceneContextValue>(currentFallback());
@@ -40,9 +40,10 @@ export function WeatherSceneProvider({ children }: { children: React.ReactNode }
 
     const fetchForCoords = async (latitude: number, longitude: number) => {
       try {
-        const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await fetchWeatherForCoords<{
+          current?: { weather_code?: number };
+          daily?: { sunrise?: string[]; sunset?: string[] };
+        }>({ latitude, longitude });
         const code = data?.current?.weather_code;
         const sunrise = data?.daily?.sunrise?.[0] ?? null;
         const sunset = data?.daily?.sunset?.[0] ?? null;

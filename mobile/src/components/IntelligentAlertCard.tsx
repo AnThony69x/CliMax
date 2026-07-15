@@ -10,6 +10,8 @@ import {
   Modal,
   ScrollView,
   Alert as NativeAlert,
+  Platform,
+  type ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { IntelligentAlert } from '../hooks/useIntelligentAlerts';
@@ -273,7 +275,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select<ViewStyle>({
+      ios: { elevation: 3 },
+      android: { elevation: 0 },
+    }),
   },
   header: {
     flexDirection: 'row',

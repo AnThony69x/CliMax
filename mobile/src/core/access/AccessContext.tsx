@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert } from 'react-native';
 import { API_URL } from '../api/weatherApi';
 import { clearToken, getToken, saveToken } from '../auth/authStorage';
@@ -18,7 +18,7 @@ type AccessContextValue = AccessState & {
   loading: boolean;
   isAdmin: boolean;
   isOperator: boolean;
-  refreshAccess: () => Promise<void>;
+  refreshAccess: (options?: { force?: boolean }) => Promise<void>;
   hasEntitlement: (feature: string) => boolean;
 };
 
@@ -30,20 +30,32 @@ const DEFAULT_ACCESS: AccessState = {
 };
 
 const AccessContext = createContext<AccessContextValue | null>(null);
+const RECENT_ACCESS_REFRESH_MS = 5000;
 
 export function AccessProvider({ children }: { children: ReactNode }) {
   const [access, setAccess] = useState<AccessState>(DEFAULT_ACCESS);
   const [loading, setLoading] = useState(true);
+  const lastTokenRef = useRef<string | null>(null);
+  const lastRefreshAtRef = useRef(0);
+  const inFlightRefreshRef = useRef<Promise<void> | null>(null);
 
-  const refreshAccess = useCallback(async () => {
-    try {
+  const refreshAccess = useCallback(async (options: { force?: boolean } = {}) => {
+    const runRefresh = async () => {
       const sessionToken = await getAccessToken();
       const storedToken = sessionToken ? null : await getToken();
       const token = sessionToken ?? storedToken;
       if (!token) {
+        lastTokenRef.current = null;
+        lastRefreshAtRef.current = Date.now();
         setAccess(DEFAULT_ACCESS);
+        setLoading(false);
         return;
       }
+
+      const isSameToken = lastTokenRef.current === token;
+      const isRecent = Date.now() - lastRefreshAtRef.current < RECENT_ACCESS_REFRESH_MS;
+      if (!options.force && isSameToken && isRecent) return;
+
       if (sessionToken) {
         await saveToken(sessionToken);
       }
@@ -70,11 +82,33 @@ export function AccessProvider({ children }: { children: ReactNode }) {
         professionalSector: next?.professional_sector ?? null,
         entitlements: Array.isArray(next?.entitlements) ? next.entitlements : DEFAULT_ACCESS.entitlements,
       });
-    } catch {
-      setAccess(DEFAULT_ACCESS);
-    } finally {
-      setLoading(false);
+      lastTokenRef.current = token;
+      lastRefreshAtRef.current = Date.now();
+    };
+
+    if (!options.force && inFlightRefreshRef.current) {
+      return inFlightRefreshRef.current;
     }
+
+    const refreshPromise = runRefresh()
+      .catch(() => {
+        setAccess(DEFAULT_ACCESS);
+      })
+      .finally(() => {
+        setLoading(false);
+        inFlightRefreshRef.current = null;
+      });
+
+    inFlightRefreshRef.current = refreshPromise;
+    return refreshPromise;
+  }, []);
+
+  const resetAccess = useCallback(() => {
+    lastTokenRef.current = null;
+    lastRefreshAtRef.current = 0;
+    inFlightRefreshRef.current = null;
+    setAccess(DEFAULT_ACCESS);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -89,14 +123,13 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       }
 
       void clearToken();
-      setAccess(DEFAULT_ACCESS);
-      setLoading(false);
+      resetAccess();
     });
 
     return () => {
       data.subscription.unsubscribe();
     };
-  }, [refreshAccess]);
+  }, [refreshAccess, resetAccess]);
 
   const value = useMemo<AccessContextValue>(() => {
     const entitlements = new Set(access.entitlements);

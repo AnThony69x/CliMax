@@ -16,9 +16,14 @@ class ClimaController extends Controller
         $validated = $request->validate([
             'lat' => ['required', 'numeric', 'between:-90,90'],
             'lon' => ['required', 'numeric', 'between:-180,180'],
+            'fresh' => ['sometimes', 'boolean'],
         ]);
 
-        $data = $weather->fetchRaw((float) $validated['lat'], (float) $validated['lon']);
+        $data = $weather->fetchRaw(
+            (float) $validated['lat'],
+            (float) $validated['lon'],
+            $request->boolean('fresh')
+        );
 
         if ($data === null) {
             return response()->json([

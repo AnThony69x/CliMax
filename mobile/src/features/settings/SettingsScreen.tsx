@@ -28,6 +28,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { code: weatherCode, isNight, scene } = useWeatherScene();
   const preferences = useAccountPreferences();
+  const headerInk = scene.ink === 'dark' ? '#1b2027' : '#fdf9f3';
+  const headerMuted = scene.ink === 'dark' ? premiumColors.inkSubtle : 'rgba(253,249,243,0.78)';
   const [notifications, setNotifications] = useState(true);
   const [location, setLocation] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
@@ -69,7 +71,7 @@ export default function SettingsScreen() {
   ];
 
   const actions: SettingItem[] = [
-    { id: 'account', label: 'Cuenta', description: 'Gestionar perfil y actividad', icon: 'person-circle-outline', type: 'navigation', onPress: () => router.push('/profile' as any) },
+    { id: 'account', label: 'Cuenta', description: 'Gestionar perfil y actividad', icon: 'person-circle-outline', type: 'navigation', onPress: () => router.push('/(tabs)/explore' as any) },
     { id: 'privacy', label: 'Privacidad', description: 'Cómo usamos tus datos', icon: 'lock-closed-outline', type: 'navigation', onPress: () => router.push('/modal') },
     { id: 'help', label: 'Ayuda', description: 'Preguntas frecuentes', icon: 'help-circle-outline', type: 'navigation', onPress: () => router.push('/modal') },
     { id: 'clearCache', label: 'Limpiar caché', description: 'Liberar espacio de almacenamiento', icon: 'trash-outline', type: 'action', onPress: handleClearCache },
@@ -126,9 +128,9 @@ export default function SettingsScreen() {
         ]}
       >
         <PremiumReveal style={styles.header}>
-          <Text style={styles.eyebrow}>Preferencias</Text>
-          <Text style={styles.title}>Configuración</Text>
-          <Text style={styles.subtitle}>Ajusta notificaciones, privacidad y experiencia visual.</Text>
+          <Text style={[styles.eyebrow, { color: headerMuted }]}>Preferencias</Text>
+          <Text style={[styles.title, { color: headerInk }]}>Configuración</Text>
+          <Text style={[styles.subtitle, { color: headerMuted }]}>Ajusta notificaciones, privacidad y experiencia visual.</Text>
         </PremiumReveal>
 
         <PremiumReveal delay={80} style={styles.section}>

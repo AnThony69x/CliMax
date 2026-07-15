@@ -5,10 +5,12 @@ import React, { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   LayoutChangeEvent,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -21,7 +23,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { premiumShadow } from '../theme/premium';
 
 /**
  * Acentos Solsticio: pastilla de cristal clara, ícono activo en el naranja
@@ -340,14 +341,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     pointerEvents: 'box-none',
     zIndex: 100,
-    elevation: 30,
+    // iOS: shadow* en shadowWrap + pill dan la profundidad flotante
+    // Android: elevation 30 produce un "cuadro" rectangular antiestético,
+    //          por eso NO usamos elevation en anchor para Android.
+    ...Platform.select<ViewStyle>({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -6 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {},
+    }),
   },
   shadowWrap: {
     width: '100%',
     alignItems: 'center',
     pointerEvents: 'box-none',
     borderRadius: PILL_RADIUS,
-    ...premiumShadow('strong'),
+    // Android necesita elevation mínima para que el zIndex funcione con BlurView
+    ...Platform.select<ViewStyle>({
+      android: {
+        elevation: 4,
+        borderColor: 'rgba(27,32,39,0.08)',
+        borderWidth: 0.5,
+      },
+    }),
   },
   pill: {
     width: '100%',

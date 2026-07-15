@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ExpoLinking from 'expo-linking';
+import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Svg, { Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { useAccess } from '../../core/access/AccessContext';
 import {
   API_BASE_URL,
@@ -12,12 +14,15 @@ import {
   fetchAdminUsers,
   fetchAuditLogs,
   fetchBillingPlans,
+  fetchWeather,
   fetchOperatorPosts,
   fetchOperatorUsers,
+  fetchWeatherHistory,
   fetchWeatherHistorySummary,
   createBillingCheckout,
   moderateCommunityComment,
   moderateCommunityPost,
+  saveLocation,
   simulateBillingSuccess,
   syncBillingCheckout,
   updateAdminPlan,
@@ -25,8 +30,10 @@ import {
   updateUserRole,
   updateUserSubscription,
 } from '../../core/api/weatherApi';
-import type { AccountModerationStatus, ModerationStatus } from '../../core/api/weatherApi';
+import type { AccountModerationStatus, ModerationStatus, WeatherHistoryLog, WeatherHistoryRange, WeatherHistorySummary } from '../../core/api/weatherApi';
 import { getAccessToken } from '../../core/auth/supabaseClient';
+import { useCities } from '../../core/cities/CitiesContext';
+import { applyLocationPrecision, useAccountPreferences } from '../../core/preferences/accountPreferences';
 import { premiumColors, premiumRadii, premiumShadow, premiumType } from '../../theme/premium';
 
 type AdminUser = {
@@ -131,7 +138,8 @@ type CommunityReport = {
 };
 
 const PROFESSIONAL_SECTOR = 'risk_management';
-const RANGE_OPTIONS = ['30d', '90d', '180d', '365d'] as const;
+const RANGE_OPTIONS = ['30d', '90d', '180d', '365d'] as const satisfies readonly WeatherHistoryRange[];
+const LOW_SAMPLE_WARNING_THRESHOLD = 5;
 const ADMIN_SECTIONS = ['metricas', 'usuarios', 'planes', 'auditoria'] as const;
 const OPERATOR_SECTIONS = ['comunidad', 'usuarios'] as const;
 const COMMUNITY_FILTERS = ['publicaciones', 'comentarios'] as const;
@@ -239,7 +247,7 @@ export function AdminPanelScreen() {
       },
       token
     );
-    await refreshAccess();
+    await refreshAccess({ force: true });
     await load();
   };
 
@@ -734,24 +742,158 @@ export function OperatorPanelScreen() {
 
 export function ProfessionalPanelScreen() {
   const { plan, professionalSector, hasEntitlement } = useAccess();
+  const { savedCities } = useCities();
+  const accountPreferences = useAccountPreferences();
   const [lat, setLat] = useState('-2.170998');
   const [lon, setLon] = useState('-79.922359');
   const [range, setRange] = useState<(typeof RANGE_OPTIONS)[number]>('365d');
-  const [summary, setSummary] = useState<any>(null);
+  const [summary, setSummary] = useState<WeatherHistorySummary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locationLabel, setLocationLabel] = useState('Selecciona una zona');
+  const [hasSelectedLocation, setHasSelectedLocation] = useState(false);
+  const [insightVisible, setInsightVisible] = useState(false);
+  const [historyLogs, setHistoryLogs] = useState<WeatherHistoryLog[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const summaryRequestIdRef = useRef(0);
+  const locationChangeIdRef = useRef(0);
   const allowed = hasEntitlement('weather.history.extended');
 
-  const loadSummary = async () => {
+  const loadSummaryForCoords = async (queryLat: number, queryLon: number) => {
+    if (!Number.isFinite(queryLat) || !Number.isFinite(queryLon)) {
+      Alert.alert('Historial climatico', 'Ingresa coordenadas validas para consultar.');
+      return;
+    }
+    const requestId = summaryRequestIdRef.current + 1;
+    summaryRequestIdRef.current = requestId;
     setLoading(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
     try {
       const token = await getAccessToken();
       if (!token) return;
-      const payload = await fetchWeatherHistorySummary(Number(lat), Number(lon), range, token);
+      const payload = await fetchWeatherHistorySummary(queryLat, queryLon, range, token);
+      if (requestId !== summaryRequestIdRef.current) return;
       setSummary(payload.data);
     } catch (error) {
+      if (requestId !== summaryRequestIdRef.current) return;
       Alert.alert('Historial climatico', error instanceof Error ? error.message : 'No se pudo cargar el historial.');
     } finally {
-      setLoading(false);
+      if (requestId === summaryRequestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleUseCurrentLocation = async (options?: { autoLoad?: boolean }) => {
+    const locationChangeId = locationChangeIdRef.current + 1;
+    locationChangeIdRef.current = locationChangeId;
+    setLocating(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Ubicacion', 'Permiso de ubicacion denegado.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const safeCoords = applyLocationPrecision(
+        position.coords.latitude,
+        position.coords.longitude,
+        accountPreferences.preciseLocation
+      );
+      setLat(String(safeCoords.latitude));
+      setLon(String(safeCoords.longitude));
+      setLocationLabel('Mi ubicacion');
+      setHasSelectedLocation(true);
+      if (options?.autoLoad) {
+        if (locationChangeId !== locationChangeIdRef.current) return;
+        await loadSummaryForCoords(safeCoords.latitude, safeCoords.longitude);
+      }
+    } catch {
+      Alert.alert('Ubicacion', 'No se pudo obtener la ubicacion actual.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const loadSummary = async () => {
+    await loadSummaryForCoords(Number(lat), Number(lon));
+  };
+
+  const persistCurrentWeatherSnapshot = async (queryLat: number, queryLon: number, address: string) => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const weatherPayload = await fetchWeather(queryLat, queryLon);
+      const snapshot = extractCurrentWeatherSnapshot(weatherPayload);
+      if (!snapshot) return;
+      await saveLocation({
+        latitude: queryLat,
+        longitude: queryLon,
+        address,
+        temperature: snapshot.temperature,
+        weather_code: snapshot.weatherCode,
+        wind_speed: snapshot.windSpeed,
+      }, token);
+    } catch {
+      // El snapshot solo alimenta la trazabilidad; el resumen puede consultarse igual.
+    }
+  };
+
+  const handleSelectSavedCity = async (city: { name: string; lat: number; lon: number }) => {
+    const locationChangeId = locationChangeIdRef.current + 1;
+    locationChangeIdRef.current = locationChangeId;
+    setLat(String(city.lat));
+    setLon(String(city.lon));
+    setLocationLabel(city.name);
+    setHasSelectedLocation(true);
+    setLoading(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
+    await persistCurrentWeatherSnapshot(city.lat, city.lon, city.name);
+    if (locationChangeId !== locationChangeIdRef.current) return;
+    await loadSummaryForCoords(city.lat, city.lon);
+  };
+
+  const openInsight = async () => {
+    if (!summary) return;
+    setInsightVisible(true);
+    setHistoryLogs([]);
+    setHistoryError(null);
+    setHistoryLoading(false);
+
+    if ((summary.logs_count ?? 0) === 0) {
+      return;
+    }
+
+    const queryLat = Number(lat);
+    const queryLon = Number(lon);
+    if (!Number.isFinite(queryLat) || !Number.isFinite(queryLon)) {
+      setHistoryError('No se pudo cargar el detalle porque la zona no es valida.');
+      return;
+    }
+
+    setHistoryLoading(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) {
+        setHistoryError('No se encontro una sesion activa para cargar el detalle.');
+        return;
+      }
+      const payload = await fetchWeatherHistory(queryLat, queryLon, summary.range ?? range, token);
+      setHistoryLogs(payload.data ?? []);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : 'No se pudo cargar el detalle.');
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -777,25 +919,323 @@ export function ProfessionalPanelScreen() {
       </Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Zona de analisis</Text>
-        <TextInput value={lat} onChangeText={setLat} keyboardType="numeric" style={styles.input} placeholder="Latitud" placeholderTextColor={premiumColors.inkMuted} />
-        <TextInput value={lon} onChangeText={setLon} keyboardType="numeric" style={styles.input} placeholder="Longitud" placeholderTextColor={premiumColors.inkMuted} />
+        <Text style={styles.muted}>{locationLabel}</Text>
+        <View style={styles.rowWrap}>
+          <Action
+            label={locating ? 'Localizando...' : 'Mi ubicacion'}
+            active={locationLabel === 'Mi ubicacion'}
+            disabled={locating}
+            onPress={() => handleUseCurrentLocation({ autoLoad: true })}
+          />
+          {savedCities.map((city) => (
+            <Action
+              key={city.id}
+              label={city.name}
+              active={locationLabel === city.name}
+              onPress={() => handleSelectSavedCity(city)}
+            />
+          ))}
+        </View>
+        {savedCities.length === 0 ? (
+          <Text style={styles.muted}>Agrega ciudades desde Buscar para consultarlas aqui.</Text>
+        ) : null}
         <View style={styles.rowWrap}>
           {RANGE_OPTIONS.map((item) => (
             <Action key={item} label={item} active={range === item} onPress={() => setRange(item)} />
           ))}
         </View>
-        <Action label={loading ? 'Cargando...' : 'Consultar resumen'} onPress={loadSummary} />
+        <Action
+          label={loading ? 'Cargando...' : 'Consultar con rango'}
+          disabled={!hasSelectedLocation || loading}
+          onPress={loadSummary}
+        />
       </View>
-      {summary ? (
-        <View style={styles.metricCard}>
+      {loading && hasSelectedLocation ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[styles.metricCard, styles.metricCardLoading]}
+        >
+          <ActivityIndicator color={premiumColors.accent} />
+          <View style={styles.userIdentity}>
+            <Text style={styles.metricLabel}>Actualizando trazabilidad</Text>
+            <Text style={styles.metricSub}>Cargando datos de {locationLabel}...</Text>
+          </View>
+        </View>
+      ) : summary ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Ver analisis climatico"
+          style={({ pressed }) => [styles.metricCard, pressed && { opacity: 0.88 }]}
+          onPress={openInsight}
+        >
           <Text style={styles.metricValue}>{summary.logs_count ?? 0}</Text>
           <Text style={styles.metricLabel}>Registros encontrados</Text>
           <Text style={styles.metricSub}>Temp. promedio: {formatNumber(summary.avg_temperature)} C</Text>
           <Text style={styles.metricSub}>Rango: {formatNumber(summary.min_temperature)} C a {formatNumber(summary.max_temperature)} C</Text>
           <Text style={styles.metricSub}>Eventos extremos: {summary.extreme_weather_events ?? 0}</Text>
-        </View>
+          {isLowSampleCount(summary.logs_count) ? <LimitedSampleWarning count={summary.logs_count ?? 0} /> : null}
+          <View style={styles.metricCta}>
+            <Text style={styles.metricCtaText}>Ver analisis</Text>
+            <Ionicons name="analytics-outline" size={16} color={premiumColors.accent} />
+          </View>
+        </Pressable>
       ) : null}
+      <WeatherHistoryInsightModal
+        visible={insightVisible}
+        zoneLabel={locationLabel}
+        range={summary?.range ?? range}
+        summary={summary}
+        logs={historyLogs}
+        loading={historyLoading}
+        error={historyError}
+        onClose={() => setInsightVisible(false)}
+      />
     </ScrollView>
+  );
+}
+
+function WeatherHistoryInsightModal({
+  visible,
+  zoneLabel,
+  range,
+  summary,
+  logs,
+  loading,
+  error,
+  onClose,
+}: {
+  visible: boolean;
+  zoneLabel: string;
+  range: WeatherHistoryRange;
+  summary: WeatherHistorySummary | null;
+  logs: WeatherHistoryLog[];
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const insight = useMemo(() => buildWeatherInsight(zoneLabel, range, summary, logs), [logs, range, summary, zoneLabel]);
+  const hasRecords = insight.count > 0;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.insightModal} accessibilityViewIsModal>
+          <View style={styles.insightHeader}>
+            <View style={styles.userIdentity}>
+              <Text style={styles.eyebrow}>Analisis climatico</Text>
+              <Text style={styles.sectionTitle}>{zoneLabel}</Text>
+              <Text style={styles.muted}>{range} | {insight.count} registros</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar analisis climatico"
+              hitSlop={10}
+              style={({ pressed }) => [styles.iconButton, pressed && { opacity: 0.72 }]}
+              onPress={onClose}
+            >
+              <Ionicons name="close" size={20} color={premiumColors.ink} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.insightContent}>
+            {loading ? (
+              <View style={styles.loadingBlock}>
+                <ActivityIndicator color={premiumColors.accent} />
+                <Text style={styles.muted}>Cargando registros detallados...</Text>
+              </View>
+            ) : null}
+
+            {error ? (
+              <View style={styles.warningBlock}>
+                <Ionicons name="alert-circle-outline" size={18} color={premiumColors.warning} />
+                <Text style={styles.warningText}>No se pudo cargar el detalle. Se muestra el analisis agregado disponible.</Text>
+              </View>
+            ) : null}
+
+            {!hasRecords ? (
+              <EmptyState
+                icon="cloud-offline-outline"
+                title="Sin registros para esta zona"
+                text="No encontramos datos dentro del rango seleccionado. Prueba con otro periodo o con una ciudad guardada cercana."
+              />
+            ) : (
+              <>
+                {isLowSampleCount(insight.count) ? <LimitedSampleWarning count={insight.count} /> : null}
+
+                <View style={styles.storyCard}>
+                  <Text style={styles.cardTitle}>Lectura rapida</Text>
+                  {insight.story.map((item) => (
+                    <Text key={item} style={styles.storyText}>{item}</Text>
+                  ))}
+                </View>
+
+                <View style={styles.chartBlock}>
+                  <View style={styles.chartHeader}>
+                    <Text style={styles.cardTitle}>Temperatura por tiempo</Text>
+                    <Text style={styles.small}>{insight.detailPoints.length > 1 ? 'Detalle historico' : 'Vista agregada'}</Text>
+                  </View>
+                  <TemperatureLineChart logs={insight.detailPoints} min={insight.minTemperature} max={insight.maxTemperature} />
+                </View>
+
+                <View style={styles.chartBlock}>
+                  <Text style={styles.cardTitle}>Minimo, promedio y maximo</Text>
+                  <TemperatureBars min={insight.minTemperature} avg={insight.avgTemperature} max={insight.maxTemperature} />
+                </View>
+
+                <View style={styles.insightGrid}>
+                  <InsightStat label="Eventos extremos" value={`${insight.extremeEvents}`} helper={insight.extremeLabel} icon="thunderstorm-outline" />
+                  <InsightStat label="Registros normales" value={`${Math.max(insight.count - insight.extremeEvents, 0)}`} helper="Sin senal extrema" icon="partly-sunny-outline" />
+                  <InsightStat label="Viento promedio" value={`${formatNumber(insight.avgWindSpeed)} km/h`} helper="Promedio" icon="speedometer-outline" />
+                  <InsightStat label="Viento maximo" value={`${formatNumber(insight.maxWindSpeed)} km/h`} helper="Maximo" icon="flag-outline" />
+                </View>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function TemperatureLineChart({
+  logs,
+  min,
+  max,
+}: {
+  logs: WeatherHistoryLog[];
+  min: number | null;
+  max: number | null;
+}) {
+  const points = logs
+    .map((log) => ({
+      temperature: finiteNumber(log.temperature),
+      time: log.captured_at ? new Date(log.captured_at).getTime() : Number.NaN,
+    }))
+    .filter((point): point is { temperature: number; time: number } => Number.isFinite(point.temperature) && Number.isFinite(point.time));
+  const width = 300;
+  const height = 132;
+  const padding = 18;
+  const fallbackMin = min ?? (points.length ? Math.min(...points.map((point) => point.temperature)) : 0);
+  const fallbackMax = max ?? (points.length ? Math.max(...points.map((point) => point.temperature)) : fallbackMin + 1);
+  const tempSpan = Math.max(fallbackMax - fallbackMin, 1);
+  const timeStart = points.length ? Math.min(...points.map((point) => point.time)) : 0;
+  const timeEnd = points.length ? Math.max(...points.map((point) => point.time)) : 1;
+  const timeSpan = Math.max(timeEnd - timeStart, 1);
+  const svgPoints = points.map((point, index) => {
+    const x = points.length === 1
+      ? width / 2
+      : padding + ((point.time - timeStart) / timeSpan) * (width - padding * 2);
+    const y = height - padding - ((point.temperature - fallbackMin) / tempSpan) * (height - padding * 2);
+    return { x, y, key: `${point.time}-${index}` };
+  });
+
+  if (svgPoints.length === 0) {
+    return <Text style={styles.muted}>No hay suficientes puntos detallados para dibujar la tendencia.</Text>;
+  }
+
+  return (
+    <View accessible accessibilityLabel={`Grafico de temperatura entre ${formatNumber(fallbackMin)} y ${formatNumber(fallbackMax)} grados Celsius`}>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="rgba(27,32,39,0.18)" strokeWidth={1} />
+        <Line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="rgba(27,32,39,0.18)" strokeWidth={1} />
+        {svgPoints.length > 1 ? (
+          <Polyline
+            points={svgPoints.map((point) => `${point.x},${point.y}`).join(' ')}
+            fill="none"
+            stroke={premiumColors.accent}
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {svgPoints.map((point) => (
+          <Circle key={point.key} cx={point.x} cy={point.y} r={3.5} fill={premiumColors.accent} />
+        ))}
+      </Svg>
+      <View style={styles.chartLegend}>
+        <Text style={styles.small}>{formatNumber(fallbackMin)} C</Text>
+        <Text style={styles.small}>{formatNumber(fallbackMax)} C</Text>
+      </View>
+    </View>
+  );
+}
+
+function TemperatureBars({ min, avg, max }: { min: number | null; avg: number | null; max: number | null }) {
+  const values = [
+    { label: 'Min', value: min, color: premiumColors.accent },
+    { label: 'Prom', value: avg, color: premiumColors.success },
+    { label: 'Max', value: max, color: premiumColors.warning },
+  ];
+  const numericValues = values.map((item) => finiteNumber(item.value)).filter((value): value is number => Number.isFinite(value));
+  const maxValue = numericValues.length ? Math.max(...numericValues.map((value) => Math.abs(value)), 1) : 1;
+  const width = 300;
+  const height = 86;
+  const barWidth = 56;
+
+  return (
+    <View accessible accessibilityLabel="Grafico de barras de temperatura minima, promedio y maxima">
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        {values.map((item, index) => {
+          const value = finiteNumber(item.value) ?? 0;
+          const barHeight = Math.max((Math.abs(value) / maxValue) * 52, value === 0 ? 4 : 8);
+          const x = 32 + index * 92;
+          return (
+            <Rect
+              key={item.label}
+              x={x}
+              y={height - barHeight - 18}
+              width={barWidth}
+              height={barHeight}
+              rx={10}
+              fill={withAlpha(item.color, 0.78)}
+            />
+          );
+        })}
+      </Svg>
+      <View style={styles.barLabels}>
+        {values.map((item) => (
+          <View key={item.label} style={styles.barLabel}>
+            <Text style={styles.metricSub}>{item.label}</Text>
+            <Text style={styles.badgeText}>{formatNumber(item.value)} C</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function InsightStat({
+  label,
+  value,
+  helper,
+  icon,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View style={styles.insightStat}>
+      <Ionicons name={icon} size={17} color={premiumColors.accent} />
+      <Text style={styles.metricTileValue}>{value}</Text>
+      <Text style={styles.metricTileLabel}>{label}</Text>
+      <Text style={styles.small}>{helper}</Text>
+    </View>
+  );
+}
+
+function LimitedSampleWarning({ count }: { count: number }) {
+  return (
+    <View
+      accessibilityRole="text"
+      style={styles.sampleWarningBlock}
+    >
+      <Ionicons name="information-circle-outline" size={18} color={premiumColors.warning} />
+      <Text style={styles.sampleWarningText}>
+        Muestra limitada: con {count} {count === 1 ? 'registro' : 'registros'}, el analisis puede ser inexacto hasta acumular mas mediciones.
+      </Text>
+    </View>
   );
 }
 
@@ -851,17 +1291,17 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
           if (returnedSessionId) {
             await syncBillingCheckout(returnedSessionId, token);
           }
-          await refreshAccess();
+          await refreshAccess({ force: true });
           Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
         } else {
-          await refreshAccess();
+          await refreshAccess({ force: true });
         }
       } else if (data?.session?.id) {
         await simulateBillingSuccess(data.session.id, token);
-        await refreshAccess();
+        await refreshAccess({ force: true });
         Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
       } else {
-        await refreshAccess();
+        await refreshAccess({ force: true });
       }
     } catch (error) {
       Alert.alert('Suscripcion', error instanceof Error ? error.message : 'No se pudo iniciar la suscripcion.');
@@ -1435,6 +1875,109 @@ function withAlpha(hex: string, alpha: number) {
   return `rgba(${red},${green},${blue},${alpha})`;
 }
 
+const EXTREME_WEATHER_CODES = new Set([45, 48, 61, 62, 63, 64, 65, 71, 72, 73, 74, 75, 80, 81, 82, 95, 96, 99]);
+
+function extractCurrentWeatherSnapshot(payload: unknown) {
+  if (!isRecord(payload) || !isRecord(payload.current)) {
+    return null;
+  }
+
+  const temperature = finiteNumber(payload.current.temperature_2m);
+  const weatherCode = finiteNumber(payload.current.weather_code);
+  const windSpeed = finiteNumber(payload.current.wind_speed_10m);
+
+  if (temperature === null || weatherCode === null || windSpeed === null) {
+    return null;
+  }
+
+  return {
+    temperature,
+    weatherCode: Math.round(weatherCode),
+    windSpeed,
+  };
+}
+
+function buildWeatherInsight(
+  zoneLabel: string,
+  range: WeatherHistoryRange,
+  summary: WeatherHistorySummary | null,
+  logs: WeatherHistoryLog[],
+) {
+  const temperatures = logs.map((log) => finiteNumber(log.temperature)).filter((value): value is number => Number.isFinite(value));
+  const winds = logs.map((log) => finiteNumber(log.wind_speed)).filter((value): value is number => Number.isFinite(value));
+  const detailExtremeEvents = logs.filter((log) => typeof log.weather_code === 'number' && EXTREME_WEATHER_CODES.has(log.weather_code)).length;
+  const count = finiteNumber(summary?.logs_count) ?? logs.length;
+  const minTemperature = finiteNumber(summary?.min_temperature) ?? (temperatures.length ? Math.min(...temperatures) : null);
+  const maxTemperature = finiteNumber(summary?.max_temperature) ?? (temperatures.length ? Math.max(...temperatures) : null);
+  const avgTemperature = finiteNumber(summary?.avg_temperature) ?? average(temperatures);
+  const avgWindSpeed = finiteNumber(summary?.avg_wind_speed) ?? average(winds);
+  const maxWindSpeed = finiteNumber(summary?.max_wind_speed) ?? (winds.length ? Math.max(...winds) : null);
+  const extremeEvents = finiteNumber(summary?.extreme_weather_events) ?? detailExtremeEvents;
+  const thermalAmplitude = minTemperature !== null && maxTemperature !== null ? maxTemperature - minTemperature : null;
+  const variationLabel = thermalAmplitude === null
+    ? 'sin datos suficientes'
+    : thermalAmplitude <= 3
+      ? 'estable'
+      : thermalAmplitude <= 8
+        ? 'moderada'
+        : 'alta';
+  const extremeRatio = count > 0 ? extremeEvents / count : 0;
+  const extremeLabel = extremeEvents === 0 ? 'Inexistentes' : extremeRatio < 0.12 ? 'Aislados' : 'Frecuentes';
+  const fallbackPoints: WeatherHistoryLog[] = [
+    { temperature: minTemperature, captured_at: summary?.first_captured_at },
+    { temperature: avgTemperature, captured_at: midpointDate(summary?.first_captured_at, summary?.last_captured_at) },
+    { temperature: maxTemperature, captured_at: summary?.last_captured_at },
+  ];
+  const detailPoints = logs.length > 0
+    ? logs
+    : fallbackPoints.filter((log) => log.temperature !== null && log.temperature !== undefined && Boolean(log.captured_at));
+  const story = [
+    `En ${zoneLabel}, durante ${range}, encontramos ${count} registros.`,
+    `La temperatura se movio entre ${formatNumber(minTemperature)} C y ${formatNumber(maxTemperature)} C, con promedio de ${formatNumber(avgTemperature)} C.`,
+    `La variacion fue ${variationLabel} segun la amplitud termica.`,
+    `Los eventos extremos fueron ${extremeLabel.toLowerCase()}.`,
+  ];
+
+  return {
+    count,
+    minTemperature,
+    maxTemperature,
+    avgTemperature,
+    avgWindSpeed,
+    maxWindSpeed,
+    extremeEvents,
+    extremeLabel,
+    detailPoints,
+    story,
+  };
+}
+
+function average(values: number[]) {
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isLowSampleCount(count: unknown) {
+  const numericCount = finiteNumber(count);
+  return numericCount !== null && numericCount > 0 && numericCount < LOW_SAMPLE_WARNING_THRESHOLD;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function midpointDate(start?: string | null, end?: string | null) {
+  if (!start || !end) return start ?? end ?? null;
+  const startDate = new Date(start).getTime();
+  const endDate = new Date(end).getTime();
+  if (!Number.isFinite(startDate) || !Number.isFinite(endDate)) return start;
+  return new Date(startDate + (endDate - startDate) / 2).toISOString();
+}
+
 function formatNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(1) : '--';
 }
@@ -1777,6 +2320,12 @@ const styles = StyleSheet.create({
     gap: 4,
     ...premiumShadow('medium'),
   },
+  metricCardLoading: {
+    minHeight: 112,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   metricValue: {
     color: premiumColors.accent,
     fontSize: 34,
@@ -1790,6 +2339,35 @@ const styles = StyleSheet.create({
   metricSub: {
     color: premiumColors.inkMuted,
     fontSize: 12,
+  },
+  metricCta: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metricCtaText: {
+    color: premiumColors.accent,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  sampleWarningBlock: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: premiumRadii.lg,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.36)',
+  },
+  sampleWarningText: {
+    flex: 1,
+    color: '#8a651e',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
   badgeText: {
     color: premiumColors.accent,
@@ -1928,6 +2506,124 @@ const styles = StyleSheet.create({
   actionTextDisabled: {
     opacity: 0.86,
   },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.34)',
+  },
+  insightModal: {
+    maxHeight: '88%',
+    borderTopLeftRadius: premiumRadii.xxl,
+    borderTopRightRadius: premiumRadii.xxl,
+    backgroundColor: premiumColors.surfaceElevated,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorderStrong,
+    overflow: 'hidden',
+  },
+  insightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: premiumColors.glassBorder,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: premiumRadii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: premiumColors.glass,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+  },
+  insightContent: {
+    padding: 18,
+    paddingBottom: 34,
+    gap: 14,
+  },
+  loadingBlock: {
+    minHeight: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  warningBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: premiumRadii.lg,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.36)',
+  },
+  warningText: {
+    flex: 1,
+    color: '#8a651e',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+  storyCard: {
+    gap: 8,
+    padding: 14,
+    borderRadius: premiumRadii.xl,
+    backgroundColor: premiumColors.glass,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+  },
+  storyText: {
+    color: premiumColors.inkMuted,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  chartBlock: {
+    gap: 10,
+    padding: 14,
+    borderRadius: premiumRadii.xl,
+    backgroundColor: premiumColors.surface,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  chartLegend: {
+    marginTop: -6,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  barLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  barLabel: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  insightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  insightStat: {
+    width: '48%',
+    minHeight: 126,
+    borderRadius: premiumRadii.xl,
+    padding: 12,
+    backgroundColor: premiumColors.glass,
+    borderWidth: 1,
+    borderColor: premiumColors.glassBorder,
+    gap: 6,
+  },
   input: {
     color: premiumColors.ink,
     borderWidth: 1,
@@ -1936,6 +2632,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     backgroundColor: premiumColors.glass,
+    ...Platform.select({ android: { underlineColorAndroid: 'transparent' as const } }),
   },
   featureList: {
     gap: 8,

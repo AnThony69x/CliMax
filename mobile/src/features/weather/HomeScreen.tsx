@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Dimensions,
   Easing,
   NativeScrollEvent,
@@ -17,12 +18,14 @@ import {
   StyleSheet,
   Text,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAccess } from '../../core/access/AccessContext';
 import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
 import { API_URL } from '../../core/api/weatherApi';
+import { fetchAddressForCoords, fetchWeatherForCoords } from '../../core/weather/weatherDataCache';
 import { MapView, Marker, UrlTile } from '../../components/NativeWeatherMap';
 import {
   applyLocationPrecision,
@@ -64,6 +67,8 @@ type WeatherState = {
   windDirection?: number | null;
   sunrise?: string | null;
   sunset?: string | null;
+  timezone?: string | null;
+  utcOffsetSeconds?: number | null;
 };
 
 type SlideData = {
@@ -77,7 +82,6 @@ type SlideData = {
   message: string;
 };
 
-const SURFACE_DEEPER = premiumColors.surface;
 const ACCENT = premiumColors.accent;
 const GLASS_BG = 'rgba(27,32,39,0.05)';
 const GLASS_BORDER = premiumColors.glassBorder;
@@ -91,6 +95,7 @@ const TEMP_WARM = '#fbbf24';
 const TEMP_HOT = '#f97316';
 const TEMP_EXTREME = '#ef4444';
 const OSM_TILE_URL = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const GPS_WEATHER_POLL_MS = 10 * 60 * 1000;
 const WORLD_REGION = {
   latitude: 0,
   longitude: 0,
@@ -125,6 +130,72 @@ function formatWindDirection(deg: number | null | undefined) {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
   const index = Math.round((deg % 360) / 45) % 8;
   return directions[index];
+}
+
+/**
+ * Devuelve el "ahora" de una ciudad según su offset UTC en segundos.
+ * Si el offset es null, usa la hora local del dispositivo.
+ */
+function getCityLocalNow(offsetSeconds: number | null | undefined): {
+  hours: number;
+  minutes: number;
+  timeString: string;
+  date: Date;
+} {
+  if (offsetSeconds == null) {
+    const d = new Date();
+    return {
+      hours: d.getHours(),
+      minutes: d.getMinutes(),
+      timeString: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      date: d,
+    };
+  }
+  // UTC timestamp + offset = ciudad-local en ms
+  const localMs = Date.now() + offsetSeconds * 1000;
+  const d = new Date(localMs);
+  return {
+    hours: d.getUTCHours(),
+    minutes: d.getUTCMinutes(),
+    timeString: `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`,
+    date: d,
+  };
+}
+
+/**
+ * Dado un string de hora de Open-Meteo ("2026-07-14T12:00") en hora local de la
+ * ciudad y su offset UTC en segundos, devuelve el timestamp UTC y la hora local.
+ */
+function parseLocalSlot(timeStr: string, offsetSeconds: number | null | undefined): {
+  utcMs: number;
+  hour: number;
+  minute: number;
+} {
+  const [datePart, timePart] = timeStr.split('T');
+  const [hStr, mStr] = timePart.split(':');
+  const hour = Number(hStr);
+  const minute = Number(mStr);
+  const [year, month, day] = datePart.split('-').map(Number);
+  // Crear timestamp UTC asumiendo que la hora es local de la ciudad,
+  // luego restar el offset para obtener el instante UTC real.
+  const utcMs = offsetSeconds != null
+    ? Date.UTC(year, month - 1, day, hour, minute) - offsetSeconds * 1000
+    : new Date(timeStr).getTime();
+  return { utcMs, hour, minute };
+}
+
+/**
+ * Parsea un string ISO sin timezone ("2026-07-14T06:30") usando el offset de
+ * la ciudad, devolviendo el timestamp UTC (ms) o null si no se puede parsear.
+ */
+function parseLocalDateString(dateStr: string, offsetSeconds: number | null | undefined): number | null {
+  const [datePart, timePart] = dateStr.split('T');
+  if (!datePart || !timePart) return null;
+  const [hour, minute] = timePart.split(':').map(Number);
+  const [year, month, day] = datePart.split('-').map(Number);
+  if ([year, month, day, hour, minute].some((n) => isNaN(n))) return null;
+  if (offsetSeconds == null) return new Date(dateStr).getTime();
+  return Date.UTC(year, month - 1, day, hour, minute) - offsetSeconds * 1000;
 }
 
 function buildSummary(weather: WeatherState | null) {
@@ -176,16 +247,32 @@ function moonPhaseData(date = new Date()) {
 
 /** Icono de “posición actual” (GPS): mira de puntería, sin pin de mapa. */
 function gpsLocationIconProps() {
-  if (Platform.OS === 'ios') {
-    return { name: 'locate' as const, size: 22 };
-  }
   return { name: 'locate-outline' as const, size: 22 };
 }
 
-async function apiFetchWeather(latitude: number, longitude: number): Promise<WeatherState> {
-  const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}`);
-  if (!res.ok) throw new Error('No se pudo obtener el clima');
-  const data = await res.json();
+async function apiFetchWeather(
+  latitude: number,
+  longitude: number,
+  options?: { forceRefresh?: boolean }
+): Promise<WeatherState> {
+  const data = await fetchWeatherForCoords<{
+    current?: {
+      temperature_2m: number;
+      weather_code: number;
+      wind_speed_10m: number;
+      apparent_temperature?: number;
+      relative_humidity_2m?: number;
+      pressure_msl?: number;
+      visibility?: number;
+      uv_index?: number;
+      wind_gusts_10m?: number;
+      wind_direction_10m?: number;
+    };
+    hourly?: Record<string, number[] | string[] | undefined>;
+    daily?: Record<string, number[] | string[] | undefined>;
+    timezone?: string;
+    utc_offset_seconds?: number;
+  }>({ latitude, longitude }, options);
   const current = data?.current;
   if (!current) throw new Error('Datos del clima incompletos');
   const hourly = data?.hourly as Record<string, number[] | string[] | undefined> | undefined;
@@ -198,6 +285,8 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
   const precipitationSumRaw = daily?.precipitation_sum?.[0];
   const precipitationProbRaw = daily?.precipitation_probability_max?.[0];
   const gustsMaxRaw = daily?.wind_gusts_10m_max?.[0];
+  const timezone = typeof data?.timezone === 'string' ? data.timezone : null;
+  const utcOffsetSeconds = typeof data?.utc_offset_seconds === 'number' ? data.utc_offset_seconds : null;
   return {
     temperature: current.temperature_2m,
     weatherCode: current.weather_code,
@@ -236,14 +325,13 @@ async function apiFetchWeather(latitude: number, longitude: number): Promise<Wea
     windDirection: typeof current.wind_direction_10m === 'number' ? current.wind_direction_10m : null,
     sunrise: typeof sunriseRaw === 'string' ? sunriseRaw : null,
     sunset: typeof sunsetRaw === 'string' ? sunsetRaw : null,
+    timezone,
+    utcOffsetSeconds,
   };
 }
 
 async function apiFetchAddress(latitude: number, longitude: number): Promise<string | null> {
-  const res = await fetch(`${API_URL}/geocode?lat=${latitude}&lon=${longitude}`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.display_name ?? null;
+  return fetchAddressForCoords({ latitude, longitude });
 }
 
 async function persistLocation(
@@ -292,19 +380,19 @@ type WeeklyItem = {
   icon: string;
 };
 
-function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | null {
+function buildHourlyFromWeather(weather: WeatherState | null, offsetSeconds?: number | null): HourlyItem[] | null {
   if (!weather?.hourlyTimes || !weather.hourlyTemps || !weather.hourlyCodes) return null;
-  const now = new Date();
   const items: HourlyItem[] = [];
   for (let i = 0; i < weather.hourlyTimes.length; i += 1) {
-    const time = new Date(weather.hourlyTimes[i]);
-    if (time < now) continue;
-    const label = items.length === 0 ? 'Ahora' : `${time.getHours()}:00`;
+    const { utcMs, hour } = parseLocalSlot(weather.hourlyTimes[i], offsetSeconds ?? weather.utcOffsetSeconds);
+    // Comparar contra el instante UTC real actual
+    if (utcMs < Date.now()) continue;
+    const label = items.length === 0 ? 'Ahora' : `${hour}:00`;
     const temp = weather.hourlyTemps[i] ?? null;
     const rainChance = weather.hourlyRain?.[i] ?? 0;
     const icon = weatherInfo(
       weather.hourlyCodes[i],
-      isTimeNight(time, weather.sunrise, weather.sunset)
+      hour < 5 || hour >= 19
     ).icon;
     items.push({
       key: `${label}-${i}`,
@@ -319,12 +407,17 @@ function buildHourlyFromWeather(weather: WeatherState | null): HourlyItem[] | nu
   return items.length ? items : null;
 }
 
-function buildWeeklyFromWeather(weather: WeatherState | null): WeeklyItem[] | null {
+function buildWeeklyFromWeather(weather: WeatherState | null, offsetSeconds?: number | null): WeeklyItem[] | null {
   if (!weather?.dailyTimes || !weather.dailyMin || !weather.dailyMax) return null;
   const days = weather.dailyTimes;
   const items: WeeklyItem[] = [];
   for (let i = 0; i < days.length && items.length < 8; i += 1) {
-    const date = new Date(days[i]);
+    // Ajustar la fecha al mediodía local de la ciudad para que el día de la
+    // semana sea correcto independientemente de la zona horaria del usuario.
+    const dateParsed = days[i].split('-').map(Number);
+    const date = offsetSeconds != null && dateParsed.length === 3
+      ? new Date(Date.UTC(dateParsed[0], dateParsed[1] - 1, dateParsed[2], 12) - offsetSeconds * 1000)
+      : new Date(days[i]);
     const label = date
       .toLocaleDateString('es-ES', { weekday: 'short' })
       .replace('.', '')
@@ -399,6 +492,15 @@ function GlassCard({
   style?: any;
   intensity?: number;
 }) {
+  if (Platform.OS === 'android') {
+    // Android: superficie sólida sin BlurView (mala calidad en Android).
+    // el caller pasa glassBg dinámico como backgroundColor en style.
+    return (
+      <View style={[styles.glassCardAndroid, ...(Array.isArray(style) ? style : [style])]}>
+        <View style={styles.glassInner}>{children}</View>
+      </View>
+    );
+  }
   return (
     <BlurView intensity={intensity} tint="light" style={[styles.glassCard, style]}>
       <View style={styles.glassTopHighlight} pointerEvents="none" />
@@ -424,7 +526,27 @@ function WeatherSlide({
   const insets = useSafeAreaInsets();
   const { hasEntitlement } = useAccess();
   const canUseAdvancedWeather = hasEntitlement('weather.comparisons');
-  const isNight = isNightNow(slide.weather?.sunrise, slide.weather?.sunset);
+  /* Detección de día/noche por ubicación: parsea amanecer/atardecer usando
+   * el offset de la ciudad para evitar que new Date() los interprete en la
+   * zona horaria del usuario. */
+  const cityOffset = slide.weather?.utcOffsetSeconds ?? null;
+  const isNight = (() => {
+    const sunrise = slide.weather?.sunrise;
+    const sunset = slide.weather?.sunset;
+    if (sunrise && sunset) {
+      const sunriseMs = parseLocalDateString(sunrise, cityOffset);
+      const sunsetMs = parseLocalDateString(sunset, cityOffset);
+      if (sunriseMs != null && sunsetMs != null && !isNaN(sunriseMs) && !isNaN(sunsetMs)) {
+        const nowMs = Date.now();
+        return nowMs < sunriseMs || nowMs >= sunsetMs;
+      }
+    }
+    if (cityOffset != null) {
+      const localH = ((new Date().getUTCHours() * 60 + Math.floor(cityOffset / 60)) / 60 + 24) % 24;
+      return localH < 5 || localH >= 19;
+    }
+    return isNightNow(null, null);
+  })();
   const info = weatherInfo(slide.weather?.weatherCode, isNight);
   const scene = WEATHER_SCENES[getWeatherScene(slide.weather?.weatherCode, isNight)];
   /**
@@ -436,7 +558,49 @@ function WeatherSlide({
   const hasWeather = !!slide.weather;
   const displayAccent = hasWeather ? scene.accent : ACCENT;
   const displayInkColor = hasWeather ? (scene.ink === 'dark' ? '#1b2027' : '#fdf9f3') : '#1b2027';
+  const heroPrimaryText = hasWeather ? (scene.ink === 'dark' ? 'rgba(27,32,39,0.9)' : 'rgba(253,249,243,0.92)') : 'rgba(27,32,39,0.9)';
+  const heroMutedText = hasWeather ? (scene.ink === 'dark' ? 'rgba(148,163,184,0.95)' : 'rgba(253,249,243,0.7)') : 'rgba(148,163,184,0.95)';
+  const glassBg = hasWeather
+    ? (scene.ink === 'dark'
+        ? (Platform.OS === 'android' ? 'rgba(255,255,255,0.92)' : 'rgba(27,32,39,0.05)')
+        : `rgba(253,249,243,${Platform.OS === 'android' ? '0.30' : '0.10'})`)
+    : 'rgba(27,32,39,0.05)';
+  /* Colores de contenido dentro de las cards — adaptados a la escena
+   * para que texto y fondos interiores sean legibles tanto de día como de noche.
+   * Mismo patrón que login: fondo de card sólido + colores adaptativos. */
+  const isDarkInk = scene.ink === 'dark';
+  const cardTitleColor = isDarkInk ? '#1b2027' : 'rgba(253,249,243,0.92)';
+  const cardBodyColor = isDarkInk ? 'rgba(27,32,39,0.88)' : 'rgba(253,249,243,0.82)';
+  const cardSubtleColor = isDarkInk ? 'rgba(148,163,184,0.95)' : 'rgba(253,249,243,0.6)';
+  const cardSubBg = isDarkInk ? 'rgba(27,32,39,0.07)' : 'rgba(253,249,243,0.15)';
+  const cardSubBorder = isDarkInk ? 'rgba(27,32,39,0.1)' : 'rgba(253,249,243,0.2)';
+  const cardInk = isDarkInk ? '#1b2027' : 'rgba(253,249,243,0.92)';
   const refreshing = isGPS && slide.status === 'loading';
+  const shimmerOpacity = useRef(new Animated.Value(0.2)).current;
+
+  useEffect(() => {
+    if (slide.weather) return;
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.45,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(shimmerOpacity, {
+          toValue: 0.15,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [slide.weather, shimmerOpacity]);
+
+  const cityNow = getCityLocalNow(cityOffset);
   const bottomPad = Math.max(insets.bottom, 12) + 84;
   const scrollY = useRef(new Animated.Value(0)).current;
   const mapScale = useRef(new Animated.Value(0)).current;
@@ -445,24 +609,25 @@ function WeatherSlide({
   const [mapRegion, setMapRegion] = useState(WORLD_REGION);
   const hourly = useMemo(() => {
     return (
-      buildHourlyFromWeather(slide.weather) ||
+      buildHourlyFromWeather(slide.weather, cityOffset) ||
       buildHourlyForecast(slide.weather?.temperature ?? null, slide.weather?.weatherCode)
     );
-  }, [slide.weather]);
+  }, [slide.weather, cityOffset]);
   const weekly = useMemo(() => {
     return (
-      buildWeeklyFromWeather(slide.weather) ||
+      buildWeeklyFromWeather(slide.weather, cityOffset) ||
       buildWeeklyForecast(
         slide.weather?.tempMin ?? null,
         slide.weather?.tempMax ?? null,
         slide.weather?.weatherCode
       )
     );
-  }, [slide.weather]);
-  const moon = useMemo(() => moonPhaseData(), []);
+  }, [slide.weather, cityOffset]);
+  const moon = useMemo(() => moonPhaseData(cityNow.date), [cityNow.date]);
   const [mapMode, setMapMode] = useState<'radar' | 'temp'>('radar');
   const [radarFrames, setRadarFrames] = useState<string[]>([]);
   const [radarIndex, setRadarIndex] = useState(0);
+  const radarFrameCountRef = useRef(0);
   const owmKey = process.env.EXPO_PUBLIC_OWM_API_KEY;
   const tempTileUrl = useMemo(() => {
     if (preferences.dataSaver) return null;
@@ -518,6 +683,7 @@ function WeatherSlide({
 
   useEffect(() => {
     if (!canUseAdvancedWeather) {
+      radarFrameCountRef.current = 0;
       setRadarFrames([]);
       setRadarIndex(0);
       return;
@@ -529,6 +695,7 @@ function WeatherSlide({
 
     const loadRadarFrames = async () => {
       if (preferences.dataSaver) {
+        radarFrameCountRef.current = 0;
         setRadarFrames([]);
         setRadarIndex(0);
         return;
@@ -543,6 +710,7 @@ function WeatherSlide({
           .map((frame: { path?: string }) => frame?.path)
           .filter((path: string | undefined): path is string => typeof path === 'string');
         if (!isMounted) return;
+        radarFrameCountRef.current = frames.length;
         setRadarFrames(frames);
         setRadarIndex((prev) => (frames.length ? prev % frames.length : 0));
       } catch {
@@ -556,7 +724,10 @@ function WeatherSlide({
     }, 5 * 60 * 1000);
 
     frameTimer = setInterval(() => {
-      setRadarIndex((prev) => (radarFrames.length ? (prev + 1) % radarFrames.length : 0));
+      setRadarIndex((prev) => {
+        const frameCount = radarFrameCountRef.current;
+        return frameCount ? (prev + 1) % frameCount : 0;
+      });
     }, 750);
 
     return () => {
@@ -564,7 +735,7 @@ function WeatherSlide({
       if (frameTimer) clearInterval(frameTimer);
       if (refreshTimer) clearInterval(refreshTimer);
     };
-  }, [canUseAdvancedWeather, preferences.dataSaver, radarFrames.length]);
+  }, [canUseAdvancedWeather, preferences.dataSaver]);
 
   useEffect(() => {
     Animated.timing(mapScale, {
@@ -574,6 +745,17 @@ function WeatherSlide({
       useNativeDriver: true,
     }).start();
   }, [mapExpanded, mapScale]);
+
+  /* BackHandler: cerrar mapa con botón físico en Android */
+  useEffect(() => {
+    if (!mapExpanded) return;
+    const onBackPress = () => {
+      setMapExpanded(false);
+      return true;
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, [mapExpanded]);
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 120],
@@ -617,7 +799,7 @@ function WeatherSlide({
         >
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
-              <Text style={styles.headerTime}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+              <Text style={[styles.headerTime, { color: heroPrimaryText }]}>{cityNow.timeString}</Text>
               {isGPS ? (
                 <View style={styles.headerLocationRow}>
                   <Ionicons name="location" size={16} color={displayAccent} />
@@ -632,42 +814,55 @@ function WeatherSlide({
             ) : null}
           </View>
 
-          <Text
-            style={[styles.cityName, { color: displayInkColor }]}
-            numberOfLines={2}
-          >
-            {slide.cityName}
-          </Text>
-          <View style={styles.heroRow}>
-            <View style={styles.tempCenterRow}>
-              <Text style={[styles.temperatureHero, { color: displayInkColor }]}>{slide.weather ? Math.round(slide.weather.temperature) : '--'}</Text>
-              <Text style={[styles.temperatureDegree, { color: displayAccent }]}>°</Text>
-            </View>
-            <View
-              style={[
-                styles.heroIconWrap,
-                { backgroundColor: `${displayAccent}1f`, borderColor: `${displayAccent}40` },
-              ]}
-            >
-              <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
-            </View>
-          </View>
-          <Text style={styles.conditionHero}>{info.label}</Text>
-
-          {slide.status === 'loading' && !isGPS && (
-            <ActivityIndicator color={displayAccent} style={styles.heroLoader} />
+          {!slide.weather ? (
+            <Animated.View style={[styles.skeletonContainer, { opacity: shimmerOpacity }]}>
+              <Text
+                style={[styles.cityName, { color: displayInkColor }]}
+                numberOfLines={2}
+              >
+                {slide.cityName}
+              </Text>
+              <View style={styles.skeletonHeroRow}>
+                <View style={[styles.skeletonTemp, { backgroundColor: `${displayAccent}26` }]} />
+                <View style={[styles.skeletonIconWrap, { backgroundColor: `${displayAccent}18`, borderColor: `${displayAccent}30` }]} />
+              </View>
+              <View style={[styles.skeletonCondition, { backgroundColor: `${displayAccent}22` }]} />
+              {!isGPS && (
+                <View style={styles.skeletonLoaderRow}>
+                  <ActivityIndicator size="small" color={displayAccent} />
+                </View>
+              )}
+            </Animated.View>
+          ) : (
+            <>
+              <Text
+                style={[styles.cityName, { color: displayInkColor }]}
+                numberOfLines={2}
+              >
+                {slide.cityName}
+              </Text>
+              <View style={styles.heroRow}>
+                <View style={styles.tempCenterRow}>
+                  <Text style={[styles.temperatureHero, { color: displayInkColor }]}>{Math.round(slide.weather.temperature)}</Text>
+                  <Text style={[styles.temperatureDegree, { color: displayAccent }]}>°</Text>
+                </View>
+                <View
+                  style={[
+                    styles.heroIconWrap,
+                    { backgroundColor: `${displayAccent}1f`, borderColor: `${displayAccent}40` },
+                  ]}
+                >
+                  <MaterialCommunityIcons name={info.icon} size={38} color={displayAccent} />
+                </View>
+              </View>
+              <Text style={[styles.conditionHero, { color: heroMutedText }]}>{info.label}</Text>
+            </>
           )}
-          {slide.updatedAt ? (
-            <View style={styles.updatedRow}>
-              <Ionicons name="time-outline" size={14} color="rgba(148,163,184,0.9)" />
-              <Text style={styles.updatedAt}>Actualizado · {slide.updatedAt}</Text>
-            </View>
-          ) : null}
         </Animated.View>
 
-        <GlassCard style={styles.summaryCard}>
+        <GlassCard style={[styles.summaryCard, { backgroundColor: glassBg }]}>
           <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>Resumen inteligente</Text>
+            <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Resumen inteligente</Text>
             <View
               style={[
                 styles.summaryChip,
@@ -677,17 +872,17 @@ function WeatherSlide({
               <Text style={[styles.summaryChipText, { color: scene.accent }]}>Actual</Text>
             </View>
           </View>
-          <Text style={styles.summaryText}>{buildSummary(slide.weather)}</Text>
+          <Text style={[styles.summaryText, { color: cardBodyColor }]}>{buildSummary(slide.weather)}</Text>
           <View style={styles.summaryFooter}>
             <View style={[styles.summaryPill, { backgroundColor: `${scene.accent}1f` }]}>
               <Ionicons name="speedometer-outline" size={14} color={scene.accent} />
-              <Text style={styles.summaryPillText}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+              <Text style={[styles.summaryPillText, { color: cardInk }]}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
             </View>
-            <View style={styles.summaryPillSoft}>
-              <Text style={styles.summaryPillTextSoft}>Max {formatTempRounded(slide.weather?.tempMax)}°</Text>
+            <View style={[styles.summaryPillSoft, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
+              <Text style={[styles.summaryPillTextSoft, { color: cardSubtleColor }]}>Max {formatTempRounded(slide.weather?.tempMax)}°</Text>
             </View>
-            <View style={styles.summaryPillSoft}>
-              <Text style={styles.summaryPillTextSoft}>Min {formatTempRounded(slide.weather?.tempMin)}°</Text>
+            <View style={[styles.summaryPillSoft, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
+              <Text style={[styles.summaryPillTextSoft, { color: cardSubtleColor }]}>Min {formatTempRounded(slide.weather?.tempMin)}°</Text>
             </View>
           </View>
         </GlassCard>
@@ -695,9 +890,9 @@ function WeatherSlide({
         {canUseAdvancedWeather ? (
           <>
         {preferences.weeklySummary ? (
-          <GlassCard style={styles.weeklySummaryCard}>
+          <GlassCard style={[styles.weeklySummaryCard, { backgroundColor: glassBg }]}>
             <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Resumen semanal</Text>
+              <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Resumen semanal</Text>
               <View
                 style={[
                   styles.summaryChip,
@@ -707,26 +902,26 @@ function WeatherSlide({
                 <Text style={[styles.summaryChipText, { color: scene.accent }]}>Activo</Text>
               </View>
             </View>
-            <Text style={styles.summaryText}>
+            <Text style={[styles.summaryText, { color: cardBodyColor }]}>
               Esta semana se mueve entre {weekly[0]?.min ?? '--'}° y {weekly[0]?.max ?? '--'}° hoy,
               con tendencia de lluvia cercana al {weekly[0]?.rainChance ?? 0}%.
             </Text>
             <View style={styles.weeklySummaryGrid}>
               {weekly.slice(0, 4).map((day) => (
-                <View key={day.key} style={styles.weeklySummaryItem}>
+                <View key={day.key} style={[styles.weeklySummaryItem, { backgroundColor: cardSubBg, borderColor: cardSubBorder }]}>
                   <Text style={[styles.weeklySummaryDay, { color: scene.accent }]}>{day.label}</Text>
-                  <Text style={styles.weeklySummaryTemp}>{day.min}°/{day.max}°</Text>
-                  <Text style={styles.weeklySummaryRain}>{day.rainChance}% lluvia</Text>
+                  <Text style={[styles.weeklySummaryTemp, { color: cardInk }]}>{day.min}°/{day.max}°</Text>
+                  <Text style={[styles.weeklySummaryRain, { color: cardSubtleColor }]}>{day.rainChance}% lluvia</Text>
                 </View>
               ))}
             </View>
           </GlassCard>
         ) : null}
 
-        <GlassCard style={styles.hourlyCard}>
+        <GlassCard style={[styles.hourlyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionEyebrow}>Pronostico por horas</Text>
-            <Text style={styles.sectionTitle}>Por hora</Text>
+            <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Pronostico por horas</Text>
+            <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>Por hora</Text>
           </View>
           <ScrollView
             horizontal
@@ -739,57 +934,64 @@ function WeatherSlide({
                 key={slot.key}
                 style={[
                   styles.hourCard,
+                  { backgroundColor: cardSubBg, borderColor: cardSubBorder },
                   slot.isNow && [
                     styles.hourCardActive,
                     { backgroundColor: `${scene.accent}2e`, borderColor: `${scene.accent}59` },
                   ],
                 ]}
               >
-                <Text style={[styles.hourLabel, slot.isNow && styles.hourLabelActive]}>{slot.label}</Text>
+                <Text style={[styles.hourLabel, { color: cardSubtleColor }, slot.isNow && { color: cardInk }]}>{slot.label}</Text>
                 <MaterialCommunityIcons
                   name={slot.icon as any}
                   size={22}
-                  color={slot.isNow ? '#1b2027' : 'rgba(27,32,39,0.85)'}
+                  color={cardInk}
                   style={styles.hourIcon}
                 />
-                <Text style={styles.hourTemp}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
+                <Text style={[styles.hourTemp, { color: cardInk }]}>{slot.temp != null ? `${slot.temp}°` : '--°'}</Text>
                 <Text style={[styles.hourRain, { color: scene.accent }]}>{slot.rainChance}%</Text>
               </View>
             ))}
           </ScrollView>
         </GlassCard>
 
-        <GlassCard style={styles.weeklyCard}>
+        <GlassCard style={[styles.weeklyCard, { backgroundColor: glassBg }]}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionEyebrow}>Pronostico extendido</Text>
-            <Text style={styles.sectionTitle}>10 dias</Text>
+            <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Pronostico extendido</Text>
+            <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>10 dias</Text>
           </View>
           {weekly.map((day) => (
             <View key={day.key} style={styles.weekRow}>
-              <Text style={styles.weekDay}>{day.label}</Text>
+              <Text style={[styles.weekDay, { color: cardInk }]}>{day.label}</Text>
               <MaterialCommunityIcons
                 name={day.icon as any}
                 size={18}
-                color="rgba(27,32,39,0.85)"
+                color={cardSubtleColor}
                 style={styles.weekIcon}
               />
               <Text style={[styles.weekRain, { color: scene.accent }]}>{day.rainChance}%</Text>
-              <Text style={styles.weekTempMin}>{day.min}°</Text>
-              <View style={styles.weekRangeBar}>
+              <Text style={[styles.weekTempMin, { color: cardSubtleColor }]}>{day.min}°</Text>
+              <View style={[styles.weekRangeBar, { backgroundColor: cardSubBg }]}>
                 <View style={styles.weekRangeFill} />
                 <View style={styles.weekRangeMarker} />
               </View>
-              <Text style={styles.weekTempMax}>{day.max}°</Text>
+              <Text style={[styles.weekTempMax, { color: cardInk }]}>{day.max}°</Text>
             </View>
           ))}
         </GlassCard>
 
-        <Pressable onPress={() => setMapExpanded(true)}>
-          <GlassCard style={styles.mapCard}>
+        <Pressable
+          onPress={() => setMapExpanded(true)}
+          style={({ pressed }) => [
+            Platform.OS !== 'android' && pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+          ]}
+          android_ripple={{ color: 'rgba(31,111,107,0.12)', borderless: false }}
+        >
+          <GlassCard style={[styles.mapCard, { backgroundColor: glassBg }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.sectionEyebrow}>Mapa de calor</Text>
-                <Text style={styles.sectionTitle}>Radar de precipitacion</Text>
+                <Text style={[styles.sectionEyebrow, { color: cardSubtleColor }]}>Mapa de calor</Text>
+                <Text style={[styles.sectionTitle, { color: cardTitleColor }]}>Radar de precipitacion</Text>
               </View>
               <Ionicons name="expand" size={18} color={scene.accent} />
             </View>
@@ -890,7 +1092,11 @@ function WeatherSlide({
                 </View>
                 <View style={styles.mapFabColumn} pointerEvents="auto">
                   <Pressable
-                    style={styles.mapFab}
+                    style={({ pressed }) => [
+                      styles.mapFab,
+                      Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                    ]}
+                    android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
                     onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
                   >
                     <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
@@ -911,12 +1117,12 @@ function WeatherSlide({
         </Pressable>
 
         <View style={styles.infoGrid}>
-          <GlassCard style={styles.infoCardWide}>
+          <GlassCard style={[styles.infoCardWide, { backgroundColor: glassBg }]}>
             <View style={styles.moonHeader}>
               <View>
-                <Text style={styles.infoTitle}>Luna</Text>
-                <Text style={styles.infoValue}>{moon.label}</Text>
-                <Text style={styles.infoHint}>{moon.illumination}% iluminada</Text>
+                <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Luna</Text>
+                <Text style={[styles.infoValue, { color: cardInk }]}>{moon.label}</Text>
+                <Text style={[styles.infoHint, { color: cardSubtleColor }]}>{moon.illumination}% iluminada</Text>
               </View>
               <View style={styles.moonImageWrap}>
                 <MoonPhaseGlobe size={68} phaseFraction={moon.phaseFraction} />
@@ -924,81 +1130,81 @@ function WeatherSlide({
             </View>
             <View style={styles.moonMetaRow}>
               <View style={styles.moonMetaItem}>
-                <Text style={styles.moonMetaLabel}>Prox. luna llena</Text>
-                <Text style={styles.moonMetaValue}>{moon.daysToFull} dias</Text>
+                <Text style={[styles.moonMetaLabel, { color: cardSubtleColor }]}>Prox. luna llena</Text>
+                <Text style={[styles.moonMetaValue, { color: cardInk }]}>{moon.daysToFull} dias</Text>
               </View>
-              <View style={styles.moonDivider} />
+              <View style={[styles.moonDivider, { backgroundColor: cardSubBorder }]} />
               <View style={styles.moonMetaItem}>
-                <Text style={styles.moonMetaLabel}>Prox. luna nueva</Text>
-                <Text style={styles.moonMetaValue}>{moon.daysToNew} dias</Text>
+                <Text style={[styles.moonMetaLabel, { color: cardSubtleColor }]}>Prox. luna nueva</Text>
+                <Text style={[styles.moonMetaValue, { color: cardInk }]}>{moon.daysToNew} dias</Text>
               </View>
             </View>
           </GlassCard>
 
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Sensacion termica</Text>
-            <Text style={styles.infoValue}>{formatTempRounded(slide.weather?.feelsLike)}°</Text>
-            <Text style={styles.infoHint}>Basado en humedad y viento.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Sensacion termica</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{formatTempRounded(slide.weather?.feelsLike)}°</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Basado en humedad y viento.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Indice UV</Text>
-            <Text style={styles.infoValue}>{slide.weather?.uvIndex ?? '--'}</Text>
-            <View style={styles.uvBar}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Indice UV</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.uvIndex ?? '--'}</Text>
+            <View style={[styles.uvBar, { backgroundColor: cardSubBg }]}>
               <View
                 style={[
                   styles.uvBarFill,
-                  { width: `${Math.min(100, (slide.weather?.uvIndex ?? 0) * 10)}%` },
+                  { backgroundColor: scene.accent, width: `${Math.min(100, (slide.weather?.uvIndex ?? 0) * 10)}%` },
                 ]}
               />
             </View>
-            <Text style={styles.infoHint}>Proteccion recomendada.</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Proteccion recomendada.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Viento</Text>
-            <Text style={styles.infoValue}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
-            <Text style={styles.infoHint}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Viento</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.windSpeed ?? '--'} km/h</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>
               Rafagas {slide.weather?.windGusts ?? '--'} km/h · {formatWindDirection(slide.weather?.windDirection)}
             </Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Precipitacion</Text>
-            <Text style={styles.infoValue}>{slide.weather?.precipitationSum ?? '--'} mm</Text>
-            <Text style={styles.infoHint}>Prob. max {slide.weather?.precipitationProbability ?? '--'}%.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Precipitacion</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.precipitationSum ?? '--'} mm</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Prob. max {slide.weather?.precipitationProbability ?? '--'}%.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Amanecer</Text>
-            <Text style={styles.infoValue}>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Amanecer</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>
               {slide.weather?.sunrise
-                ? new Date(slide.weather.sunrise).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                ? (slide.weather.sunrise.split('T')[1] ?? '').slice(0, 5)
                 : '--'}
             </Text>
-            <Text style={styles.infoHint}>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>
               Atardecer {slide.weather?.sunset
-                ? new Date(slide.weather.sunset).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                ? (slide.weather.sunset.split('T')[1] ?? '').slice(0, 5)
                 : '--'}
             </Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Humedad</Text>
-            <Text style={styles.infoValue}>{slide.weather?.humidity ?? '--'}%</Text>
-            <Text style={styles.infoHint}>Nivel de humedad actual.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Humedad</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.humidity ?? '--'}%</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Nivel de humedad actual.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Visibilidad</Text>
-            <Text style={styles.infoValue}>{formatVisibilityKm(slide.weather?.visibility)} km</Text>
-            <Text style={styles.infoHint}>Condicion de horizonte.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Visibilidad</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{formatVisibilityKm(slide.weather?.visibility)} km</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Condicion de horizonte.</Text>
           </GlassCard>
-          <GlassCard style={styles.infoCard}>
-            <Text style={styles.infoTitle}>Presion</Text>
-            <Text style={styles.infoValue}>{slide.weather?.pressure ?? '--'} hPa</Text>
-            <Text style={styles.infoHint}>Nivel atmosferico actual.</Text>
+          <GlassCard style={[styles.infoCard, { backgroundColor: glassBg }]}>
+            <Text style={[styles.infoTitle, { color: cardSubtleColor }]}>Presion</Text>
+            <Text style={[styles.infoValue, { color: cardInk }]}>{slide.weather?.pressure ?? '--'} hPa</Text>
+            <Text style={[styles.infoHint, { color: cardSubtleColor }]}>Nivel atmosferico actual.</Text>
           </GlassCard>
         </View>
           </>
         ) : (
-          <GlassCard style={styles.summaryCard}>
+          <GlassCard style={[styles.summaryCard, { backgroundColor: glassBg }]}>
             <View style={styles.summaryHeader}>
-              <Text style={styles.summaryTitle}>Funciones Premium</Text>
+              <Text style={[styles.summaryTitle, { color: cardTitleColor }]}>Funciones Premium</Text>
               <View
                 style={[
                   styles.summaryChip,
@@ -1008,14 +1214,32 @@ function WeatherSlide({
                 <Text style={[styles.summaryChipText, { color: scene.accent }]}>Bloqueado</Text>
               </View>
             </View>
-            <Text style={styles.summaryText}>
+            <Text style={[styles.summaryText, { color: cardBodyColor }]}>
               Suscribete para ver pronostico por horas, 10 dias, radar, indice UV,
               humedad, presion y comparativas climaticas.
             </Text>
           </GlassCard>
         )}
 
-        {slide.message ? <Text style={styles.errorText}>{slide.message}</Text> : null}
+        {slide.message ? (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={22} color={premiumColors.danger} />
+            <Text style={styles.errorCardText}>{slide.message}</Text>
+            {onRefresh && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.errorRetryBtn,
+                  Platform.OS !== 'android' && pressed && { opacity: 0.85 },
+                ]}
+                android_ripple={{ color: 'rgba(31,111,107,0.2)', borderless: false }}
+                onPress={onRefresh}
+              >
+                <Ionicons name="refresh-outline" size={16} color={premiumColors.accent} />
+                <Text style={styles.errorRetryText}>Reintentar</Text>
+              </Pressable>
+            )}
+          </View>
+        ) : null}
       </Animated.ScrollView>
 
       {canUseAdvancedWeather && mapExpanded && (
@@ -1139,24 +1363,56 @@ function WeatherSlide({
               </View>
               <View style={styles.mapFabColumnFullscreen} pointerEvents="auto">
                 <Pressable
-                  style={styles.mapFab}
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
                   onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
                 >
                   <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={focusOnLocation}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={focusOnLocation}
+                >
                   <Ionicons name="locate-outline" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={zoomIn}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={zoomIn}
+                >
                   <Ionicons name="add" size={18} color="#e2e8f0" />
                 </Pressable>
-                <Pressable style={styles.mapFab} onPress={zoomOut}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.mapFab,
+                    Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                  ]}
+                  android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                  onPress={zoomOut}
+                >
                   <Ionicons name="remove" size={18} color="#e2e8f0" />
                 </Pressable>
               </View>
             </View>
           </View>
-          <Pressable style={styles.mapCloseBtn} onPress={() => setMapExpanded(false)}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapCloseBtn,
+              Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+            ]}
+            android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 20 }}
+            onPress={() => setMapExpanded(false)}
+          >
             <Ionicons name="close" size={18} color="#e2e8f0" />
           </Pressable>
         </Animated.View>
@@ -1217,7 +1473,11 @@ export default function HomeScreen() {
     }));
 
   // Cargar clima de GPS
-  const loadGpsWeather = async (latitude: number, longitude: number) => {
+  const loadGpsWeather = async (
+    latitude: number,
+    longitude: number,
+    options?: { forceRefresh?: boolean }
+  ) => {
     const safeCoords = applyLocationPrecision(
       latitude,
       longitude,
@@ -1226,7 +1486,7 @@ export default function HomeScreen() {
     updateGpsSlide({ status: 'loading', message: '' });
     try {
       const [weather, address] = await Promise.all([
-        apiFetchWeather(safeCoords.latitude, safeCoords.longitude),
+        apiFetchWeather(safeCoords.latitude, safeCoords.longitude, options),
         apiFetchAddress(safeCoords.latitude, safeCoords.longitude),
       ]);
       const cityName = address
@@ -1332,7 +1592,7 @@ export default function HomeScreen() {
               .catch(() => {
                 // ignorar errores intermitentes en web polling
               });
-          }, 30000);
+          }, GPS_WEATHER_POLL_MS);
           return;
         }
 
@@ -1347,7 +1607,7 @@ export default function HomeScreen() {
         // Refresco periódico para mantener clima/ubicación al día sin usar watcher.
         pollTimer = setInterval(() => {
           void readAndLoadLocation();
-        }, 30000);
+        }, GPS_WEATHER_POLL_MS);
       } catch {
         if (!isMounted) return;
         updateGpsSlide({
@@ -1397,7 +1657,12 @@ export default function HomeScreen() {
       {/* Botón eliminar ciudad (solo en slides no-GPS) */}
       {!isActiveGPS && activeSlide && (
         <Pressable
-          style={[styles.removeBtn, { top: insets.top + 10 }]}
+          style={({ pressed }) => [
+            styles.removeBtn,
+            { top: insets.top + 10 },
+            Platform.OS !== 'android' && pressed && { opacity: 0.7, transform: [{ scale: 0.92 }] },
+          ]}
+          android_ripple={{ color: 'rgba(182,67,44,0.25)', borderless: true, radius: 22 }}
           accessibilityRole="button"
           accessibilityLabel="Quitar ciudad guardada"
           onPress={() => {
@@ -1433,7 +1698,9 @@ export default function HomeScreen() {
               i === 0
                 ? () => {
                     if (gpsSlide.coords) {
-                      loadGpsWeather(gpsSlide.coords.latitude, gpsSlide.coords.longitude);
+                      loadGpsWeather(gpsSlide.coords.latitude, gpsSlide.coords.longitude, {
+                        forceRefresh: true,
+                      });
                     }
                   }
                 : undefined
@@ -1444,15 +1711,17 @@ export default function HomeScreen() {
 
       {/* Indicadores de puntos */}
       {allSlides.length > 1 && (
-        <View style={[styles.dotsCapsuleWrap, { paddingBottom: Math.max(insets.bottom, 8) + 6 }]}>
+        <View style={[styles.dotsCapsuleWrap, { bottom: Math.max(insets.bottom, 8) + 100 }]}>
           <View style={styles.dotsCapsule}>
           {allSlides.map((_, i) => (
             <Pressable
               key={i}
-              style={[
+              style={({ pressed }) => [
                 styles.dot,
                 i === activeIndex && [styles.dotActive, { backgroundColor: activeScene.accent }],
+                Platform.OS !== 'android' && pressed && { opacity: 0.7 },
               ]}
+              android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true, radius: 10 }}
               onPress={() => {
                 setActiveIndex(i);
                 scrollRef.current?.scrollTo({ x: i * SCREEN_WIDTH, animated: true });
@@ -1469,7 +1738,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: SURFACE_DEEPER,
     overflow: 'hidden',
   },
   bgGlowTop: {
@@ -1478,8 +1746,11 @@ const styles = StyleSheet.create({
     left: -120,
     width: 360,
     height: 360,
-    borderRadius: 999,
+    borderRadius: 360,
     backgroundColor: premiumColors.auroraAqua,
+    zIndex: 0,
+    pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -1487,8 +1758,11 @@ const styles = StyleSheet.create({
     right: -120,
     width: 360,
     height: 360,
-    borderRadius: 999,
+    borderRadius: 360,
     backgroundColor: premiumColors.auroraTeal,
+    zIndex: 0,
+    pointerEvents: 'none',
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   slideRoot: {
     width: SCREEN_WIDTH,
@@ -1516,7 +1790,16 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
-    elevation: 6,
+    ...Platform.select<ViewStyle>({
+      ios: {
+        elevation: 6,
+      },
+      android: {
+        // Sin elevation — el botón tiene borderRadius: 999 (círculo)
+        // y la elevation en Android es rectangular, no respeta el radio.
+        // Las shadow* props de iOS son ignoradas en Android.
+      },
+    }),
   },
 
   headerBlock: {
@@ -1600,19 +1883,72 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontWeight: '500',
   },
-  heroLoader: {
+  skeletonContainer: {
+    gap: 0,
+  },
+  skeletonHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+    gap: 16,
+  },
+  skeletonTemp: {
+    width: 120,
+    height: 82,
+    borderRadius: 18,
+  },
+  skeletonIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  skeletonCondition: {
+    width: '42%',
+    height: 18,
+    borderRadius: 8,
     marginTop: 12,
   },
-  updatedRow: {
+  skeletonLoaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 14,
+    gap: 8,
+  },
+  errorCard: {
+    marginTop: 16,
+    marginHorizontal: 0,
+    padding: 18,
+    borderRadius: premiumRadii.lg,
+    backgroundColor: 'rgba(182,67,44,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(182,67,44,0.2)',
+    alignItems: 'center',
+    gap: 10,
+  },
+  errorCardText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: premiumColors.danger,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+  errorRetryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: premiumRadii.md,
+    backgroundColor: `${premiumColors.accent}1a`,
+    borderWidth: 1,
+    borderColor: `${premiumColors.accent}38`,
   },
-  updatedAt: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(148,163,184,0.95)',
+  errorRetryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: premiumColors.accent,
   },
   errorText: {
     marginTop: 14,
@@ -1628,7 +1964,22 @@ const styles = StyleSheet.create({
     borderTopColor: GLASS_BORDER_HI,
     backgroundColor: GLASS_BG,
     ...premiumShadow('medium'),
+    ...Platform.select<ViewStyle>({
+      android: {
+        // Sin elevation — el card tiene borderRadius y la elevation
+        // en Android es rectangular, no respeta el radio. Es el mismo
+        // patrón que usamos en las pantallas de auth.
+        elevation: 0,
+      },
+    }),
     overflow: 'hidden',
+  },
+  glassCardAndroid: {
+    borderRadius: premiumRadii.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: GLASS_BORDER,
+    backgroundColor: GLASS_BG,
   },
   glassTopHighlight: {
     position: 'absolute',
@@ -1699,6 +2050,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 999,
+    borderWidth: 1,
   },
   summaryPillTextSoft: {
     fontSize: 12,
@@ -1783,10 +2135,6 @@ const styles = StyleSheet.create({
   hourLabel: {
     fontSize: 12,
     color: 'rgba(27,32,39,0.7)',
-  },
-  hourLabelActive: {
-    color: '#1b2027',
-    fontWeight: '600',
   },
   hourIcon: {
     marginVertical: 8,
@@ -2113,7 +2461,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(148,163,184,0.25)',
   },
   mapTimelineText: {
-    color: '#1b2027',
+    color: '#e2e8f0',
     fontSize: 12,
   },
   mapIntensityPanel: {
@@ -2126,13 +2474,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   dotsCapsuleWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
     alignItems: 'center',
     paddingTop: 6,
     backgroundColor: 'transparent',
     zIndex: 5,
+    pointerEvents: 'box-none',
   },
   dotsCapsule: {
     flexDirection: 'row',
+   
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 16,

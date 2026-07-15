@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -11,12 +12,13 @@ import {
   Text,
   TextInput,
   View,
+  type ViewStyle,
 } from 'react-native';
 import { AuthWeatherBubbles } from '../../components/AuthWeatherBubbles';
 import { GaruaRainOverlay } from '../../components/GaruaRainOverlay';
 import { PremiumReveal } from '../../components/PremiumMotion';
 import { getSession, updatePassword, verifyRecoveryCodeAndUpdatePassword } from '../../core/auth/supabaseClient';
-import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
+import { premiumColors, premiumRadii } from '../../theme/premium';
 
 const LOGO = require('../../../assets/images/icon.png');
 
@@ -254,6 +256,7 @@ function TextField({
         <TextInput
           style={styles.input}
           placeholderTextColor="rgba(148,163,184,0.5)"
+          underlineColorAndroid="transparent"
           {...props}
         />
       </View>
@@ -284,6 +287,7 @@ function PasswordField({
           secureTextEntry={!isRevealed}
           autoCapitalize="none"
           autoCorrect={false}
+          underlineColorAndroid="transparent"
           {...props}
         />
         <Pressable onPress={onToggle} hitSlop={8} style={styles.eyeBtn}>
@@ -303,6 +307,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: premiumColors.surface,
+    overflow: 'hidden',
   },
   bgGlowTop: {
     position: 'absolute',
@@ -310,8 +315,9 @@ const styles = StyleSheet.create({
     left: -100,
     width: 400,
     height: 400,
-    borderRadius: 999,
+    borderRadius: 400,
     backgroundColor: premiumColors.auroraAqua,
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   bgGlowBottom: {
     position: 'absolute',
@@ -319,8 +325,9 @@ const styles = StyleSheet.create({
     right: -80,
     width: 300,
     height: 300,
-    borderRadius: 999,
+    borderRadius: 300,
     backgroundColor: premiumColors.auroraTeal,
+    ...Platform.select({ android: { overflow: 'hidden' as const } }),
   },
   scroll: {
     flexGrow: 1,
@@ -331,7 +338,19 @@ const styles = StyleSheet.create({
   },
   cardShadow: {
     borderRadius: premiumRadii.xxl,
-    ...premiumShadow('strong'),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.38,
+        shadowRadius: 30,
+      },
+      android: {
+        // Sin elevation — la sombra de elevation en Android
+        // es rectangular y no respeta el borderRadius del card.
+        // El borde + fondo blanco dan suficiente profundidad.
+      },
+    }),
   },
   card: {
     borderRadius: premiumRadii.xxl,
@@ -400,6 +419,7 @@ const styles = StyleSheet.create({
     color: premiumColors.ink,
     fontSize: 15,
     paddingVertical: 13,
+    textAlignVertical: 'center',
   },
   eyeBtn: {
     padding: 4,
