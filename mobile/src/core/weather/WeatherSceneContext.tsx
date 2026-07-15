@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import { API_URL } from '../api/weatherApi';
 import { getWeatherScene, isNightNow, WEATHER_SCENES, type SceneTokens } from '../../theme/weatherScenes';
 
-const POLL_MS = 5 * 60 * 1000;
+const POLL_MS = 10 * 60 * 1000;
 
 type WeatherSceneContextValue = {
   code: number | undefined;
@@ -20,9 +20,9 @@ function currentFallback(): WeatherSceneContextValue {
 const WeatherSceneContext = createContext<WeatherSceneContextValue>(currentFallback());
 
 /**
- * Fuente única del "tema vivo" de la app: el mismo cielo/acento que usa
- * HomeScreen para su slide de GPS, calculado una vez aquí y compartido por
- * todas las pantallas (sin duplicar el polling detallado de HomeScreen).
+ * Tema vivo global para pantallas fuera del carrusel principal. Mantiene su
+ * propia lectura ligera de ubicación/clima y el backend evita golpes repetidos
+ * a Open-Meteo mediante cache.
  */
 export function WeatherSceneProvider({ children }: { children: React.ReactNode }) {
   const [value, setValue] = useState<WeatherSceneContextValue>(currentFallback());

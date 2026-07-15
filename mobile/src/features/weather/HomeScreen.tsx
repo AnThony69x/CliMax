@@ -94,6 +94,7 @@ const TEMP_WARM = '#fbbf24';
 const TEMP_HOT = '#f97316';
 const TEMP_EXTREME = '#ef4444';
 const OSM_TILE_URL = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+const GPS_WEATHER_POLL_MS = 10 * 60 * 1000;
 const WORLD_REGION = {
   latitude: 0,
   longitude: 0,
@@ -248,8 +249,13 @@ function gpsLocationIconProps() {
   return { name: 'locate-outline' as const, size: 22 };
 }
 
-async function apiFetchWeather(latitude: number, longitude: number): Promise<WeatherState> {
-  const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}`);
+async function apiFetchWeather(
+  latitude: number,
+  longitude: number,
+  options?: { forceRefresh?: boolean }
+): Promise<WeatherState> {
+  const freshParam = options?.forceRefresh ? '&fresh=1' : '';
+  const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}${freshParam}`);
   if (!res.ok) throw new Error('No se pudo obtener el clima');
   const data = await res.json();
   const current = data?.current;
@@ -1448,7 +1454,11 @@ export default function HomeScreen() {
     }));
 
   // Cargar clima de GPS
-  const loadGpsWeather = async (latitude: number, longitude: number) => {
+  const loadGpsWeather = async (
+    latitude: number,
+    longitude: number,
+    options?: { forceRefresh?: boolean }
+  ) => {
     const safeCoords = applyLocationPrecision(
       latitude,
       longitude,
@@ -1457,7 +1467,7 @@ export default function HomeScreen() {
     updateGpsSlide({ status: 'loading', message: '' });
     try {
       const [weather, address] = await Promise.all([
-        apiFetchWeather(safeCoords.latitude, safeCoords.longitude),
+        apiFetchWeather(safeCoords.latitude, safeCoords.longitude, options),
         apiFetchAddress(safeCoords.latitude, safeCoords.longitude),
       ]);
       const cityName = address
@@ -1563,7 +1573,7 @@ export default function HomeScreen() {
               .catch(() => {
                 // ignorar errores intermitentes en web polling
               });
-          }, 30000);
+          }, GPS_WEATHER_POLL_MS);
           return;
         }
 
@@ -1578,7 +1588,7 @@ export default function HomeScreen() {
         // Refresco periódico para mantener clima/ubicación al día sin usar watcher.
         pollTimer = setInterval(() => {
           void readAndLoadLocation();
-        }, 30000);
+        }, GPS_WEATHER_POLL_MS);
       } catch {
         if (!isMounted) return;
         updateGpsSlide({
@@ -1669,7 +1679,9 @@ export default function HomeScreen() {
               i === 0
                 ? () => {
                     if (gpsSlide.coords) {
-                      loadGpsWeather(gpsSlide.coords.latitude, gpsSlide.coords.longitude);
+                      loadGpsWeather(gpsSlide.coords.latitude, gpsSlide.coords.longitude, {
+                        forceRefresh: true,
+                      });
                     }
                   }
                 : undefined
