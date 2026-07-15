@@ -24,6 +24,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_URL } from '../../core/api/weatherApi';
 import { useCities } from '../../core/cities/CitiesContext';
+import { fetchWeatherForCoords } from '../../core/weather/weatherDataCache';
 import type { City } from '../../types';
 import { premiumColors, premiumRadii, premiumShadow } from '../../theme/premium';
 import { useWeatherScene } from '../../core/weather/WeatherSceneContext';
@@ -49,9 +50,10 @@ type CityWeather = {
 
 async function fetchCityWeather(city: City): Promise<CityWeather> {
   try {
-    const res = await fetch(`${API_URL}/clima?lat=${city.lat}&lon=${city.lon}`);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await fetchWeatherForCoords<{
+      current?: { temperature_2m: number; weather_code: number };
+      daily?: Record<string, number[] | undefined>;
+    }>({ latitude: city.lat, longitude: city.lon });
     const current = data?.current;
     if (!current) return null;
     const daily = data?.daily as Record<string, number[] | undefined> | undefined;

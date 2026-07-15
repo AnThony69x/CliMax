@@ -5,7 +5,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -44,6 +44,7 @@ const GLASS_BD  = premiumColors.glassBorder;
 const ACCENT    = premiumColors.accent;
 const ACCENT_DK = premiumColors.accentDeep;
 const PROFILE_FETCH_TIMEOUT_MS = 12000;
+const PROFILE_STATS_TTL_MS = 60 * 1000;
 
 async function fetchProfileWithTimeout(url: string, init: RequestInit) {
   const controller = new AbortController();
@@ -90,6 +91,8 @@ export default function ProfileScreen() {
   const [stats,           setStats]           = useState<Stats>({ posts: 0, reports: 0, cities: 0, daysActive: 0 });
   const [accountPanel,    setAccountPanel]    = useState<AccountPanel>(null);
   const [preferences,     setPreferences]     = useState<AccountPreferences>(DEFAULT_ACCOUNT_PREFERENCES);
+  const statsRequestRef = useRef<Promise<void> | null>(null);
+  const lastStatsRefreshAtRef = useRef(0);
 
   useEffect(() => { void bootstrap(); }, []);
   useEffect(() => {
@@ -116,8 +119,10 @@ export default function ProfileScreen() {
       const userId = (session.user as any).id as string;
       const createdAt = (session.user as any).created_at as string | undefined;
 
-      void loadStats(userId, createdAt);
-      await loadProfile(session);
+      await Promise.allSettled([
+        loadStats(userId, createdAt),
+        loadProfile(session),
+      ]);
     } catch (e) {
       console.warn('bootstrapProfile', e);
       setLoading(false);
@@ -126,11 +131,12 @@ export default function ProfileScreen() {
 
   const refreshProfileActivity = async () => {
     try {
+      if (Date.now() - lastStatsRefreshAtRef.current < PROFILE_STATS_TTL_MS) return;
       const session = await getSession();
       if (!session?.user) return;
       const userId = (session.user as any).id as string;
       const createdAt = (session.user as any).created_at as string | undefined;
-      void loadStats(userId, createdAt);
+      await loadStats(userId, createdAt);
     } catch (e) {
       console.warn('refreshProfileActivity', e);
     }
@@ -138,18 +144,28 @@ export default function ProfileScreen() {
 
   /* ── load stats ── */
   const loadStats = async (userId: string, createdAt?: string) => {
-    const [postsRes, reportsRes, locRes] = await Promise.allSettled([
-      supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      supabase.from('weather_alert_reports').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-      supabase.from('locations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
-    ]);
-    const posts    = postsRes.status   === 'fulfilled' ? (postsRes.value.count   ?? 0) : 0;
-    const reports  = reportsRes.status === 'fulfilled' ? (reportsRes.value.count ?? 0) : 0;
-    const cities   = locRes.status     === 'fulfilled' ? (locRes.value.count     ?? 0) : 0;
-    const daysActive = createdAt
-      ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
-      : 1;
-    setStats({ posts, reports, cities, daysActive });
+    if (statsRequestRef.current) return statsRequestRef.current;
+
+    const request = (async () => {
+      const [postsRes, reportsRes, locRes] = await Promise.allSettled([
+        supabase.from('community_posts').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('weather_alert_reports').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+        supabase.from('locations').select('id', { count: 'exact', head: true }).eq('user_id', userId),
+      ]);
+      const posts    = postsRes.status   === 'fulfilled' ? (postsRes.value.count   ?? 0) : 0;
+      const reports  = reportsRes.status === 'fulfilled' ? (reportsRes.value.count ?? 0) : 0;
+      const cities   = locRes.status     === 'fulfilled' ? (locRes.value.count     ?? 0) : 0;
+      const daysActive = createdAt
+        ? Math.max(1, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86_400_000))
+        : 1;
+      setStats({ posts, reports, cities, daysActive });
+      lastStatsRefreshAtRef.current = Date.now();
+    })().finally(() => {
+      statsRequestRef.current = null;
+    });
+
+    statsRequestRef.current = request;
+    return request;
   };
 
   /* ── helpers Supabase ── */

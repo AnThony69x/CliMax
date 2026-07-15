@@ -25,6 +25,7 @@ import { useAccess } from '../../core/access/AccessContext';
 import { useCities } from '../../core/cities/CitiesContext';
 import { getToken } from '../../core/auth/authStorage';
 import { API_URL } from '../../core/api/weatherApi';
+import { fetchAddressForCoords, fetchWeatherForCoords } from '../../core/weather/weatherDataCache';
 import { MapView, Marker, UrlTile } from '../../components/NativeWeatherMap';
 import {
   applyLocationPrecision,
@@ -254,10 +255,24 @@ async function apiFetchWeather(
   longitude: number,
   options?: { forceRefresh?: boolean }
 ): Promise<WeatherState> {
-  const freshParam = options?.forceRefresh ? '&fresh=1' : '';
-  const res = await fetch(`${API_URL}/clima?lat=${latitude}&lon=${longitude}${freshParam}`);
-  if (!res.ok) throw new Error('No se pudo obtener el clima');
-  const data = await res.json();
+  const data = await fetchWeatherForCoords<{
+    current?: {
+      temperature_2m: number;
+      weather_code: number;
+      wind_speed_10m: number;
+      apparent_temperature?: number;
+      relative_humidity_2m?: number;
+      pressure_msl?: number;
+      visibility?: number;
+      uv_index?: number;
+      wind_gusts_10m?: number;
+      wind_direction_10m?: number;
+    };
+    hourly?: Record<string, number[] | string[] | undefined>;
+    daily?: Record<string, number[] | string[] | undefined>;
+    timezone?: string;
+    utc_offset_seconds?: number;
+  }>({ latitude, longitude }, options);
   const current = data?.current;
   if (!current) throw new Error('Datos del clima incompletos');
   const hourly = data?.hourly as Record<string, number[] | string[] | undefined> | undefined;
@@ -316,10 +331,7 @@ async function apiFetchWeather(
 }
 
 async function apiFetchAddress(latitude: number, longitude: number): Promise<string | null> {
-  const res = await fetch(`${API_URL}/geocode?lat=${latitude}&lon=${longitude}`);
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.display_name ?? null;
+  return fetchAddressForCoords({ latitude, longitude });
 }
 
 async function persistLocation(
@@ -615,6 +627,7 @@ function WeatherSlide({
   const [mapMode, setMapMode] = useState<'radar' | 'temp'>('radar');
   const [radarFrames, setRadarFrames] = useState<string[]>([]);
   const [radarIndex, setRadarIndex] = useState(0);
+  const radarFrameCountRef = useRef(0);
   const owmKey = process.env.EXPO_PUBLIC_OWM_API_KEY;
   const tempTileUrl = useMemo(() => {
     if (preferences.dataSaver) return null;
@@ -670,6 +683,7 @@ function WeatherSlide({
 
   useEffect(() => {
     if (!canUseAdvancedWeather) {
+      radarFrameCountRef.current = 0;
       setRadarFrames([]);
       setRadarIndex(0);
       return;
@@ -681,6 +695,7 @@ function WeatherSlide({
 
     const loadRadarFrames = async () => {
       if (preferences.dataSaver) {
+        radarFrameCountRef.current = 0;
         setRadarFrames([]);
         setRadarIndex(0);
         return;
@@ -695,6 +710,7 @@ function WeatherSlide({
           .map((frame: { path?: string }) => frame?.path)
           .filter((path: string | undefined): path is string => typeof path === 'string');
         if (!isMounted) return;
+        radarFrameCountRef.current = frames.length;
         setRadarFrames(frames);
         setRadarIndex((prev) => (frames.length ? prev % frames.length : 0));
       } catch {
@@ -708,7 +724,10 @@ function WeatherSlide({
     }, 5 * 60 * 1000);
 
     frameTimer = setInterval(() => {
-      setRadarIndex((prev) => (radarFrames.length ? (prev + 1) % radarFrames.length : 0));
+      setRadarIndex((prev) => {
+        const frameCount = radarFrameCountRef.current;
+        return frameCount ? (prev + 1) % frameCount : 0;
+      });
     }, 750);
 
     return () => {
@@ -716,7 +735,7 @@ function WeatherSlide({
       if (frameTimer) clearInterval(frameTimer);
       if (refreshTimer) clearInterval(refreshTimer);
     };
-  }, [canUseAdvancedWeather, preferences.dataSaver, radarFrames.length]);
+  }, [canUseAdvancedWeather, preferences.dataSaver]);
 
   useEffect(() => {
     Animated.timing(mapScale, {

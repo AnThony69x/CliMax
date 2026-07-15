@@ -239,7 +239,7 @@ export function AdminPanelScreen() {
       },
       token
     );
-    await refreshAccess();
+    await refreshAccess({ force: true });
     await load();
   };
 
@@ -851,17 +851,17 @@ export function SubscriptionPanelScreen({ compact = false }: { compact?: boolean
           if (returnedSessionId) {
             await syncBillingCheckout(returnedSessionId, token);
           }
-          await refreshAccess();
+          await refreshAccess({ force: true });
           Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
         } else {
-          await refreshAccess();
+          await refreshAccess({ force: true });
         }
       } else if (data?.session?.id) {
         await simulateBillingSuccess(data.session.id, token);
-        await refreshAccess();
+        await refreshAccess({ force: true });
         Alert.alert('Suscripcion activada', 'Tu suscripcion se activo correctamente.');
       } else {
-        await refreshAccess();
+        await refreshAccess({ force: true });
       }
     } catch (error) {
       Alert.alert('Suscripcion', error instanceof Error ? error.message : 'No se pudo iniciar la suscripcion.');

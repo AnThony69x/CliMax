@@ -71,7 +71,7 @@ export default function SettingsScreen() {
   ];
 
   const actions: SettingItem[] = [
-    { id: 'account', label: 'Cuenta', description: 'Gestionar perfil y actividad', icon: 'person-circle-outline', type: 'navigation', onPress: () => router.push('/profile' as any) },
+    { id: 'account', label: 'Cuenta', description: 'Gestionar perfil y actividad', icon: 'person-circle-outline', type: 'navigation', onPress: () => router.push('/(tabs)/explore' as any) },
     { id: 'privacy', label: 'Privacidad', description: 'Cómo usamos tus datos', icon: 'lock-closed-outline', type: 'navigation', onPress: () => router.push('/modal') },
     { id: 'help', label: 'Ayuda', description: 'Preguntas frecuentes', icon: 'help-circle-outline', type: 'navigation', onPress: () => router.push('/modal') },
     { id: 'clearCache', label: 'Limpiar caché', description: 'Liberar espacio de almacenamiento', icon: 'trash-outline', type: 'action', onPress: handleClearCache },
