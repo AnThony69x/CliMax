@@ -409,15 +409,61 @@ export async function reportCommunityContent(
   return response.json();
 }
 
+export type WeatherHistoryRange = '30d' | '90d' | '180d' | '365d';
+
+export type WeatherHistorySummary = {
+  range?: WeatherHistoryRange;
+  logs_count?: number | null;
+  avg_temperature?: number | null;
+  min_temperature?: number | null;
+  max_temperature?: number | null;
+  avg_wind_speed?: number | null;
+  max_wind_speed?: number | null;
+  extreme_weather_events?: number | null;
+  first_captured_at?: string | null;
+  last_captured_at?: string | null;
+};
+
+export type WeatherHistoryLog = {
+  id?: string | number;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string | null;
+  temperature?: number | null;
+  weather_code?: number | null;
+  wind_speed?: number | null;
+  captured_at?: string | null;
+};
+
 export async function fetchWeatherHistorySummary(
   lat: number,
   lon: number,
-  range: '30d' | '90d' | '180d' | '365d',
+  range: WeatherHistoryRange,
   token: string
 ) {
   const response = await fetch(`${API_URL}/weather/history/summary?lat=${lat}&lon=${lon}&range=${range}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!response.ok) throw new Error('Error fetching weather history summary');
-  return response.json();
+  return response.json() as Promise<{ data: WeatherHistorySummary }>;
+}
+
+export async function fetchWeatherHistory(
+  lat: number,
+  lon: number,
+  range: WeatherHistoryRange,
+  token: string
+) {
+  const response = await fetch(`${API_URL}/weather/history?lat=${lat}&lon=${lon}&range=${range}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Error fetching weather history');
+  return response.json() as Promise<{
+    data: WeatherHistoryLog[];
+    meta?: {
+      range?: WeatherHistoryRange;
+      days?: number;
+      count?: number;
+    };
+  }>;
 }
