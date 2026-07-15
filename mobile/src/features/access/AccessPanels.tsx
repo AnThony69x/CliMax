@@ -3,7 +3,7 @@ import * as ExpoLinking from 'expo-linking';
 import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { useAccess } from '../../core/access/AccessContext';
@@ -14,6 +14,7 @@ import {
   fetchAdminUsers,
   fetchAuditLogs,
   fetchBillingPlans,
+  fetchWeather,
   fetchOperatorPosts,
   fetchOperatorUsers,
   fetchWeatherHistory,
@@ -21,6 +22,7 @@ import {
   createBillingCheckout,
   moderateCommunityComment,
   moderateCommunityPost,
+  saveLocation,
   simulateBillingSuccess,
   syncBillingCheckout,
   updateAdminPlan,
@@ -137,6 +139,7 @@ type CommunityReport = {
 
 const PROFESSIONAL_SECTOR = 'risk_management';
 const RANGE_OPTIONS = ['30d', '90d', '180d', '365d'] as const satisfies readonly WeatherHistoryRange[];
+const LOW_SAMPLE_WARNING_THRESHOLD = 5;
 const ADMIN_SECTIONS = ['metricas', 'usuarios', 'planes', 'auditoria'] as const;
 const OPERATOR_SECTIONS = ['comunidad', 'usuarios'] as const;
 const COMMUNITY_FILTERS = ['publicaciones', 'comentarios'] as const;
@@ -753,6 +756,8 @@ export function ProfessionalPanelScreen() {
   const [historyLogs, setHistoryLogs] = useState<WeatherHistoryLog[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const summaryRequestIdRef = useRef(0);
+  const locationChangeIdRef = useRef(0);
   const allowed = hasEntitlement('weather.history.extended');
 
   const loadSummaryForCoords = async (queryLat: number, queryLon: number) => {
@@ -760,23 +765,35 @@ export function ProfessionalPanelScreen() {
       Alert.alert('Historial climatico', 'Ingresa coordenadas validas para consultar.');
       return;
     }
+    const requestId = summaryRequestIdRef.current + 1;
+    summaryRequestIdRef.current = requestId;
     setLoading(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
     try {
       const token = await getAccessToken();
       if (!token) return;
       const payload = await fetchWeatherHistorySummary(queryLat, queryLon, range, token);
+      if (requestId !== summaryRequestIdRef.current) return;
       setSummary(payload.data);
-      setHistoryLogs([]);
-      setHistoryError(null);
     } catch (error) {
+      if (requestId !== summaryRequestIdRef.current) return;
       Alert.alert('Historial climatico', error instanceof Error ? error.message : 'No se pudo cargar el historial.');
     } finally {
-      setLoading(false);
+      if (requestId === summaryRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const handleUseCurrentLocation = async (options?: { autoLoad?: boolean }) => {
+    const locationChangeId = locationChangeIdRef.current + 1;
+    locationChangeIdRef.current = locationChangeId;
     setLocating(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
@@ -796,6 +813,7 @@ export function ProfessionalPanelScreen() {
       setLocationLabel('Mi ubicacion');
       setHasSelectedLocation(true);
       if (options?.autoLoad) {
+        if (locationChangeId !== locationChangeIdRef.current) return;
         await loadSummaryForCoords(safeCoords.latitude, safeCoords.longitude);
       }
     } catch {
@@ -809,11 +827,39 @@ export function ProfessionalPanelScreen() {
     await loadSummaryForCoords(Number(lat), Number(lon));
   };
 
+  const persistCurrentWeatherSnapshot = async (queryLat: number, queryLon: number, address: string) => {
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const weatherPayload = await fetchWeather(queryLat, queryLon);
+      const snapshot = extractCurrentWeatherSnapshot(weatherPayload);
+      if (!snapshot) return;
+      await saveLocation({
+        latitude: queryLat,
+        longitude: queryLon,
+        address,
+        temperature: snapshot.temperature,
+        weather_code: snapshot.weatherCode,
+        wind_speed: snapshot.windSpeed,
+      }, token);
+    } catch {
+      // El snapshot solo alimenta la trazabilidad; el resumen puede consultarse igual.
+    }
+  };
+
   const handleSelectSavedCity = async (city: { name: string; lat: number; lon: number }) => {
+    const locationChangeId = locationChangeIdRef.current + 1;
+    locationChangeIdRef.current = locationChangeId;
     setLat(String(city.lat));
     setLon(String(city.lon));
     setLocationLabel(city.name);
     setHasSelectedLocation(true);
+    setLoading(true);
+    setSummary(null);
+    setHistoryLogs([]);
+    setHistoryError(null);
+    await persistCurrentWeatherSnapshot(city.lat, city.lon, city.name);
+    if (locationChangeId !== locationChangeIdRef.current) return;
     await loadSummaryForCoords(city.lat, city.lon);
   };
 
@@ -904,7 +950,18 @@ export function ProfessionalPanelScreen() {
           onPress={loadSummary}
         />
       </View>
-      {summary ? (
+      {loading && hasSelectedLocation ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[styles.metricCard, styles.metricCardLoading]}
+        >
+          <ActivityIndicator color={premiumColors.accent} />
+          <View style={styles.userIdentity}>
+            <Text style={styles.metricLabel}>Actualizando trazabilidad</Text>
+            <Text style={styles.metricSub}>Cargando datos de {locationLabel}...</Text>
+          </View>
+        </View>
+      ) : summary ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Ver analisis climatico"
@@ -916,6 +973,7 @@ export function ProfessionalPanelScreen() {
           <Text style={styles.metricSub}>Temp. promedio: {formatNumber(summary.avg_temperature)} C</Text>
           <Text style={styles.metricSub}>Rango: {formatNumber(summary.min_temperature)} C a {formatNumber(summary.max_temperature)} C</Text>
           <Text style={styles.metricSub}>Eventos extremos: {summary.extreme_weather_events ?? 0}</Text>
+          {isLowSampleCount(summary.logs_count) ? <LimitedSampleWarning count={summary.logs_count ?? 0} /> : null}
           <View style={styles.metricCta}>
             <Text style={styles.metricCtaText}>Ver analisis</Text>
             <Ionicons name="analytics-outline" size={16} color={premiumColors.accent} />
@@ -1002,6 +1060,8 @@ function WeatherHistoryInsightModal({
               />
             ) : (
               <>
+                {isLowSampleCount(insight.count) ? <LimitedSampleWarning count={insight.count} /> : null}
+
                 <View style={styles.storyCard}>
                   <Text style={styles.cardTitle}>Lectura rapida</Text>
                   {insight.story.map((item) => (
@@ -1161,6 +1221,20 @@ function InsightStat({
       <Text style={styles.metricTileValue}>{value}</Text>
       <Text style={styles.metricTileLabel}>{label}</Text>
       <Text style={styles.small}>{helper}</Text>
+    </View>
+  );
+}
+
+function LimitedSampleWarning({ count }: { count: number }) {
+  return (
+    <View
+      accessibilityRole="text"
+      style={styles.sampleWarningBlock}
+    >
+      <Ionicons name="information-circle-outline" size={18} color={premiumColors.warning} />
+      <Text style={styles.sampleWarningText}>
+        Muestra limitada: con {count} {count === 1 ? 'registro' : 'registros'}, el analisis puede ser inexacto hasta acumular mas mediciones.
+      </Text>
     </View>
   );
 }
@@ -1803,6 +1877,26 @@ function withAlpha(hex: string, alpha: number) {
 
 const EXTREME_WEATHER_CODES = new Set([45, 48, 61, 62, 63, 64, 65, 71, 72, 73, 74, 75, 80, 81, 82, 95, 96, 99]);
 
+function extractCurrentWeatherSnapshot(payload: unknown) {
+  if (!isRecord(payload) || !isRecord(payload.current)) {
+    return null;
+  }
+
+  const temperature = finiteNumber(payload.current.temperature_2m);
+  const weatherCode = finiteNumber(payload.current.weather_code);
+  const windSpeed = finiteNumber(payload.current.wind_speed_10m);
+
+  if (temperature === null || weatherCode === null || windSpeed === null) {
+    return null;
+  }
+
+  return {
+    temperature,
+    weatherCode: Math.round(weatherCode),
+    windSpeed,
+  };
+}
+
 function buildWeatherInsight(
   zoneLabel: string,
   range: WeatherHistoryRange,
@@ -1865,6 +1959,15 @@ function average(values: number[]) {
 
 function finiteNumber(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function isLowSampleCount(count: unknown) {
+  const numericCount = finiteNumber(count);
+  return numericCount !== null && numericCount > 0 && numericCount < LOW_SAMPLE_WARNING_THRESHOLD;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function midpointDate(start?: string | null, end?: string | null) {
@@ -2217,6 +2320,12 @@ const styles = StyleSheet.create({
     gap: 4,
     ...premiumShadow('medium'),
   },
+  metricCardLoading: {
+    minHeight: 112,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   metricValue: {
     color: premiumColors.accent,
     fontSize: 34,
@@ -2241,6 +2350,24 @@ const styles = StyleSheet.create({
     color: premiumColors.accent,
     fontSize: 12,
     fontWeight: '900',
+  },
+  sampleWarningBlock: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: premiumRadii.lg,
+    backgroundColor: 'rgba(251,191,36,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.36)',
+  },
+  sampleWarningText: {
+    flex: 1,
+    color: '#8a651e',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
   },
   badgeText: {
     color: premiumColors.accent,
