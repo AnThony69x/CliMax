@@ -96,17 +96,31 @@ const TEMP_HOT = '#f97316';
 const TEMP_EXTREME = '#ef4444';
 const OSM_TILE_URL = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const GPS_WEATHER_POLL_MS = 10 * 60 * 1000;
-const WORLD_REGION = {
-  latitude: 0,
-  longitude: 0,
-  latitudeDelta: 170,
-  longitudeDelta: 360,
+type MapCoords = {
+  latitude: number;
+  longitude: number;
 };
+
+type MapRegion = MapCoords & {
+  latitudeDelta: number;
+  longitudeDelta: number;
+};
+
 const ECUADOR_REGION = {
   latitude: -1.83,
   longitude: -78.18,
-  latitudeDelta: 140,
-  longitudeDelta: 360,
+  latitudeDelta: 7,
+  longitudeDelta: 9,
+};
+
+const buildMapRegion = (coords: MapCoords | null): MapRegion => {
+  if (!coords) return ECUADOR_REGION;
+  return {
+    latitude: coords.latitude,
+    longitude: coords.longitude,
+    latitudeDelta: 4,
+    longitudeDelta: 6,
+  };
 };
 
 const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99]);
@@ -517,11 +531,13 @@ function WeatherSlide({
   onRefresh,
   isGPS,
   preferences,
+  onHorizontalChildScrollActiveChange,
 }: {
   slide: SlideData;
   onRefresh?: () => void;
   isGPS: boolean;
   preferences: AccountPreferences;
+  onHorizontalChildScrollActiveChange?: (active: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
   const { hasEntitlement } = useAccess();
@@ -606,7 +622,7 @@ function WeatherSlide({
   const mapScale = useRef(new Animated.Value(0)).current;
   const [mapExpanded, setMapExpanded] = useState(false);
   const mapRef = useRef<any>(null);
-  const [mapRegion, setMapRegion] = useState(WORLD_REGION);
+  const [mapRegion, setMapRegion] = useState(() => buildMapRegion(slide.coords));
   const hourly = useMemo(() => {
     return (
       buildHourlyFromWeather(slide.weather, cityOffset) ||
@@ -643,11 +659,23 @@ function WeatherSlide({
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-  const buildZoomRegion = (region: typeof ECUADOR_REGION, factor: number) => {
+  const buildZoomRegion = (region: MapRegion, factor: number) => {
     const nextLat = clamp(region.latitudeDelta * factor, 0.6, 170);
     const nextLon = clamp(region.longitudeDelta * factor, 1.2, 360);
     return { ...region, latitudeDelta: nextLat, longitudeDelta: nextLon };
   };
+  const slideLatitude = slide.coords?.latitude;
+  const slideLongitude = slide.coords?.longitude;
+
+  useEffect(() => {
+    const nextRegion = buildMapRegion(
+      slideLatitude != null && slideLongitude != null
+        ? { latitude: slideLatitude, longitude: slideLongitude }
+        : null
+    );
+    setMapRegion(nextRegion);
+    mapRef.current?.animateToRegion(nextRegion, 320);
+  }, [slideLatitude, slideLongitude]);
 
   const focusOnLocation = async () => {
     let coords = slide.coords;
@@ -925,9 +953,15 @@ function WeatherSlide({
           </View>
           <ScrollView
             horizontal
+            nestedScrollEnabled
             showsHorizontalScrollIndicator={false}
             snapToInterval={120}
             decelerationRate="fast"
+            onTouchStart={() => onHorizontalChildScrollActiveChange?.(true)}
+            onTouchEnd={() => onHorizontalChildScrollActiveChange?.(false)}
+            onTouchCancel={() => onHorizontalChildScrollActiveChange?.(false)}
+            onMomentumScrollEnd={() => onHorizontalChildScrollActiveChange?.(false)}
+            contentContainerStyle={styles.hourlyScrollContent}
           >
             {hourly.map((slot) => (
               <View
@@ -999,7 +1033,7 @@ function WeatherSlide({
               {!preferences.dataSaver && MapView && slide.coords ? (
                 <MapView
                   style={StyleSheet.absoluteFillObject}
-                  initialRegion={WORLD_REGION}
+                  initialRegion={mapRegion}
                   ref={mapRef}
                   scrollEnabled={false}
                   zoomEnabled={false}
@@ -1295,7 +1329,7 @@ function WeatherSlide({
             {!preferences.dataSaver && MapView && slide.coords ? (
               <MapView
                 style={StyleSheet.absoluteFillObject}
-                initialRegion={WORLD_REGION}
+                initialRegion={mapRegion}
                 mapType="none"
                 scrollEnabled
                 zoomEnabled
@@ -1465,6 +1499,7 @@ export default function HomeScreen() {
   const accountPreferences = useAccountPreferences();
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [carouselScrollEnabled, setCarouselScrollEnabled] = useState(true);
 
   // Slide de GPS (siempre índice 0)
   const [gpsSlide, setGpsSlide] = useState<SlideData>({
@@ -1718,6 +1753,7 @@ export default function HomeScreen() {
         ref={scrollRef}
         horizontal
         pagingEnabled
+        scrollEnabled={carouselScrollEnabled}
         showsHorizontalScrollIndicator={false}
         onMomentumScrollEnd={handleScroll}
         scrollEventThrottle={16}
@@ -1729,6 +1765,7 @@ export default function HomeScreen() {
             slide={slide}
             isGPS={i === 0}
             preferences={accountPreferences}
+            onHorizontalChildScrollActiveChange={(active) => setCarouselScrollEnabled(!active)}
             onRefresh={
               i === 0
                 ? () => {
@@ -2151,6 +2188,9 @@ const styles = StyleSheet.create({
   },
   hourlyCard: {
     marginBottom: 12,
+  },
+  hourlyScrollContent: {
+    paddingRight: 18,
   },
   hourCard: {
     width: 110,
