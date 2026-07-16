@@ -4,7 +4,7 @@ import * as Location from 'expo-location';
 import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Rect } from 'react-native-svg';
 import { useAccess } from '../../core/access/AccessContext';
 import {
@@ -162,6 +162,7 @@ type BillingPlan = {
 function AccessDenied({ title }: { title: string }) {
   return (
     <View style={styles.screen}>
+      <PanelStatusBar />
       <View style={styles.centerCard}>
         <Ionicons name="lock-closed-outline" size={34} color={premiumColors.accent} />
         <Text style={styles.title}>{title}</Text>
@@ -169,6 +170,10 @@ function AccessDenied({ title }: { title: string }) {
       </View>
     </View>
   );
+}
+
+function PanelStatusBar() {
+  return <StatusBar barStyle="dark-content" backgroundColor={premiumColors.surface} />;
 }
 
 export function AdminPanelScreen() {
@@ -309,6 +314,7 @@ export function AdminPanelScreen() {
         />
       }
     >
+      <PanelStatusBar />
       <View style={styles.adminHero}>
         <View style={styles.heroGlowTop} />
         <View style={styles.heroHeader}>
@@ -591,6 +597,7 @@ export function OperatorPanelScreen() {
         />
       }
     >
+      <PanelStatusBar />
       <View style={styles.topFilterBlock}>
         <Text style={styles.actionGroupLabel}>Filtros</Text>
         <SectionTabs
@@ -900,6 +907,7 @@ export function ProfessionalPanelScreen() {
   if (!allowed) {
     return (
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+        <PanelStatusBar />
         <Text style={styles.eyebrow}>Professional</Text>
         <Text style={styles.title}>Trazabilidad climatica</Text>
         <Text style={styles.muted}>
@@ -912,6 +920,7 @@ export function ProfessionalPanelScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <PanelStatusBar />
       <Text style={styles.eyebrow}>Professional</Text>
       <Text style={styles.title}>Trazabilidad climatica</Text>
       <Text style={styles.muted}>

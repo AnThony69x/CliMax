@@ -1000,11 +1000,13 @@ function WeatherSlide({
                 <MapView
                   style={StyleSheet.absoluteFillObject}
                   initialRegion={WORLD_REGION}
+                  ref={mapRef}
                   scrollEnabled={false}
                   zoomEnabled={false}
                   pitchEnabled={false}
                   rotateEnabled={false}
                   mapType="none"
+                  onRegionChangeComplete={setMapRegion}
                 >
                   {UrlTile ? (
                     <UrlTile
@@ -1097,17 +1099,50 @@ function WeatherSlide({
                       Platform.OS !== 'android' && pressed && { opacity: 0.75 },
                     ]}
                     android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
-                    onPress={() => setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'))}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      setMapMode((prev) => (prev === 'radar' ? 'temp' : 'radar'));
+                    }}
                   >
                     <Ionicons name="layers-outline" size={18} color="#e2e8f0" />
                   </Pressable>
-                  <Pressable style={styles.mapFab}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.mapFab,
+                      Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                    ]}
+                    android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      void focusOnLocation();
+                    }}
+                  >
                     <Ionicons name="locate-outline" size={18} color="#e2e8f0" />
                   </Pressable>
-                  <Pressable style={styles.mapFab}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.mapFab,
+                      Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                    ]}
+                    android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      zoomIn();
+                    }}
+                  >
                     <Ionicons name="add" size={18} color="#e2e8f0" />
                   </Pressable>
-                  <Pressable style={styles.mapFab}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.mapFab,
+                      Platform.OS !== 'android' && pressed && { opacity: 0.75 },
+                    ]}
+                    android_ripple={{ color: 'rgba(255,255,255,0.15)', borderless: true, radius: 18 }}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      zoomOut();
+                    }}
+                  >
                     <Ionicons name="remove" size={18} color="#e2e8f0" />
                   </Pressable>
                 </View>

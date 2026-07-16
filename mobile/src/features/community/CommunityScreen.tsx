@@ -1297,7 +1297,7 @@ export default function CommunityScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 52}
     >
       <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />

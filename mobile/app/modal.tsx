@@ -1,9 +1,10 @@
 import { Link } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StatusBar, StyleSheet, Text, View } from 'react-native';
 
 export default function ModalScreen() {
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <Text style={styles.title}>Informacion</Text>
       <Link href="/" dismissTo style={styles.link}>
         <Text style={styles.linkText}>Volver al inicio</Text>
