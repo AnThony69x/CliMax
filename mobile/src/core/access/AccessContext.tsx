@@ -18,7 +18,7 @@ type AccessContextValue = AccessState & {
   loading: boolean;
   isAdmin: boolean;
   isOperator: boolean;
-  refreshAccess: (options?: { force?: boolean }) => Promise<void>;
+  refreshAccess: (options?: { force?: boolean }) => Promise<boolean>;
   hasEntitlement: (feature: string) => boolean;
 };
 
@@ -37,7 +37,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const lastTokenRef = useRef<string | null>(null);
   const lastRefreshAtRef = useRef(0);
-  const inFlightRefreshRef = useRef<Promise<void> | null>(null);
+  const inFlightRefreshRef = useRef<Promise<boolean> | null>(null);
 
   const refreshAccess = useCallback(async (options: { force?: boolean } = {}) => {
     const runRefresh = async () => {
@@ -49,12 +49,12 @@ export function AccessProvider({ children }: { children: ReactNode }) {
         lastRefreshAtRef.current = Date.now();
         setAccess(DEFAULT_ACCESS);
         setLoading(false);
-        return;
+        return false;
       }
 
       const isSameToken = lastTokenRef.current === token;
       const isRecent = Date.now() - lastRefreshAtRef.current < RECENT_ACCESS_REFRESH_MS;
-      if (!options.force && isSameToken && isRecent) return;
+      if (!options.force && isSameToken && isRecent) return true;
 
       if (sessionToken) {
         await saveToken(sessionToken);
@@ -65,13 +65,20 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
+        let payload: unknown = null;
         if (response.status === 403) {
-          const payload = await response.json().catch(() => null);
-          const reason = payload?.data?.reason ? `\n\nMotivo: ${payload.data.reason}` : '';
-          Alert.alert('Cuenta restringida', `${payload?.message ?? 'Tu cuenta no puede acceder en este momento.'}${reason}`);
+          payload = await response.json().catch(() => null);
+          const reason = getAccountBlockReason(payload);
+          Alert.alert('Cuenta restringida', `${getAccountBlockMessage(payload)}${reason ? `\n\nMotivo: ${reason}` : ''}`);
         }
+        if (isAccountBlockCode(getPayloadCode(payload))) {
+          await supabase.auth.signOut().catch(() => null);
+          await clearToken();
+        }
+        lastTokenRef.current = null;
+        lastRefreshAtRef.current = Date.now();
         setAccess(DEFAULT_ACCESS);
-        return;
+        return false;
       }
 
       const payload = await response.json();
@@ -84,6 +91,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       });
       lastTokenRef.current = token;
       lastRefreshAtRef.current = Date.now();
+      return true;
     };
 
     if (!options.force && inFlightRefreshRef.current) {
@@ -93,6 +101,7 @@ export function AccessProvider({ children }: { children: ReactNode }) {
     const refreshPromise = runRefresh()
       .catch(() => {
         setAccess(DEFAULT_ACCESS);
+        return false;
       })
       .finally(() => {
         setLoading(false);
@@ -144,6 +153,32 @@ export function AccessProvider({ children }: { children: ReactNode }) {
   }, [access, loading, refreshAccess]);
 
   return <AccessContext.Provider value={value}>{children}</AccessContext.Provider>;
+}
+
+function isAccountBlockCode(code: unknown) {
+  return code === 'account_suspended' || code === 'account_banned' || code === 'account_deleted';
+}
+
+function getPayloadCode(payload: unknown) {
+  return isRecord(payload) ? payload.code : null;
+}
+
+function getAccountBlockMessage(payload: unknown) {
+  return isRecord(payload) && typeof payload.message === 'string'
+    ? payload.message
+    : 'Tu cuenta no puede acceder en este momento.';
+}
+
+function getAccountBlockReason(payload: unknown) {
+  if (!isRecord(payload) || !isRecord(payload.data) || typeof payload.data.reason !== 'string') {
+    return '';
+  }
+
+  return payload.data.reason;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 export function useAccess() {

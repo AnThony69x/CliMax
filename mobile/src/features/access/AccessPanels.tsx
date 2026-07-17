@@ -49,6 +49,7 @@ type AdminUser = {
     status?: AccountModerationStatus;
     reason?: string | null;
     suspended_until?: string | null;
+    actioned_at?: string | null;
   };
 };
 
@@ -188,11 +189,14 @@ export function AdminPanelScreen() {
   const [planFilter, setPlanFilter] = useState<(typeof PLAN_FILTERS)[number]>('todos');
   const [expandedAdminUserId, setExpandedAdminUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const activeUsers = useMemo(() => users.filter((user) => !isDeletedUser(user)), [users]);
+  const deletedUsers = useMemo(() => users.filter(isDeletedUser), [users]);
   const adminCount = dashboard?.roles?.admin ?? users.filter((user) => user.access?.staff_role === 'admin').length;
   const operatorCount = dashboard?.roles?.operator ?? users.filter((user) => user.access?.staff_role === 'operator').length;
   const professionalCount = dashboard?.plans?.professional ?? users.filter((user) => user.access?.subscription_plan === 'professional').length;
   const auditCount = dashboard?.audit?.total ?? auditLogs.length;
-  const filteredUsers = useMemo(() => filterUsers(users, roleFilter, planFilter), [users, roleFilter, planFilter]);
+  const filteredUsers = useMemo(() => filterUsers(activeUsers, roleFilter, planFilter), [activeUsers, roleFilter, planFilter]);
+  const filteredDeletedUsers = useMemo(() => filterUsers(deletedUsers, roleFilter, planFilter), [deletedUsers, roleFilter, planFilter]);
 
   const load = useCallback(async () => {
     if (!isAdmin) return;
@@ -257,10 +261,16 @@ export function AdminPanelScreen() {
   };
 
   const applyAccountStatus = async (userId: string, status: AccountModerationStatus) => {
-    const token = await getAccessToken();
-    if (!token) return;
-    await updateUserAccountStatus(userId, buildAccountStatusPayload(status), token);
-    await load();
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const payload = await updateUserAccountStatus(userId, buildAccountStatusPayload(status), token);
+      setUsers((current) => withUpdatedAccountModeration(current, userId, normalizeAccountModeration(status, payload?.data)));
+      await load();
+      Alert.alert('Cuenta actualizada', accountStatusSuccessText(status));
+    } catch (error) {
+      Alert.alert('No se pudo actualizar', error instanceof Error ? error.message : 'Intenta nuevamente en unos segundos.');
+    }
   };
 
   const changeAccountStatus = (userId: string, status: AccountModerationStatus) => {
@@ -329,8 +339,8 @@ export function AdminPanelScreen() {
         <Text style={styles.heroText}>Usuarios, roles, suscripciones y auditoria reciente en un solo lugar.</Text>
         <View style={styles.heroStats}>
           <View style={styles.heroStatMain}>
-            <Text style={styles.heroStatValue}>{users.length}</Text>
-            <Text style={styles.heroStatLabel}>Usuarios</Text>
+            <Text style={styles.heroStatValue}>{activeUsers.length}</Text>
+            <Text style={styles.heroStatLabel}>Usuarios activos</Text>
           </View>
           <View style={styles.heroStatDivider} />
           <View style={styles.heroStatMain}>
@@ -357,7 +367,7 @@ export function AdminPanelScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.quickTitle}>Configurar usuarios</Text>
-            <Text style={styles.quickSub}>Cambiar rol y plan</Text>
+            <Text style={styles.quickSub}>Cambiar rol y plan del usuario</Text>
           </View>
           <Ionicons name="chevron-forward" size={16} color={premiumColors.inkMuted} />
         </Pressable>
@@ -437,7 +447,7 @@ export function AdminPanelScreen() {
           <View style={styles.sectionHeader}>
             <View>
               <Text style={styles.sectionTitle}>Accesos de usuarios</Text>
-              <Text style={styles.muted}>Gestiona permisos, planes y sector profesional.</Text>
+              <Text style={styles.muted}>Gestiona permisos, plan del usuario y sector profesional.</Text>
             </View>
             {loading ? <ActivityIndicator color={premiumColors.accent} /> : null}
           </View>
@@ -453,7 +463,7 @@ export function AdminPanelScreen() {
             onRoleChange={setRoleFilter}
             onPlanChange={setPlanFilter}
           />
-          {!loading && filteredUsers.length === 0 ? <EmptyState icon="people-outline" title="Sin usuarios cargados" text="Cambia los filtros o desliza hacia abajo para recargar." /> : null}
+          {!loading && filteredUsers.length === 0 ? <EmptyState icon="people-outline" title="Sin usuarios activos" text="Cambia los filtros o desliza hacia abajo para recargar." /> : null}
           {filteredUsers.map((user) => (
             <AdminUserCard
               key={user.id}
@@ -465,6 +475,20 @@ export function AdminPanelScreen() {
               onChangeStatus={changeAccountStatus}
             />
           ))}
+          {filteredDeletedUsers.length > 0 ? (
+            <>
+              <View style={styles.deletedListHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Usuarios eliminados</Text>
+                  <Text style={styles.muted}>No aparecen en la lista principal. Puedes reactivarlos si fue un error.</Text>
+                </View>
+                <StatusChip label={`${filteredDeletedUsers.length}`} icon="trash-outline" />
+              </View>
+              {filteredDeletedUsers.map((user) => (
+                <DeletedUserCard key={user.id} user={user} onChangeStatus={changeAccountStatus} />
+              ))}
+            </>
+          ) : null}
         </>
       ) : null}
 
@@ -513,7 +537,10 @@ export function OperatorPanelScreen() {
   const [roleFilter, setRoleFilter] = useState<(typeof ROLE_FILTERS)[number]>('todos');
   const [planFilter, setPlanFilter] = useState<(typeof PLAN_FILTERS)[number]>('todos');
   const [loading, setLoading] = useState(true);
-  const filteredUsers = useMemo(() => filterUsers(users, roleFilter, planFilter), [users, roleFilter, planFilter]);
+  const activeUsers = useMemo(() => users.filter((user) => !isDeletedUser(user)), [users]);
+  const deletedUsers = useMemo(() => users.filter(isDeletedUser), [users]);
+  const filteredUsers = useMemo(() => filterUsers(activeUsers, roleFilter, planFilter), [activeUsers, roleFilter, planFilter]);
+  const filteredDeletedUsers = useMemo(() => filterUsers(deletedUsers, roleFilter, planFilter), [deletedUsers, roleFilter, planFilter]);
   const reportedPostIds = useMemo(
     () => new Set(reports.filter((report) => report.target_type === 'post').map((report) => report.target_id)),
     [reports],
@@ -559,10 +586,16 @@ export function OperatorPanelScreen() {
   };
 
   const applyAccountStatus = async (userId: string, status: AccountModerationStatus) => {
-    const token = await getAccessToken();
-    if (!token) return;
-    await updateUserAccountStatus(userId, buildAccountStatusPayload(status), token);
-    await load();
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+      const payload = await updateUserAccountStatus(userId, buildAccountStatusPayload(status), token);
+      setUsers((current) => withUpdatedAccountModeration(current, userId, normalizeAccountModeration(status, payload?.data)));
+      await load();
+      Alert.alert('Cuenta actualizada', accountStatusSuccessText(status));
+    } catch (error) {
+      Alert.alert('No se pudo actualizar', error instanceof Error ? error.message : 'Intenta nuevamente en unos segundos.');
+    }
   };
 
   const changeAccountStatus = (userId: string, status: AccountModerationStatus) => {
@@ -605,7 +638,7 @@ export function OperatorPanelScreen() {
           value={section}
           labels={{
             comunidad: 'Comunidad',
-            usuarios: `Usuarios (${users.length})`,
+            usuarios: `Usuarios (${activeUsers.length})`,
           }}
           onChange={setSection}
         />
@@ -630,8 +663,8 @@ export function OperatorPanelScreen() {
           </View>
           <View style={styles.heroStatDivider} />
           <View style={styles.heroStatMain}>
-            <Text style={styles.heroStatValue}>{users.length}</Text>
-            <Text style={styles.heroStatLabel}>Usuarios</Text>
+            <Text style={styles.heroStatValue}>{activeUsers.length}</Text>
+            <Text style={styles.heroStatLabel}>Usuarios activos</Text>
           </View>
         </View>
       </View>
@@ -737,10 +770,24 @@ export function OperatorPanelScreen() {
             onRoleChange={setRoleFilter}
             onPlanChange={setPlanFilter}
           />
-          {!loading && filteredUsers.length === 0 ? <EmptyState icon="people-outline" title="Sin usuarios" text="No hay usuarios disponibles con esos filtros." /> : null}
+          {!loading && filteredUsers.length === 0 ? <EmptyState icon="people-outline" title="Sin usuarios activos" text="No hay usuarios disponibles con esos filtros." /> : null}
           {filteredUsers.map((user) => (
             <ReadOnlyUserCard key={user.id} user={user} onChangeStatus={changeAccountStatus} />
           ))}
+          {filteredDeletedUsers.length > 0 ? (
+            <>
+              <View style={styles.deletedListHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Usuarios eliminados</Text>
+                  <Text style={styles.muted}>Separados de la lista principal para no mezclarlos con cuentas moderables.</Text>
+                </View>
+                <StatusChip label={`${filteredDeletedUsers.length}`} icon="trash-outline" />
+              </View>
+              {filteredDeletedUsers.map((user) => (
+                <DeletedUserCard key={user.id} user={user} onChangeStatus={changeAccountStatus} />
+              ))}
+            </>
+          ) : null}
         </>
       ) : null}
     </ScrollView>
@@ -1561,7 +1608,7 @@ function AdminUserCard({
             </View>
           </View>
           <View style={styles.adminActionBlock}>
-            <Text style={styles.actionGroupLabel}>Asignar plan</Text>
+            <Text style={styles.actionGroupLabel}>Plan del usuario</Text>
             <View style={styles.rowWrap}>
               <Action label="Free" active={(user.access?.subscription_plan ?? 'free') === 'free'} onPress={() => onChangePlan(user.id, 'free')} />
               <Action label="Premium" active={user.access?.subscription_plan === 'premium'} onPress={() => onChangePlan(user.id, 'premium')} />
@@ -1607,6 +1654,35 @@ function ReadOnlyUserCard({
   );
 }
 
+function DeletedUserCard({
+  user,
+  onChangeStatus,
+}: {
+  user: AdminUser;
+  onChangeStatus: (userId: string, status: AccountModerationStatus) => void;
+}) {
+  return (
+    <View style={[styles.card, styles.deletedUserCard]}>
+      <View style={styles.userHeader}>
+        <View style={styles.avatar}>
+          <Ionicons name="trash-outline" size={19} color={premiumColors.danger} />
+        </View>
+        <View style={styles.userIdentity}>
+          <Text style={styles.cardTitle}>{user.name || 'Usuario eliminado'}</Text>
+          <Text style={styles.userEmail} numberOfLines={1}>{user.email || 'Sin correo'}</Text>
+          <Text style={styles.small} numberOfLines={1}>{user.id}</Text>
+        </View>
+        <StatusChip label="Eliminado" icon="ban-outline" />
+      </View>
+      {user.account_moderation?.reason ? <Text style={styles.small}>{user.account_moderation.reason}</Text> : null}
+      {user.account_moderation?.actioned_at ? <Text style={styles.small}>Fecha: {formatDate(user.account_moderation.actioned_at)}</Text> : null}
+      <View style={styles.rowWrap}>
+        <Action label="Activar" onPress={() => onChangeStatus(user.id, 'active')} />
+      </View>
+    </View>
+  );
+}
+
 function AccountStatusActions({
   user,
   onChangeStatus,
@@ -1619,10 +1695,10 @@ function AccountStatusActions({
     <View style={styles.adminActionBlock}>
       <Text style={styles.actionGroupLabel}>Control de cuenta</Text>
       <View style={styles.rowWrap}>
-        <Action label="Activar" active={accountStatus === 'active'} onPress={() => onChangeStatus(user.id, 'active')} />
-        <Action label="Suspender" active={accountStatus === 'suspended'} onPress={() => onChangeStatus(user.id, 'suspended')} />
-        <Action label="Banear" active={accountStatus === 'banned'} onPress={() => onChangeStatus(user.id, 'banned')} danger />
-        <Action label="Borrar" active={accountStatus === 'deleted'} onPress={() => onChangeStatus(user.id, 'deleted')} danger />
+        {accountStatus !== 'active' ? <Action label="Activar" onPress={() => onChangeStatus(user.id, 'active')} /> : null}
+        {accountStatus !== 'suspended' ? <Action label="Suspender" onPress={() => onChangeStatus(user.id, 'suspended')} /> : null}
+        {accountStatus !== 'banned' ? <Action label="Banear" onPress={() => onChangeStatus(user.id, 'banned')} danger /> : null}
+        {accountStatus !== 'deleted' ? <Action label="Borrar" onPress={() => onChangeStatus(user.id, 'deleted')} danger /> : null}
       </View>
     </View>
   );
@@ -1753,6 +1829,53 @@ function StatusChip({ label, icon }: { label: string; icon: keyof typeof Ionicon
   );
 }
 
+function withUpdatedAccountModeration(
+  users: AdminUser[],
+  userId: string,
+  moderation: NonNullable<AdminUser['account_moderation']>,
+) {
+  return users.map((user) => (
+    user.id === userId
+      ? { ...user, account_moderation: { ...user.account_moderation, ...moderation } }
+      : user
+  ));
+}
+
+function normalizeAccountModeration(
+  fallbackStatus: AccountModerationStatus,
+  value: unknown,
+): NonNullable<AdminUser['account_moderation']> {
+  const fallbackPayload = buildAccountStatusPayload(fallbackStatus);
+  const fallbackModeration = {
+    status: fallbackStatus,
+    reason: fallbackPayload.reason ?? null,
+    suspended_until: fallbackPayload.suspended_until ?? null,
+    actioned_at: new Date().toISOString(),
+  };
+
+  if (!isRecord(value)) {
+    return fallbackModeration;
+  }
+
+  const rawStatus = typeof value.status === 'string' ? value.status : fallbackStatus;
+  const status = isAccountModerationStatus(rawStatus) ? rawStatus : fallbackStatus;
+
+  return {
+    status,
+    reason: typeof value.reason === 'string' ? value.reason : null,
+    suspended_until: typeof value.suspended_until === 'string' ? value.suspended_until : null,
+    actioned_at: typeof value.actioned_at === 'string' ? value.actioned_at : fallbackModeration.actioned_at,
+  };
+}
+
+function isAccountModerationStatus(value: string): value is AccountModerationStatus {
+  return value === 'active' || value === 'suspended' || value === 'banned' || value === 'deleted';
+}
+
+function isDeletedUser(user: AdminUser) {
+  return user.account_moderation?.status === 'deleted';
+}
+
 function filterUsers(
   users: AdminUser[],
   roleFilter: (typeof ROLE_FILTERS)[number],
@@ -1805,6 +1928,13 @@ function accountStatusConfirmText(status: AccountModerationStatus) {
   if (status === 'banned') return 'La cuenta quedara bloqueada por infringir las normas de la aplicacion. Esta accion quedara en auditoria.';
   if (status === 'deleted') return 'La cuenta se marcara como eliminada, perdera acceso y su perfil quedara anonimizado. Esta accion quedara en auditoria.';
   return 'La cuenta volvera a estar activa. Esta accion quedara en auditoria.';
+}
+
+function accountStatusSuccessText(status: AccountModerationStatus) {
+  if (status === 'suspended') return 'El usuario quedo suspendido por 7 dias.';
+  if (status === 'banned') return 'El usuario quedo baneado y no podra acceder a la app.';
+  if (status === 'deleted') return 'El usuario se movio a la lista de eliminados.';
+  return 'El usuario volvio a estar activo.';
 }
 
 function buildAccountStatusPayload(status: AccountModerationStatus) {
@@ -2261,6 +2391,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(251,191,36,0.55)',
     backgroundColor: 'rgba(251,191,36,0.08)',
   },
+  deletedUserCard: {
+    borderColor: 'rgba(251,113,133,0.36)',
+    backgroundColor: 'rgba(251,113,133,0.07)',
+  },
   moderationImage: {
     width: '100%',
     height: 190,
@@ -2389,6 +2523,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
+  },
+  deletedListHeader: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: premiumColors.glassBorder,
   },
   infoBanner: {
     flexDirection: 'row',

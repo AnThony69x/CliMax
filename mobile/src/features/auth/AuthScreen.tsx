@@ -153,8 +153,12 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
           if (result?.session?.access_token) {
             await saveToken(result.session.access_token);
           }
-          await refreshAccess();
-          router.replace('/(tabs)');
+          const accessAllowed = await refreshAccess({ force: true });
+          if (accessAllowed) {
+            router.replace('/(tabs)');
+          } else {
+            setChecking(false);
+          }
         } else {
           setChecking(false);
         }
@@ -247,7 +251,8 @@ export default function AuthScreen({ initialMode = 'login' }: { initialMode?: Au
       if (isLogin) {
         const { session } = await signInWithPassword(trimmedEmail, password);
         if (session?.access_token) await saveToken(session.access_token);
-        await refreshAccess();
+        const accessAllowed = await refreshAccess({ force: true });
+        if (!accessAllowed) return;
         router.replace('/(tabs)');
       } else {
         await signUp(name.trim(), trimmedEmail, password);
